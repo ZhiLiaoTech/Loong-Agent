@@ -1,0 +1,7 @@
+{
+  "name": "dragon.openai-compatible",
+  "version": "0.0.0",
+  "entry": "dist/index.js",
+  "description": "Registers an OpenAI-compatible model provider from environment variables.",
+  "dragonVersion": "0.x"
+}

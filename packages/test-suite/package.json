@@ -1,0 +1,26 @@
+{
+  "name": "@dragon/test-suite",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "test": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@dragon/channels": "workspace:*",
+    "@dragon/core": "workspace:*",
+    "@dragon/cron": "workspace:*",
+    "@dragon/delegation": "workspace:*",
+    "@dragon/gateway": "workspace:*",
+    "@dragon/memory": "workspace:*",
+    "@dragon/providers": "workspace:*",
+    "@dragon/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

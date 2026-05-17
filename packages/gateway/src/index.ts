@@ -1,0 +1,2358 @@
+import { createHash, randomUUID } from "node:crypto";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { Duplex } from "node:stream";
+import { getDashboardHtml } from "./dashboard.js";
+import type {
+  DragonAgentRuntime,
+  DragonEvent,
+  DragonSource,
+  DragonThinkingLevel,
+  DragonTrajectoryRecord,
+  DragonTurnInput,
+  DragonTurnResult,
+} from "@dragon/core";
+import type { DragonCronJob, DragonCronJobStore, DragonCronRunner } from "@dragon/cron";
+import {
+  createToolPermissionEngine,
+  createToolRegistry,
+  type ToolDefinition,
+  type ToolInvocation,
+  type ToolPermissionEngine,
+  type ToolPermissionResult,
+  type ToolRegistry,
+  type ToolResult,
+} from "@dragon/tools";
+
+export interface GatewayConfig {
+  host?: string;
+  port?: number;
+  authMode?: "none" | "shared-secret";
+  sharedSecret?: string;
+}
+
+export interface GatewayAddress {
+  host: string;
+  port: number;
+  url: string;
+}
+
+export interface GatewayAgentParams {
+  sessionId: string;
+  message: string;
+  source?: DragonSource;
+  workspace?: string;
+  model?: string;
+  thinking?: DragonThinkingLevel;
+  metadata?: Record<string, unknown>;
+}
+
+export interface GatewayWebhookParams extends GatewayAgentParams {
+  channel: string;
+  userId?: string;
+  threadId?: string;
+}
+
+export interface GatewayEventEnvelope {
+  type: "event";
+  sequence: number;
+  timestamp: string;
+  sessionId?: string;
+  event: DragonEvent;
+}
+
+export type GatewayRunState = "running" | "cancelling" | "completed" | "cancelled" | "timeout" | "error";
+
+export interface GatewayRunRecord {
+  runId: string;
+  sessionId?: string;
+  state: GatewayRunState;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  source?: DragonSource;
+  messagePreview?: string;
+  error?: string;
+  result?: GatewayRunResultSummary;
+}
+
+export interface GatewayRunResultSummary {
+  runId: string;
+  status: DragonTurnResult["status"];
+  messageCount: number;
+  assistantPreview?: string;
+  usage?: DragonTurnResult["usage"];
+  error?: string;
+}
+
+export interface GatewayTrajectoryListParams {
+  sessionId: string;
+  status?: DragonTurnResult["status"];
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+}
+
+export interface GatewayTrajectoryGetParams {
+  sessionId: string;
+  runId: string;
+  maxEvents?: number;
+}
+
+export interface GatewayTrajectoryStore {
+  list(filter?: GatewayTrajectoryListParams): Promise<unknown>;
+  get(
+    runId: string,
+    filter?: Pick<GatewayTrajectoryListParams, "sessionId" | "dateFrom" | "dateTo">,
+  ): Promise<DragonTrajectoryRecord | undefined>;
+}
+
+export interface GatewayPluginToolSummary {
+  name: string;
+  description?: string;
+  permission?: "allow" | "ask" | "deny";
+  capabilities?: readonly string[];
+}
+
+export interface GatewayPluginProviderSummary {
+  id: string;
+  displayName: string;
+  defaultModel?: string;
+  supportsToolCalling: boolean;
+}
+
+export interface GatewayProviderSummary extends GatewayPluginProviderSummary {}
+
+export interface GatewayPluginMemoryBackendSummary {
+  id: string;
+  displayName: string;
+}
+
+export interface GatewayPluginSummary {
+  name: string;
+  version: string;
+  description?: string;
+  dragonVersion?: string;
+  tools: readonly GatewayPluginToolSummary[];
+  providers: readonly GatewayPluginProviderSummary[];
+  memoryBackends?: readonly GatewayPluginMemoryBackendSummary[];
+  lifecycleHooks?: readonly string[];
+}
+
+export interface GatewayToolSummary {
+  name: string;
+  description: string;
+  capabilities?: readonly string[];
+  permission?: "allow" | "ask" | "deny";
+  inputSchema?: unknown;
+  directInvokeAllowed: boolean;
+}
+
+export interface GatewayToolInvokeParams {
+  toolName: string;
+  input?: unknown;
+  sessionId?: string;
+  workspace?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface GatewayMemoryCandidateListParams {
+  status?: "pending" | "promoted" | "rejected" | "all";
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+}
+
+export interface GatewayMemoryCandidatePromoteParams {
+  id: string;
+  scope?: "user" | "project" | "session" | "skill";
+  content?: string;
+  source?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface GatewayMemoryCandidateRejectParams {
+  id: string;
+  reason?: string;
+}
+
+export interface GatewayCronJobUpsertParams extends DragonCronJob {
+  enabled?: boolean;
+  nextRunAt?: string;
+}
+
+export interface GatewayCronJobRemoveParams {
+  id: string;
+}
+
+export type GatewayRequest =
+  | { type: "connect"; id: string; params?: Record<string, unknown> }
+  | { type: "agent"; id: string; params: GatewayAgentParams }
+  | { type: "health"; id: string }
+  | { type: "run.status"; id: string; params: { runId: string } }
+  | { type: "run.cancel"; id: string; params: { runId: string; reason?: string } }
+  | { type: "runs.list"; id: string; params?: { sessionId?: string; limit?: number } }
+  | { type: "providers.list"; id: string }
+  | { type: "plugins.list"; id: string }
+  | { type: "tools.catalog"; id: string; params?: { includeSchemas?: boolean } }
+  | { type: "tool.invoke"; id: string; params: GatewayToolInvokeParams }
+  | { type: "memory.candidates.list"; id: string; params?: GatewayMemoryCandidateListParams }
+  | { type: "memory.candidate.promote"; id: string; params: GatewayMemoryCandidatePromoteParams }
+  | { type: "memory.candidate.reject"; id: string; params: GatewayMemoryCandidateRejectParams }
+  | { type: "trajectory.list"; id: string; params: GatewayTrajectoryListParams }
+  | { type: "trajectory.get"; id: string; params: GatewayTrajectoryGetParams }
+  | { type: "cron.jobs.list"; id: string }
+  | { type: "cron.job.upsert"; id: string; params: GatewayCronJobUpsertParams }
+  | { type: "cron.job.remove"; id: string; params: GatewayCronJobRemoveParams }
+  | { type: "cron.tick"; id: string };
+
+export type GatewayResponse =
+  | { type: "response"; id: string; ok: true; payload?: unknown }
+  | { type: "response"; id: string; ok: false; error: string };
+
+export type GatewayWebSocketEnvelope =
+  | GatewayResponse
+  | GatewayEventEnvelope
+  | {
+      type: "ready";
+      clientId: string;
+      filters: EventStreamFilters;
+      protocolVersion: 1;
+      serverTime: string;
+    }
+  | { type: "error"; error: string };
+
+export interface DragonGateway {
+  start(config?: GatewayConfig): Promise<void>;
+  stop(): Promise<void>;
+  address(): GatewayAddress | undefined;
+}
+
+export interface HttpDragonGatewayOptions {
+  runtime: DragonAgentRuntime;
+  cronStore?: DragonCronJobStore;
+  cronRunner?: DragonCronRunner;
+  trajectoryStore?: GatewayTrajectoryStore;
+  pluginSummaries?: readonly GatewayPluginSummary[];
+  providerSummaries?: readonly GatewayProviderSummary[];
+  tools?: readonly ToolDefinition[];
+  toolRegistry?: ToolRegistry;
+  permissionEngine?: ToolPermissionEngine;
+  directToolNames?: readonly string[];
+  name?: string;
+}
+
+interface NormalizedGatewayConfig {
+  host: string;
+  port: number;
+  authMode: "none" | "shared-secret";
+  sharedSecret?: string;
+}
+
+interface EventStreamClient {
+  id: string;
+  response: ServerResponse;
+  filters: EventStreamFilters;
+  heartbeat: NodeJS.Timeout;
+}
+
+interface WebSocketClient {
+  id: string;
+  socket: Duplex;
+  filters: EventStreamFilters;
+  heartbeat: NodeJS.Timeout;
+  buffer: Buffer;
+  closed: boolean;
+}
+
+export interface EventStreamFilters {
+  sessionId?: string;
+  runId?: string;
+}
+
+const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_PORT = 17357;
+const MAX_REQUEST_BYTES = 256_000;
+const MAX_RUN_RECORDS = 200;
+const MAX_DIRECT_TOOL_RESULT_BYTES = 256_000;
+const MAX_DIRECT_TOOL_PREVIEW_BYTES = 64_000;
+const MAX_WEBSOCKET_MESSAGE_BYTES = 1_000_000;
+const MAX_WEBSOCKET_BUFFER_BYTES = MAX_REQUEST_BYTES * 2;
+const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+const WEBSOCKET_PROTOCOL = "dragon.gateway.v1";
+const DEFAULT_TOOL_SESSION_ID = "gateway-tools";
+const DEFAULT_MEMORY_REVIEW_SESSION_ID = "gateway-memory-review";
+const DEFAULT_DIRECT_TOOL_NAMES = Object.freeze(["git_status", "git_diff", "git_log"]);
+
+export function createHttpGateway(options: HttpDragonGatewayOptions): DragonGateway {
+  return new HttpDragonGateway(options);
+}
+
+export class HttpDragonGateway implements DragonGateway {
+  readonly #runtime: DragonAgentRuntime;
+  readonly #cronStore: DragonCronJobStore | undefined;
+  readonly #cronRunner: DragonCronRunner | undefined;
+  readonly #trajectoryStore: GatewayTrajectoryStore | undefined;
+  readonly #plugins: readonly GatewayPluginSummary[];
+  readonly #providers: readonly GatewayProviderSummary[];
+  readonly #toolRegistry: ToolRegistry;
+  readonly #permissionEngine: ToolPermissionEngine;
+  readonly #directToolNames: ReadonlySet<string>;
+  readonly #name: string;
+  readonly #lanes = new Map<string, Promise<void>>();
+  readonly #eventClients = new Map<string, EventStreamClient>();
+  readonly #webSocketClients = new Map<string, WebSocketClient>();
+  readonly #runSessions = new Map<string, string>();
+  readonly #runs = new Map<string, GatewayRunRecord>();
+  readonly #runControllers = new Map<string, AbortController>();
+  #eventSequence = 0;
+  #server: Server | undefined;
+  #config: NormalizedGatewayConfig | undefined;
+  #startedAt: string | undefined;
+  #address: GatewayAddress | undefined;
+  #runtimeUnsubscribe: (() => void) | undefined;
+
+  constructor(options: HttpDragonGatewayOptions) {
+    this.#runtime = options.runtime;
+    this.#cronStore = options.cronStore;
+    this.#cronRunner = options.cronRunner;
+    this.#trajectoryStore = options.trajectoryStore;
+    this.#plugins = normalizePluginSummaries(options.pluginSummaries ?? []);
+    this.#providers = normalizeProviderSummaries(options.providerSummaries ?? []);
+    this.#toolRegistry = options.toolRegistry ?? createToolRegistry([...(options.tools ?? [])]);
+    this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
+    this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
+    this.#name = options.name ?? "dragon-gateway";
+  }
+
+  async start(config: GatewayConfig = {}): Promise<void> {
+    if (this.#server) {
+      throw new Error("Gateway is already started.");
+    }
+    const normalized = normalizeConfig(config);
+    const server = createServer((request, response) => {
+      this.#handleRequest(request, response).catch(error => {
+        writeJson(response, errorToStatusCode(error), {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    });
+    server.on("upgrade", (request, socket, head) => {
+      this.#handleUpgrade(request, socket, head);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(normalized.port, normalized.host, () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      server.close();
+      throw new Error("Gateway failed to resolve listening address.");
+    }
+
+    this.#server = server;
+    this.#config = normalized;
+    this.#startedAt = new Date().toISOString();
+    this.#address = {
+      host: normalized.host,
+      port: address.port,
+      url: `http://${normalized.host}:${address.port}`,
+    };
+    this.#runtimeUnsubscribe = this.#runtime.subscribe(event => {
+      this.#broadcastRuntimeEvent(event);
+    });
+  }
+
+  async stop(): Promise<void> {
+    const server = this.#server;
+    if (!server) {
+      return;
+    }
+    this.#runtimeUnsubscribe?.();
+    this.#runtimeUnsubscribe = undefined;
+    this.#closeEventStreams();
+    this.#closeWebSocketClients();
+    await new Promise<void>((resolve, reject) => {
+      server.close(error => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+    this.#server = undefined;
+    this.#config = undefined;
+    this.#startedAt = undefined;
+    this.#address = undefined;
+  }
+
+  address(): GatewayAddress | undefined {
+    return this.#address;
+  }
+
+  async #handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    applyCors(response);
+    if (request.method === "OPTIONS") {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+
+    const url = new URL(request.url ?? "/", "http://dragon.local");
+    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
+      writeHtml(response, 200, getDashboardHtml());
+      return;
+    }
+
+    if (!this.#isAuthorized(request)) {
+      writeJson(response, 401, { ok: false, error: "Unauthorized." });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/health") {
+      writeJson(response, 200, this.#healthPayload());
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/events") {
+      this.#openEventStream(request, response, url);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/channels/webhook") {
+      const payload = await this.#runWebhook(await readJsonBody(request));
+      writeJson(response, 200, { ok: true, payload });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/rpc") {
+      const gatewayRequest = parseGatewayRequest(await readJsonBody(request));
+      const gatewayResponse = await this.#handleRpc(gatewayRequest);
+      writeJson(response, gatewayResponse.ok ? 200 : 400, gatewayResponse);
+      return;
+    }
+
+    writeJson(response, 404, { ok: false, error: "Not found." });
+  }
+
+  #handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
+    const url = new URL(request.url ?? "/", "http://dragon.local");
+    if (url.pathname !== "/ws") {
+      rejectWebSocketUpgrade(socket, 404, "Not Found");
+      return;
+    }
+    if (!this.#isAuthorized(request)) {
+      rejectWebSocketUpgrade(socket, 401, "Unauthorized");
+      return;
+    }
+    const key = readSingleHeader(request, "sec-websocket-key");
+    if (!isValidWebSocketUpgrade(request, key)) {
+      rejectWebSocketUpgrade(socket, 400, "Bad Request");
+      return;
+    }
+
+    const protocols = readWebSocketProtocols(request);
+    const selectedProtocol = protocols.includes(WEBSOCKET_PROTOCOL) ? WEBSOCKET_PROTOCOL : undefined;
+    const accept = createHash("sha1")
+      .update(`${key}${WEBSOCKET_GUID}`)
+      .digest("base64");
+    const responseHeaders = [
+      "HTTP/1.1 101 Switching Protocols",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      `Sec-WebSocket-Accept: ${accept}`,
+      ...(selectedProtocol ? [`Sec-WebSocket-Protocol: ${selectedProtocol}`] : []),
+      "",
+      "",
+    ];
+    socket.write(responseHeaders.join("\r\n"));
+
+    const clientId = randomUUID();
+    const client: WebSocketClient = {
+      id: clientId,
+      socket,
+      filters: parseEventStreamFilters(url),
+      heartbeat: setInterval(() => {
+        if (!client.closed) {
+          sendWebSocketFrame(client, 0x9, Buffer.alloc(0));
+        }
+      }, 15_000),
+      buffer: Buffer.alloc(0),
+      closed: false,
+    };
+    this.#webSocketClients.set(clientId, client);
+    sendWebSocketJson(client, {
+      type: "ready",
+      clientId,
+      filters: client.filters,
+      protocolVersion: 1,
+      serverTime: new Date().toISOString(),
+    });
+
+    socket.on("data", chunk => {
+      this.#handleWebSocketData(client, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    socket.on("close", () => {
+      this.#removeWebSocketClient(client.id);
+    });
+    socket.on("error", () => {
+      this.#removeWebSocketClient(client.id);
+    });
+    if (head.length > 0) {
+      this.#handleWebSocketData(client, head);
+    }
+  }
+
+  #handleWebSocketData(client: WebSocketClient, chunk: Buffer): void {
+    if (client.closed) {
+      return;
+    }
+    client.buffer = Buffer.concat([client.buffer, chunk]);
+    if (client.buffer.byteLength > MAX_WEBSOCKET_BUFFER_BYTES) {
+      closeWebSocketClient(client, 1009, "WebSocket buffer limit exceeded.");
+      this.#removeWebSocketClient(client.id);
+      return;
+    }
+
+    let parsed: ParsedWebSocketFrames;
+    try {
+      parsed = parseWebSocketFrames(client.buffer);
+    } catch (error) {
+      closeWebSocketClient(client, 1002, error instanceof Error ? error.message : String(error));
+      this.#removeWebSocketClient(client.id);
+      return;
+    }
+    client.buffer = parsed.remaining;
+
+    for (const frame of parsed.frames) {
+      if (frame.opcode === 0x8) {
+        closeWebSocketClient(client, 1000, "Normal closure.");
+        this.#removeWebSocketClient(client.id);
+        return;
+      }
+      if (frame.opcode === 0x9) {
+        sendWebSocketFrame(client, 0xA, frame.payload);
+        continue;
+      }
+      if (frame.opcode === 0xA) {
+        continue;
+      }
+      if (frame.opcode === 0x1) {
+        this.#handleWebSocketText(client, frame.payload.toString("utf8")).catch(error => {
+          sendWebSocketJson(client, {
+            type: "error",
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+        continue;
+      }
+      closeWebSocketClient(client, 1003, "Unsupported WebSocket frame.");
+      this.#removeWebSocketClient(client.id);
+      return;
+    }
+  }
+
+  async #handleWebSocketText(client: WebSocketClient, text: string): Promise<void> {
+    let request: GatewayRequest;
+    try {
+      request = parseGatewayRequest(JSON.parse(text) as unknown);
+    } catch (error) {
+      sendWebSocketJson(client, {
+        type: "error",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    const response = await this.#handleRpc(request);
+    if (!sendWebSocketJson(client, response)) {
+      sendWebSocketJson(client, {
+        type: "response",
+        id: request.id,
+        ok: false,
+        error: `WebSocket response exceeds ${MAX_WEBSOCKET_MESSAGE_BYTES} bytes.`,
+      });
+    }
+  }
+
+  #isAuthorized(request: IncomingMessage): boolean {
+    const config = this.#config;
+    if (!config || config.authMode !== "shared-secret") {
+      return true;
+    }
+
+    const authorization = request.headers.authorization;
+    const bearer = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : undefined;
+    const headerSecret = request.headers["x-dragon-secret"];
+    return bearer === config.sharedSecret || headerSecret === config.sharedSecret;
+  }
+
+  async #handleRpc(request: GatewayRequest): Promise<GatewayResponse> {
+    try {
+      if (request.type === "health") {
+        return { type: "response", id: request.id, ok: true, payload: this.#healthPayload() };
+      }
+      if (request.type === "connect") {
+        return {
+          type: "response",
+          id: request.id,
+          ok: true,
+          payload: {
+            protocolVersion: 1,
+            serverTime: new Date().toISOString(),
+            capabilities: [
+              "health",
+              "connect",
+              "agent.run",
+              "events.in-response",
+              "events.sse",
+              "events.websocket",
+              "channels.webhook",
+              "run.status",
+              "run.cancel",
+              "runs.list",
+              "providers.list",
+              "plugins.list",
+              "tools.catalog",
+              "tool.invoke",
+              ...(this.#toolRegistry.has("memory_candidates_list") ? ["memory.candidates.list"] : []),
+              ...(this.#toolRegistry.has("memory_candidate_promote") ? ["memory.candidate.promote"] : []),
+              ...(this.#toolRegistry.has("memory_candidate_reject") ? ["memory.candidate.reject"] : []),
+              ...(this.#trajectoryStore ? ["trajectory.list", "trajectory.get"] : []),
+              ...(this.#cronStore ? ["cron.jobs.list", "cron.job.upsert", "cron.job.remove"] : []),
+              ...(this.#cronRunner ? ["cron.tick"] : []),
+            ],
+          },
+        };
+      }
+      if (request.type === "run.status") {
+        return { type: "response", id: request.id, ok: true, payload: this.#getRunStatus(request.params.runId) };
+      }
+      if (request.type === "run.cancel") {
+        return { type: "response", id: request.id, ok: true, payload: this.#cancelRun(request.params.runId, request.params.reason) };
+      }
+      if (request.type === "runs.list") {
+        return { type: "response", id: request.id, ok: true, payload: this.#listRuns(request.params) };
+      }
+      if (request.type === "providers.list") {
+        return { type: "response", id: request.id, ok: true, payload: this.#listProviders() };
+      }
+      if (request.type === "plugins.list") {
+        return { type: "response", id: request.id, ok: true, payload: this.#listPlugins() };
+      }
+      if (request.type === "tools.catalog") {
+        return { type: "response", id: request.id, ok: true, payload: this.#listTools(request.params) };
+      }
+      if (request.type === "tool.invoke") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#invokeTool(request.params) };
+      }
+      if (request.type === "memory.candidates.list") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#listMemoryCandidates(request.params) };
+      }
+      if (request.type === "memory.candidate.promote") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#promoteMemoryCandidate(request.params) };
+      }
+      if (request.type === "memory.candidate.reject") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#rejectMemoryCandidate(request.params) };
+      }
+      if (request.type === "trajectory.list") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#listTrajectories(request.params) };
+      }
+      if (request.type === "trajectory.get") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#getTrajectory(request.params) };
+      }
+      if (request.type === "cron.jobs.list") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#listCronJobs() };
+      }
+      if (request.type === "cron.job.upsert") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#upsertCronJob(request.params) };
+      }
+      if (request.type === "cron.job.remove") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#removeCronJob(request.params) };
+      }
+      if (request.type === "cron.tick") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#tickCron() };
+      }
+      const payload = await this.#runAgent(request.params);
+      return { type: "response", id: request.id, ok: true, payload };
+    } catch (error) {
+      return {
+        type: "response",
+        id: request.id,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async #runAgent(params: GatewayAgentParams): Promise<{ result: unknown; events: DragonEvent[] }> {
+    const input = toTurnInput(params);
+    return await this.#runInLane(input.sessionId, async () => {
+      const events: DragonEvent[] = [];
+      const controller = new AbortController();
+      const unsubscribe = this.#runtime.subscribe(event => {
+        events.push(event);
+      });
+      let untrackRun: () => void = () => {};
+      try {
+        let runId: string | undefined;
+        untrackRun = this.#runtime.subscribe(event => {
+          if (event.type === "lifecycle" && event.phase === "start") {
+            runId = event.runId;
+            this.#registerRunStart(event.runId, input, controller);
+            untrackRun();
+          }
+        });
+        try {
+          const result = await this.#runtime.runTurn({ ...input, signal: controller.signal });
+          this.#completeRun(result.runId, result);
+          this.#runSessions.delete(result.runId);
+          if (runId !== undefined && runId !== result.runId) {
+            this.#runSessions.delete(runId);
+          }
+          return {
+            result,
+            events: events.filter(event => event.runId === result.runId),
+          };
+        } catch (error) {
+          if (runId !== undefined) {
+            this.#failRun(runId, error, controller.signal.aborted ? "cancelled" : "error");
+            this.#runSessions.delete(runId);
+          }
+          throw error;
+        }
+      } finally {
+        untrackRun();
+        unsubscribe();
+      }
+    });
+  }
+
+  async #runWebhook(value: unknown): Promise<{ channel: string; result: unknown; events: DragonEvent[] }> {
+    const webhook = parseGatewayWebhookParams(value);
+    const payload = await this.#runAgent(webhook);
+    return {
+      channel: webhook.channel,
+      ...payload,
+    };
+  }
+
+  #registerRunStart(runId: string, input: DragonTurnInput, controller: AbortController): void {
+    const now = new Date().toISOString();
+    this.#runSessions.set(runId, input.sessionId);
+    this.#runControllers.set(runId, controller);
+    this.#runs.set(runId, {
+      runId,
+      sessionId: input.sessionId,
+      state: "running",
+      createdAt: now,
+      updatedAt: now,
+      startedAt: now,
+      source: input.source,
+      messagePreview: previewMessage(input.message),
+    });
+    this.#pruneRuns();
+  }
+
+  #completeRun(runId: string, result: DragonTurnResult): void {
+    const now = new Date().toISOString();
+    const existing = this.#runs.get(runId);
+    const state = resultStatusToRunState(result.status);
+    const record: GatewayRunRecord = {
+      runId,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      completedAt: now,
+      state,
+      ...(result.error !== undefined ? { error: result.error } : {}),
+      result: summarizeTurnResult(result),
+    };
+    if (existing?.sessionId !== undefined) {
+      record.sessionId = existing.sessionId;
+    }
+    if (existing?.startedAt !== undefined) {
+      record.startedAt = existing.startedAt;
+    }
+    if (existing?.source !== undefined) {
+      record.source = existing.source;
+    }
+    if (existing?.messagePreview !== undefined) {
+      record.messagePreview = existing.messagePreview;
+    }
+    this.#runs.set(runId, record);
+    this.#runControllers.delete(runId);
+    this.#pruneRuns();
+  }
+
+  #failRun(runId: string, error: unknown, state: Extract<GatewayRunState, "cancelled" | "error">): void {
+    const now = new Date().toISOString();
+    const existing = this.#runs.get(runId);
+    const message = error instanceof Error ? error.message : String(error);
+    const record: GatewayRunRecord = {
+      runId,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      completedAt: now,
+      state,
+      error: message,
+    };
+    if (existing?.sessionId !== undefined) {
+      record.sessionId = existing.sessionId;
+    }
+    if (existing?.startedAt !== undefined) {
+      record.startedAt = existing.startedAt;
+    }
+    if (existing?.source !== undefined) {
+      record.source = existing.source;
+    }
+    if (existing?.messagePreview !== undefined) {
+      record.messagePreview = existing.messagePreview;
+    }
+    this.#runs.set(runId, record);
+    this.#runControllers.delete(runId);
+    this.#pruneRuns();
+  }
+
+  #getRunStatus(runId: string): GatewayRunRecord {
+    const record = this.#runs.get(runId);
+    if (!record) {
+      throw new Error(`Unknown run: ${runId}`);
+    }
+    return record;
+  }
+
+  #cancelRun(runId: string, reason: string | undefined): { cancelled: boolean; run: GatewayRunRecord } {
+    const record = this.#runs.get(runId);
+    if (!record) {
+      throw new Error(`Unknown run: ${runId}`);
+    }
+    const controller = this.#runControllers.get(runId);
+    if (!controller) {
+      return { cancelled: false, run: record };
+    }
+
+    controller.abort(reason ?? "Cancelled through gateway RPC.");
+    const updated: GatewayRunRecord = {
+      ...record,
+      state: "cancelling",
+      updatedAt: new Date().toISOString(),
+    };
+    this.#runs.set(runId, updated);
+    return { cancelled: true, run: updated };
+  }
+
+  #listRuns(params: { sessionId?: string; limit?: number } | undefined): { runs: GatewayRunRecord[] } {
+    const limit = Math.min(Math.max(1, Math.floor(params?.limit ?? 50)), MAX_RUN_RECORDS);
+    const runs = [...this.#runs.values()]
+      .filter(run => params?.sessionId === undefined || run.sessionId === params.sessionId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, limit);
+    return { runs };
+  }
+
+  async #listTrajectories(params: GatewayTrajectoryListParams): Promise<unknown> {
+    if (!this.#trajectoryStore) {
+      throw new Error("Trajectory store is not configured.");
+    }
+    return await this.#trajectoryStore.list({
+      sessionId: params.sessionId,
+      ...(params.status !== undefined ? { status: params.status } : {}),
+      ...(params.dateFrom !== undefined ? { dateFrom: params.dateFrom } : {}),
+      ...(params.dateTo !== undefined ? { dateTo: params.dateTo } : {}),
+      ...(params.limit !== undefined ? { limit: params.limit } : {}),
+    });
+  }
+
+  async #getTrajectory(params: GatewayTrajectoryGetParams): Promise<{ record: DragonTrajectoryRecord; eventsTruncated: boolean }> {
+    if (!this.#trajectoryStore) {
+      throw new Error("Trajectory store is not configured.");
+    }
+    const record = await this.#trajectoryStore.get(params.runId, { sessionId: params.sessionId });
+    if (!record) {
+      throw new Error(`Unknown trajectory: ${params.runId}`);
+    }
+    const maxEvents = Math.min(Math.max(1, Math.floor(params.maxEvents ?? 200)), 1000);
+    const eventsTruncated = record.events.length > maxEvents;
+    return {
+      record: eventsTruncated ? { ...record, events: record.events.slice(-maxEvents) } : record,
+      eventsTruncated,
+    };
+  }
+
+  async #listCronJobs(): Promise<{ jobs: unknown[] }> {
+    if (!this.#cronStore) {
+      throw new Error("Cron store is not configured.");
+    }
+    const jobs = await this.#cronStore.list();
+    return {
+      jobs: jobs.sort((left, right) => left.nextRunAt.localeCompare(right.nextRunAt)),
+    };
+  }
+
+  async #upsertCronJob(params: GatewayCronJobUpsertParams): Promise<{ job: unknown }> {
+    if (!this.#cronStore) {
+      throw new Error("Cron store is not configured.");
+    }
+    const job = await this.#cronStore.upsert(params);
+    return { job };
+  }
+
+  async #removeCronJob(params: GatewayCronJobRemoveParams): Promise<{ removed: boolean }> {
+    if (!this.#cronStore) {
+      throw new Error("Cron store is not configured.");
+    }
+    return { removed: await this.#cronStore.remove(params.id) };
+  }
+
+  async #tickCron(): Promise<unknown> {
+    if (!this.#cronRunner) {
+      throw new Error("Cron runner is not configured.");
+    }
+    return await this.#cronRunner.tick();
+  }
+
+  #pruneRuns(): void {
+    if (this.#runs.size <= MAX_RUN_RECORDS) {
+      return;
+    }
+    for (const [runId, run] of this.#runs) {
+      if (this.#runs.size <= MAX_RUN_RECORDS) {
+        return;
+      }
+      if (run.state === "running" || run.state === "cancelling") {
+        continue;
+      }
+      this.#runs.delete(runId);
+    }
+  }
+
+  #openEventStream(
+    request: IncomingMessage,
+    response: ServerResponse,
+    url: URL,
+  ): void {
+    const filters = parseEventStreamFilters(url);
+    const clientId = randomUUID();
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+    });
+    response.write(": connected\n\n");
+    writeSse(response, "ready", {
+      type: "ready",
+      clientId,
+      filters,
+      serverTime: new Date().toISOString(),
+    });
+
+    const heartbeat = setInterval(() => {
+      if (!response.destroyed) {
+        response.write(": heartbeat\n\n");
+      }
+    }, 15_000);
+
+    const client: EventStreamClient = {
+      id: clientId,
+      response,
+      filters,
+      heartbeat,
+    };
+    this.#eventClients.set(clientId, client);
+
+    request.on("close", () => {
+      this.#removeEventStreamClient(clientId);
+    });
+  }
+
+  #broadcastRuntimeEvent(event: DragonEvent): void {
+    if (this.#eventClients.size === 0 && this.#webSocketClients.size === 0) {
+      return;
+    }
+    const sessionId = this.#runSessions.get(event.runId) ?? readEventSessionId(event);
+    const envelope: GatewayEventEnvelope = {
+      type: "event",
+      sequence: ++this.#eventSequence,
+      timestamp: new Date().toISOString(),
+      event,
+    };
+    if (sessionId !== undefined) {
+      envelope.sessionId = sessionId;
+    }
+
+    for (const client of this.#eventClients.values()) {
+      if (!matchesEventFilters(envelope, client.filters)) {
+        continue;
+      }
+      try {
+        writeSse(client.response, "dragon.event", envelope);
+      } catch {
+        this.#removeEventStreamClient(client.id);
+      }
+    }
+    for (const client of this.#webSocketClients.values()) {
+      if (!matchesEventFilters(envelope, client.filters)) {
+        continue;
+      }
+      if (!sendWebSocketJson(client, envelope)) {
+        sendWebSocketJson(client, {
+          type: "error",
+          error: `Gateway event exceeds ${MAX_WEBSOCKET_MESSAGE_BYTES} bytes and was skipped.`,
+        });
+      }
+    }
+  }
+
+  #removeEventStreamClient(clientId: string): void {
+    const client = this.#eventClients.get(clientId);
+    if (!client) {
+      return;
+    }
+    clearInterval(client.heartbeat);
+    this.#eventClients.delete(clientId);
+  }
+
+  #closeEventStreams(): void {
+    for (const client of this.#eventClients.values()) {
+      clearInterval(client.heartbeat);
+      if (!client.response.destroyed) {
+        writeSse(client.response, "close", {
+          type: "close",
+          reason: "gateway_stopped",
+          serverTime: new Date().toISOString(),
+        });
+        client.response.end();
+      }
+    }
+    this.#eventClients.clear();
+  }
+
+  #removeWebSocketClient(clientId: string): void {
+    const client = this.#webSocketClients.get(clientId);
+    if (!client) {
+      return;
+    }
+    clearInterval(client.heartbeat);
+    client.closed = true;
+    this.#webSocketClients.delete(clientId);
+  }
+
+  #closeWebSocketClients(): void {
+    for (const client of this.#webSocketClients.values()) {
+      clearInterval(client.heartbeat);
+      closeWebSocketClient(client, 1001, "Gateway stopped.");
+    }
+    this.#webSocketClients.clear();
+  }
+
+  async #runInLane<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.#lanes.get(sessionId) ?? Promise.resolve();
+    let releaseCurrent: () => void = () => {};
+    const current = new Promise<void>(resolve => {
+      releaseCurrent = resolve;
+    });
+    const next = previous.catch(() => undefined).then(() => current);
+    this.#lanes.set(sessionId, next);
+
+    await previous.catch(() => undefined);
+    try {
+      return await task();
+    } finally {
+      releaseCurrent();
+      if (this.#lanes.get(sessionId) === next) {
+        this.#lanes.delete(sessionId);
+      }
+    }
+  }
+
+  #healthPayload(): Record<string, unknown> {
+    const startedAt = this.#startedAt;
+    return {
+      ok: true,
+      name: this.#name,
+      startedAt,
+      uptimeMs: startedAt ? Date.now() - Date.parse(startedAt) : 0,
+      address: this.#address,
+      pluginCount: this.#plugins.length,
+      providerCount: this.#providers.length,
+    };
+  }
+
+  #listProviders(): { providers: readonly GatewayProviderSummary[] } {
+    return {
+      providers: this.#providers.map(provider => ({ ...provider })),
+    };
+  }
+
+  #listPlugins(): { plugins: readonly GatewayPluginSummary[] } {
+    return {
+      plugins: this.#plugins.map(plugin => {
+        const summary: GatewayPluginSummary = {
+          ...plugin,
+          tools: plugin.tools.map(tool => {
+            const toolSummary: GatewayPluginToolSummary = {
+              name: tool.name,
+            };
+            if (tool.description !== undefined) {
+              toolSummary.description = tool.description;
+            }
+            if (tool.permission !== undefined) {
+              toolSummary.permission = tool.permission;
+            }
+            if (tool.capabilities !== undefined) {
+              toolSummary.capabilities = [...tool.capabilities];
+            }
+            return toolSummary;
+          }),
+          providers: plugin.providers.map(provider => ({ ...provider })),
+        };
+        if (plugin.memoryBackends !== undefined) {
+          summary.memoryBackends = plugin.memoryBackends.map(backend => ({ ...backend }));
+        }
+        if (plugin.lifecycleHooks !== undefined) {
+          summary.lifecycleHooks = [...plugin.lifecycleHooks];
+        }
+        return summary;
+      }),
+    };
+  }
+
+  #listTools(params: { includeSchemas?: boolean } | undefined): { tools: GatewayToolSummary[] } {
+    const includeSchemas = params?.includeSchemas === true;
+    return {
+      tools: this.#toolRegistry.list().map(tool => {
+        const summary: GatewayToolSummary = {
+          name: tool.name,
+          description: tool.description,
+          directInvokeAllowed: isDirectToolCandidate(tool, this.#directToolNames),
+        };
+        if (tool.capabilities !== undefined) {
+          summary.capabilities = [...tool.capabilities];
+        }
+        if (tool.permission !== undefined) {
+          summary.permission = tool.permission;
+        }
+        if (includeSchemas) {
+          summary.inputSchema = tool.inputSchema;
+        }
+        return summary;
+      }),
+    };
+  }
+
+  async #invokeTool(params: GatewayToolInvokeParams): Promise<unknown> {
+    const tool = this.#toolRegistry.get(params.toolName);
+    if (!tool) {
+      throw new Error(`Unknown tool: ${params.toolName}`);
+    }
+    if (!isDirectToolCandidate(tool, this.#directToolNames)) {
+      throw new Error(`Tool is not available for direct gateway invocation: ${tool.name}`);
+    }
+    const invocation: ToolInvocation = {
+      id: randomUUID(),
+      name: tool.name,
+      input: params.input ?? {},
+      sessionId: params.sessionId ?? DEFAULT_TOOL_SESSION_ID,
+    };
+    if (params.workspace !== undefined) {
+      invocation.workspace = params.workspace;
+    }
+    if (params.metadata !== undefined) {
+      invocation.metadata = params.metadata;
+    }
+    const permission = this.#permissionEngine.decide(tool, invocation);
+    if (permission.decision !== "allow") {
+      throw new Error(`Tool permission ${permission.decision}: ${permission.reason}`);
+    }
+    const result = await tool.invoke(invocation);
+    return sanitizeDirectToolResult(result, permission);
+  }
+
+  async #listMemoryCandidates(params: GatewayMemoryCandidateListParams | undefined): Promise<unknown> {
+    const payload = await this.#invokeMemoryCandidateTool("memory_candidates_list", params ?? {});
+    if (!isRecord(payload)) {
+      return payload;
+    }
+    return {
+      ...payload,
+      review: this.#memoryCandidateReviewPermissions(),
+    };
+  }
+
+  async #promoteMemoryCandidate(params: GatewayMemoryCandidatePromoteParams): Promise<unknown> {
+    return await this.#invokeMemoryCandidateTool("memory_candidate_promote", params);
+  }
+
+  async #rejectMemoryCandidate(params: GatewayMemoryCandidateRejectParams): Promise<unknown> {
+    return await this.#invokeMemoryCandidateTool("memory_candidate_reject", params);
+  }
+
+  async #invokeMemoryCandidateTool(toolName: string, input: unknown): Promise<unknown> {
+    const tool = this.#toolRegistry.get(toolName);
+    if (!tool) {
+      throw new Error(`Memory candidate tool is unavailable: ${toolName}`);
+    }
+    const invocation: ToolInvocation = {
+      id: randomUUID(),
+      name: tool.name,
+      input,
+      sessionId: DEFAULT_MEMORY_REVIEW_SESSION_ID,
+    };
+    const permission = this.#permissionEngine.decide(tool, invocation);
+    if (permission.decision !== "allow") {
+      throw new Error(`Tool permission ${permission.decision}: ${permission.reason}`);
+    }
+    const result = await tool.invoke(invocation);
+    return sanitizeToolOutput(result, permission);
+  }
+
+  #memoryCandidateReviewPermissions(): { canPromote: boolean; canReject: boolean } {
+    return {
+      canPromote: this.#canInvokeMemoryCandidateTool("memory_candidate_promote"),
+      canReject: this.#canInvokeMemoryCandidateTool("memory_candidate_reject"),
+    };
+  }
+
+  #canInvokeMemoryCandidateTool(toolName: string): boolean {
+    const tool = this.#toolRegistry.get(toolName);
+    if (!tool) {
+      return false;
+    }
+    const permission = this.#permissionEngine.decide(tool, {
+      id: randomUUID(),
+      name: tool.name,
+      input: { id: "permission-probe" },
+      sessionId: DEFAULT_MEMORY_REVIEW_SESSION_ID,
+    });
+    return permission.decision === "allow";
+  }
+}
+
+function errorToStatusCode(error: unknown): number {
+  if (error instanceof GatewayHttpError) {
+    return error.statusCode;
+  }
+  if (error instanceof SyntaxError) {
+    return 400;
+  }
+  return 500;
+}
+
+function normalizeConfig(config: GatewayConfig): NormalizedGatewayConfig {
+  const authMode = config.authMode ?? (config.sharedSecret ? "shared-secret" : "none");
+  if (authMode === "shared-secret" && !config.sharedSecret) {
+    throw new Error("Gateway shared-secret auth requires sharedSecret.");
+  }
+  const normalized: NormalizedGatewayConfig = {
+    host: config.host ?? DEFAULT_HOST,
+    port: normalizePort(config.port),
+    authMode,
+  };
+  if (config.sharedSecret !== undefined) {
+    normalized.sharedSecret = config.sharedSecret;
+  }
+  return normalized;
+}
+
+function normalizePort(port: number | undefined): number {
+  if (port === undefined) {
+    return DEFAULT_PORT;
+  }
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    throw new Error(`Invalid gateway port: ${port}`);
+  }
+  return port;
+}
+
+function parseGatewayRequest(value: unknown): GatewayRequest {
+  if (!isRecord(value) || typeof value.type !== "string" || typeof value.id !== "string" || !value.id.trim()) {
+    badRequest("Gateway RPC request requires type and id.");
+  }
+  if (value.type === "health") {
+    return { type: "health", id: value.id };
+  }
+  if (value.type === "connect") {
+    return {
+      type: "connect",
+      id: value.id,
+      ...(isRecord(value.params) ? { params: value.params } : {}),
+    };
+  }
+  if (value.type === "agent") {
+    return {
+      type: "agent",
+      id: value.id,
+      params: parseGatewayAgentParams(value.params),
+    };
+  }
+  if (value.type === "run.status") {
+    return {
+      type: "run.status",
+      id: value.id,
+      params: parseRunStatusParams(value.params),
+    };
+  }
+  if (value.type === "run.cancel") {
+    return {
+      type: "run.cancel",
+      id: value.id,
+      params: parseRunCancelParams(value.params),
+    };
+  }
+  if (value.type === "runs.list") {
+    const params = parseRunsListParams(value.params);
+    const request: GatewayRequest = {
+      type: "runs.list",
+      id: value.id,
+    };
+    if (params !== undefined) {
+      request.params = params;
+    }
+    return request;
+  }
+  if (value.type === "providers.list") {
+    return { type: "providers.list", id: value.id };
+  }
+  if (value.type === "plugins.list") {
+    return { type: "plugins.list", id: value.id };
+  }
+  if (value.type === "tools.catalog") {
+    const params = parseToolsCatalogParams(value.params);
+    const request: GatewayRequest = {
+      type: "tools.catalog",
+      id: value.id,
+    };
+    if (params !== undefined) {
+      request.params = params;
+    }
+    return request;
+  }
+  if (value.type === "tool.invoke") {
+    return {
+      type: "tool.invoke",
+      id: value.id,
+      params: parseToolInvokeParams(value.params),
+    };
+  }
+  if (value.type === "memory.candidates.list") {
+    const params = parseMemoryCandidateListParams(value.params);
+    const request: GatewayRequest = {
+      type: "memory.candidates.list",
+      id: value.id,
+    };
+    if (params !== undefined) {
+      request.params = params;
+    }
+    return request;
+  }
+  if (value.type === "memory.candidate.promote") {
+    return {
+      type: "memory.candidate.promote",
+      id: value.id,
+      params: parseMemoryCandidatePromoteParams(value.params),
+    };
+  }
+  if (value.type === "memory.candidate.reject") {
+    return {
+      type: "memory.candidate.reject",
+      id: value.id,
+      params: parseMemoryCandidateRejectParams(value.params),
+    };
+  }
+  if (value.type === "trajectory.list") {
+    return {
+      type: "trajectory.list",
+      id: value.id,
+      params: parseTrajectoryListParams(value.params),
+    };
+  }
+  if (value.type === "trajectory.get") {
+    return {
+      type: "trajectory.get",
+      id: value.id,
+      params: parseTrajectoryGetParams(value.params),
+    };
+  }
+  if (value.type === "cron.jobs.list") {
+    return { type: "cron.jobs.list", id: value.id };
+  }
+  if (value.type === "cron.job.upsert") {
+    return {
+      type: "cron.job.upsert",
+      id: value.id,
+      params: parseCronJobUpsertParams(value.params),
+    };
+  }
+  if (value.type === "cron.job.remove") {
+    return {
+      type: "cron.job.remove",
+      id: value.id,
+      params: parseCronJobRemoveParams(value.params),
+    };
+  }
+  if (value.type === "cron.tick") {
+    return { type: "cron.tick", id: value.id };
+  }
+  badRequest(`Unknown Gateway RPC type: ${value.type}`);
+}
+
+function parseRunStatusParams(value: unknown): { runId: string } {
+  if (!isRecord(value) || typeof value.runId !== "string" || !value.runId.trim()) {
+    badRequest("run.status requires params.runId.");
+  }
+  return { runId: value.runId };
+}
+
+function parseRunCancelParams(value: unknown): { runId: string; reason?: string } {
+  if (!isRecord(value) || typeof value.runId !== "string" || !value.runId.trim()) {
+    badRequest("run.cancel requires params.runId.");
+  }
+  return {
+    runId: value.runId,
+    ...(typeof value.reason === "string" && value.reason.trim() ? { reason: value.reason } : {}),
+  };
+}
+
+function parseRunsListParams(value: unknown): { sessionId?: string; limit?: number } | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    badRequest("runs.list params must be an object.");
+  }
+  return {
+    ...(typeof value.sessionId === "string" && value.sessionId.trim() ? { sessionId: value.sessionId } : {}),
+    ...(typeof value.limit === "number" ? { limit: value.limit } : {}),
+  };
+}
+
+function parseToolsCatalogParams(value: unknown): { includeSchemas?: boolean } | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    badRequest("tools.catalog params must be an object.");
+  }
+  return {
+    ...(typeof value.includeSchemas === "boolean" ? { includeSchemas: value.includeSchemas } : {}),
+  };
+}
+
+function parseToolInvokeParams(value: unknown): GatewayToolInvokeParams {
+  if (!isRecord(value)) {
+    badRequest("tool.invoke params must be an object.");
+  }
+  if (typeof value.toolName !== "string" || !value.toolName.trim()) {
+    badRequest("tool.invoke requires params.toolName.");
+  }
+  const params: GatewayToolInvokeParams = {
+    toolName: normalizeShortText(value.toolName, "toolName", 120),
+    input: value.input ?? {},
+  };
+  if (typeof value.sessionId === "string" && value.sessionId.trim()) {
+    params.sessionId = normalizeShortText(value.sessionId, "sessionId", 200);
+  }
+  if (typeof value.workspace === "string" && value.workspace.trim()) {
+    params.workspace = normalizeShortText(value.workspace, "workspace", 4000);
+  }
+  if (value.metadata !== undefined) {
+    if (!isRecord(value.metadata)) {
+      badRequest("tool.invoke metadata must be an object.");
+    }
+    params.metadata = value.metadata;
+  }
+  return params;
+}
+
+function parseMemoryCandidateListParams(value: unknown): GatewayMemoryCandidateListParams | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    badRequest("memory.candidates.list params must be an object.");
+  }
+  const params: GatewayMemoryCandidateListParams = {};
+  if (value.status !== undefined) {
+    if (!isMemoryCandidateStatusFilter(value.status)) {
+      badRequest("memory.candidates.list status is invalid.");
+    }
+    params.status = value.status;
+  }
+  if (value.dateFrom !== undefined) {
+    if (typeof value.dateFrom !== "string" || !value.dateFrom.trim()) {
+      badRequest("memory.candidates.list dateFrom must use YYYY-MM-DD.");
+    }
+    params.dateFrom = normalizeDate(value.dateFrom, "dateFrom");
+  }
+  if (value.dateTo !== undefined) {
+    if (typeof value.dateTo !== "string" || !value.dateTo.trim()) {
+      badRequest("memory.candidates.list dateTo must use YYYY-MM-DD.");
+    }
+    params.dateTo = normalizeDate(value.dateTo, "dateTo");
+  }
+  if (params.dateFrom !== undefined && params.dateTo !== undefined && params.dateFrom > params.dateTo) {
+    badRequest("memory.candidates.list dateFrom must be before or equal to dateTo.");
+  }
+  if (value.limit !== undefined) {
+    if (typeof value.limit !== "number" || !Number.isFinite(value.limit)) {
+      badRequest("memory.candidates.list limit must be a number.");
+    }
+    params.limit = Math.min(Math.max(1, Math.floor(value.limit)), 100);
+  }
+  return params;
+}
+
+function parseMemoryCandidatePromoteParams(value: unknown): GatewayMemoryCandidatePromoteParams {
+  if (!isRecord(value)) {
+    badRequest("memory.candidate.promote params must be an object.");
+  }
+  if (typeof value.id !== "string" || !value.id.trim()) {
+    badRequest("memory.candidate.promote requires params.id.");
+  }
+  const params: GatewayMemoryCandidatePromoteParams = {
+    id: normalizeShortText(value.id, "id", 200),
+  };
+  if (value.scope !== undefined) {
+    if (!isMemoryScope(value.scope)) {
+      badRequest("memory.candidate.promote scope is invalid.");
+    }
+    params.scope = value.scope;
+  }
+  if (value.content !== undefined) {
+    if (typeof value.content !== "string" || !value.content.trim()) {
+      badRequest("memory.candidate.promote content must be a non-empty string.");
+    }
+    params.content = normalizeBoundedText(value.content, "content", 4000);
+  }
+  if (value.source !== undefined) {
+    if (typeof value.source !== "string" || !value.source.trim()) {
+      badRequest("memory.candidate.promote source must be a non-empty string.");
+    }
+    params.source = normalizeShortText(value.source, "source", 200);
+  }
+  if (value.metadata !== undefined) {
+    if (!isRecord(value.metadata)) {
+      badRequest("memory.candidate.promote metadata must be an object.");
+    }
+    params.metadata = value.metadata;
+  }
+  return params;
+}
+
+function parseMemoryCandidateRejectParams(value: unknown): GatewayMemoryCandidateRejectParams {
+  if (!isRecord(value)) {
+    badRequest("memory.candidate.reject params must be an object.");
+  }
+  if (typeof value.id !== "string" || !value.id.trim()) {
+    badRequest("memory.candidate.reject requires params.id.");
+  }
+  const params: GatewayMemoryCandidateRejectParams = {
+    id: normalizeShortText(value.id, "id", 200),
+  };
+  if (value.reason !== undefined) {
+    if (typeof value.reason !== "string" || !value.reason.trim()) {
+      badRequest("memory.candidate.reject reason must be a non-empty string.");
+    }
+    params.reason = normalizeBoundedText(value.reason, "reason", 1000);
+  }
+  return params;
+}
+
+function parseTrajectoryListParams(value: unknown): GatewayTrajectoryListParams {
+  if (!isRecord(value)) {
+    badRequest("trajectory.list params must be an object.");
+  }
+  if (typeof value.sessionId !== "string" || !value.sessionId.trim()) {
+    badRequest("trajectory.list requires params.sessionId.");
+  }
+  const params: GatewayTrajectoryListParams = {
+    sessionId: normalizeShortText(value.sessionId, "sessionId", 200),
+  };
+  if (value.status !== undefined) {
+    if (!isTurnStatus(value.status)) {
+      badRequest("trajectory.list status is invalid.");
+    }
+    params.status = value.status;
+  }
+  if (value.dateFrom !== undefined) {
+    if (typeof value.dateFrom !== "string" || !value.dateFrom.trim()) {
+      badRequest("trajectory.list dateFrom must use YYYY-MM-DD.");
+    }
+    params.dateFrom = normalizeDate(value.dateFrom, "dateFrom");
+  }
+  if (value.dateTo !== undefined) {
+    if (typeof value.dateTo !== "string" || !value.dateTo.trim()) {
+      badRequest("trajectory.list dateTo must use YYYY-MM-DD.");
+    }
+    params.dateTo = normalizeDate(value.dateTo, "dateTo");
+  }
+  if (params.dateFrom !== undefined && params.dateTo !== undefined && params.dateFrom > params.dateTo) {
+    badRequest("trajectory.list dateFrom must be before or equal to dateTo.");
+  }
+  if (value.limit !== undefined) {
+    if (typeof value.limit !== "number" || !Number.isFinite(value.limit)) {
+      badRequest("trajectory.list limit must be a number.");
+    }
+    params.limit = Math.min(Math.max(1, Math.floor(value.limit)), 100);
+  }
+  return params;
+}
+
+function parseTrajectoryGetParams(value: unknown): GatewayTrajectoryGetParams {
+  if (!isRecord(value)) {
+    badRequest("trajectory.get params must be an object.");
+  }
+  if (typeof value.sessionId !== "string" || !value.sessionId.trim()) {
+    badRequest("trajectory.get requires params.sessionId.");
+  }
+  if (typeof value.runId !== "string" || !value.runId.trim()) {
+    badRequest("trajectory.get requires params.runId.");
+  }
+  const params: GatewayTrajectoryGetParams = {
+    sessionId: normalizeShortText(value.sessionId, "sessionId", 200),
+    runId: normalizeShortText(value.runId, "runId", 200),
+  };
+  if (value.maxEvents !== undefined) {
+    if (typeof value.maxEvents !== "number" || !Number.isFinite(value.maxEvents)) {
+      badRequest("trajectory.get maxEvents must be a number.");
+    }
+    params.maxEvents = Math.min(Math.max(1, Math.floor(value.maxEvents)), 1000);
+  }
+  return params;
+}
+
+function parseCronJobUpsertParams(value: unknown): GatewayCronJobUpsertParams {
+  if (!isRecord(value)) {
+    badRequest("cron.job.upsert params must be an object.");
+  }
+  if (typeof value.id !== "string" || !value.id.trim()) {
+    badRequest("cron.job.upsert requires params.id.");
+  }
+  if (typeof value.sessionId !== "string" || !value.sessionId.trim()) {
+    badRequest("cron.job.upsert requires params.sessionId.");
+  }
+  if (typeof value.message !== "string" || !value.message.trim()) {
+    badRequest("cron.job.upsert requires params.message.");
+  }
+  if (typeof value.schedule !== "string" || !value.schedule.trim()) {
+    badRequest("cron.job.upsert requires params.schedule.");
+  }
+  const params: GatewayCronJobUpsertParams = {
+    id: normalizeShortText(value.id, "id", 200),
+    sessionId: normalizeShortText(value.sessionId, "sessionId", 200),
+    message: normalizeBoundedText(value.message, "message", 16_000),
+    schedule: normalizeShortText(value.schedule, "schedule", 200),
+  };
+  if (typeof value.enabled === "boolean") {
+    params.enabled = value.enabled;
+  }
+  if (typeof value.workspace === "string" && value.workspace.trim()) {
+    params.workspace = normalizeShortText(value.workspace, "workspace", 4000);
+  }
+  if (typeof value.model === "string" && value.model.trim()) {
+    params.model = normalizeShortText(value.model, "model", 200);
+  }
+  if (typeof value.nextRunAt === "string" && value.nextRunAt.trim()) {
+    params.nextRunAt = normalizeIsoTimestamp(value.nextRunAt, "nextRunAt");
+  }
+  if (value.metadata !== undefined) {
+    if (!isRecord(value.metadata)) {
+      badRequest("cron.job.upsert metadata must be an object.");
+    }
+    params.metadata = value.metadata;
+  }
+  return params;
+}
+
+function parseCronJobRemoveParams(value: unknown): GatewayCronJobRemoveParams {
+  if (!isRecord(value) || typeof value.id !== "string" || !value.id.trim()) {
+    badRequest("cron.job.remove requires params.id.");
+  }
+  return { id: normalizeShortText(value.id, "id", 200) };
+}
+
+function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
+  if (!isRecord(value)) {
+    badRequest("Gateway agent request requires params.");
+  }
+  if (typeof value.sessionId !== "string" || !value.sessionId.trim()) {
+    badRequest("Gateway agent request requires non-empty sessionId.");
+  }
+  if (typeof value.message !== "string" || !value.message.trim()) {
+    badRequest("Gateway agent request requires non-empty message.");
+  }
+  const params: GatewayAgentParams = {
+    sessionId: value.sessionId,
+    message: value.message,
+  };
+  if (value.source !== undefined) {
+    if (!isDragonSource(value.source)) {
+      badRequest(`Invalid gateway agent source: ${String(value.source)}`);
+    }
+    params.source = value.source;
+  }
+  if (typeof value.workspace === "string") {
+    params.workspace = value.workspace;
+  }
+  if (typeof value.model === "string") {
+    params.model = value.model;
+  }
+  if (value.thinking !== undefined) {
+    if (!isDragonThinking(value.thinking)) {
+      badRequest(`Invalid gateway agent thinking: ${String(value.thinking)}`);
+    }
+    params.thinking = value.thinking;
+  }
+  if (value.metadata !== undefined) {
+    if (!isRecord(value.metadata)) {
+      badRequest("Gateway agent metadata must be an object.");
+    }
+    params.metadata = value.metadata;
+  }
+  return params;
+}
+
+function parseGatewayWebhookParams(value: unknown): GatewayWebhookParams {
+  if (!isRecord(value)) {
+    badRequest("Webhook channel request requires a JSON object.");
+  }
+  const channel = typeof value.channel === "string" && value.channel.trim()
+    ? normalizeShortText(value.channel, "channel", 120)
+    : "webhook";
+  const params = parseGatewayAgentParams({
+    ...value,
+    source: value.source ?? "web",
+    metadata: mergeWebhookMetadata(value.metadata, channel, value.userId, value.threadId),
+  });
+  return {
+    ...params,
+    channel,
+    ...(typeof value.userId === "string" && value.userId.trim()
+      ? { userId: normalizeShortText(value.userId, "userId", 200) }
+      : {}),
+    ...(typeof value.threadId === "string" && value.threadId.trim()
+      ? { threadId: normalizeShortText(value.threadId, "threadId", 200) }
+      : {}),
+  };
+}
+
+function mergeWebhookMetadata(
+  metadata: unknown,
+  channel: string,
+  userId: unknown,
+  threadId: unknown,
+): Record<string, unknown> {
+  if (metadata !== undefined && !isRecord(metadata)) {
+    badRequest("Webhook channel metadata must be an object.");
+  }
+  const merged: Record<string, unknown> = {
+    ...(metadata ?? {}),
+    channel,
+    channelSurface: "webhook",
+  };
+  if (typeof userId === "string" && userId.trim()) {
+    merged.channelUserId = normalizeShortText(userId, "userId", 200);
+  }
+  if (typeof threadId === "string" && threadId.trim()) {
+    merged.channelThreadId = normalizeShortText(threadId, "threadId", 200);
+  }
+  return merged;
+}
+
+function parseEventStreamFilters(url: URL): EventStreamFilters {
+  const filters: EventStreamFilters = {};
+  const sessionId = url.searchParams.get("sessionId")?.trim();
+  const runId = url.searchParams.get("runId")?.trim();
+  if (sessionId) {
+    filters.sessionId = sessionId;
+  }
+  if (runId) {
+    filters.runId = runId;
+  }
+  return filters;
+}
+
+function matchesEventFilters(envelope: GatewayEventEnvelope, filters: EventStreamFilters): boolean {
+  if (filters.runId !== undefined && envelope.event.runId !== filters.runId) {
+    return false;
+  }
+  if (filters.sessionId !== undefined && envelope.sessionId !== filters.sessionId) {
+    return false;
+  }
+  return true;
+}
+
+function readEventSessionId(event: DragonEvent): string | undefined {
+  if (event.type === "permission") {
+    return event.payload.sessionId;
+  }
+  const metadataSessionId = event.type === "lifecycle" ? event.metadata?.sessionId : undefined;
+  return typeof metadataSessionId === "string" ? metadataSessionId : undefined;
+}
+
+function resultStatusToRunState(status: DragonTurnResult["status"]): GatewayRunState {
+  if (status === "ok") {
+    return "completed";
+  }
+  return status;
+}
+
+function summarizeTurnResult(result: DragonTurnResult): GatewayRunResultSummary {
+  const summary: GatewayRunResultSummary = {
+    runId: result.runId,
+    status: result.status,
+    messageCount: result.messages.length,
+  };
+  const assistant = [...result.messages].reverse().find(message => message.role === "assistant");
+  if (assistant?.content) {
+    summary.assistantPreview = previewMessage(assistant.content);
+  }
+  if (result.usage !== undefined) {
+    summary.usage = result.usage;
+  }
+  if (result.error !== undefined) {
+    summary.error = result.error;
+  }
+  return summary;
+}
+
+function previewMessage(message: string): string {
+  return message.length > 160 ? `${message.slice(0, 160)}... [${message.length} chars]` : message;
+}
+
+function badRequest(message: string): never {
+  throw new GatewayHttpError(400, message);
+}
+
+function toTurnInput(params: GatewayAgentParams): DragonTurnInput {
+  const input: DragonTurnInput = {
+    sessionId: params.sessionId,
+    source: params.source ?? "gateway",
+    message: params.message,
+  };
+  if (params.workspace !== undefined) {
+    input.workspace = params.workspace;
+  }
+  if (params.model !== undefined) {
+    input.model = params.model;
+  }
+  if (params.thinking !== undefined) {
+    input.thinking = params.thinking;
+  }
+  if (params.metadata !== undefined) {
+    input.metadata = params.metadata;
+  }
+  return input;
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  let size = 0;
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.byteLength;
+    if (size > MAX_REQUEST_BYTES) {
+      throw new GatewayHttpError(413, `Request body exceeds ${MAX_REQUEST_BYTES} bytes.`);
+    }
+    chunks.push(buffer);
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) {
+    throw new GatewayHttpError(400, "Request body cannot be empty.");
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new GatewayHttpError(400, `Invalid JSON request body: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function writeJson(response: ServerResponse, statusCode: number, payload: unknown): void {
+  const body = JSON.stringify(payload);
+  response.writeHead(statusCode, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+  });
+  response.end(body);
+}
+
+function writeHtml(response: ServerResponse, statusCode: number, html: string): void {
+  response.writeHead(statusCode, {
+    "content-type": "text/html; charset=utf-8",
+    "content-length": Buffer.byteLength(html),
+  });
+  response.end(html);
+}
+
+function writeSse(response: ServerResponse, eventName: string, payload: unknown): void {
+  const body = JSON.stringify(payload);
+  response.write(`event: ${eventName}\n`);
+  for (const line of body.split(/\r?\n/)) {
+    response.write(`data: ${line}\n`);
+  }
+  response.write("\n");
+}
+
+interface ParsedWebSocketFrame {
+  opcode: number;
+  payload: Buffer;
+}
+
+interface ParsedWebSocketFrames {
+  frames: ParsedWebSocketFrame[];
+  remaining: Buffer;
+}
+
+function isValidWebSocketUpgrade(request: IncomingMessage, key: string | undefined): key is string {
+  if (request.method !== "GET") {
+    return false;
+  }
+  const upgrade = readSingleHeader(request, "upgrade")?.toLowerCase();
+  const connection = readSingleHeader(request, "connection")?.toLowerCase();
+  const version = readSingleHeader(request, "sec-websocket-version");
+  if (upgrade !== "websocket" || version !== "13" || !connection?.split(",").some(item => item.trim() === "upgrade")) {
+    return false;
+  }
+  if (!key) {
+    return false;
+  }
+  try {
+    return Buffer.from(key, "base64").byteLength === 16;
+  } catch {
+    return false;
+  }
+}
+
+function readSingleHeader(request: IncomingMessage, name: string): string | undefined {
+  const value = request.headers[name.toLowerCase()];
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
+}
+
+function readWebSocketProtocols(request: IncomingMessage): string[] {
+  const header = readSingleHeader(request, "sec-websocket-protocol");
+  if (!header) {
+    return [];
+  }
+  return header.split(",").map(item => item.trim()).filter(Boolean);
+}
+
+function rejectWebSocketUpgrade(socket: Duplex, statusCode: number, reason: string): void {
+  const body = `${reason}\n`;
+  socket.end([
+    `HTTP/1.1 ${statusCode} ${reason}`,
+    "Connection: close",
+    "Content-Type: text/plain; charset=utf-8",
+    `Content-Length: ${Buffer.byteLength(body, "utf8")}`,
+    "",
+    body,
+  ].join("\r\n"));
+}
+
+function parseWebSocketFrames(buffer: Buffer): ParsedWebSocketFrames {
+  const frames: ParsedWebSocketFrame[] = [];
+  let offset = 0;
+  while (buffer.byteLength - offset >= 2) {
+    const first = buffer[offset];
+    const second = buffer[offset + 1];
+    if (first === undefined || second === undefined) {
+      break;
+    }
+    const fin = (first & 0x80) !== 0;
+    const reserved = first & 0x70;
+    const opcode = first & 0x0f;
+    const masked = (second & 0x80) !== 0;
+    let payloadLength = second & 0x7f;
+    let headerLength = 2;
+
+    if (reserved !== 0) {
+      throw new Error("WebSocket extensions are not supported.");
+    }
+    if (!fin) {
+      throw new Error("Fragmented WebSocket messages are not supported.");
+    }
+    if (!masked) {
+      throw new Error("Client WebSocket frames must be masked.");
+    }
+    if (opcode !== 0x1 && opcode !== 0x8 && opcode !== 0x9 && opcode !== 0xA) {
+      throw new Error("Unsupported WebSocket opcode.");
+    }
+    if (payloadLength === 126) {
+      if (buffer.byteLength - offset < headerLength + 2) {
+        break;
+      }
+      payloadLength = buffer.readUInt16BE(offset + headerLength);
+      headerLength += 2;
+    } else if (payloadLength === 127) {
+      if (buffer.byteLength - offset < headerLength + 8) {
+        break;
+      }
+      const extendedLength = buffer.readBigUInt64BE(offset + headerLength);
+      if (extendedLength > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new Error("WebSocket frame is too large.");
+      }
+      payloadLength = Number(extendedLength);
+      headerLength += 8;
+    }
+    if (opcode >= 0x8 && payloadLength > 125) {
+      throw new Error("WebSocket control frames must be 125 bytes or fewer.");
+    }
+    if (payloadLength > MAX_REQUEST_BYTES) {
+      throw new Error(`WebSocket message exceeds ${MAX_REQUEST_BYTES} bytes.`);
+    }
+    const frameLength = headerLength + 4 + payloadLength;
+    if (buffer.byteLength - offset < frameLength) {
+      break;
+    }
+    const mask = buffer.subarray(offset + headerLength, offset + headerLength + 4);
+    const payload = Buffer.from(buffer.subarray(offset + headerLength + 4, offset + frameLength));
+    for (let index = 0; index < payload.length; index += 1) {
+      payload[index] = payload[index]! ^ mask[index % 4]!;
+    }
+    frames.push({ opcode, payload });
+    offset += frameLength;
+  }
+  return {
+    frames,
+    remaining: offset === 0 ? buffer : buffer.subarray(offset),
+  };
+}
+
+function sendWebSocketJson(client: WebSocketClient, payload: GatewayWebSocketEnvelope): boolean {
+  if (client.closed) {
+    return false;
+  }
+  const body = JSON.stringify(payload);
+  if (Buffer.byteLength(body, "utf8") > MAX_WEBSOCKET_MESSAGE_BYTES) {
+    return false;
+  }
+  sendWebSocketFrame(client, 0x1, Buffer.from(body, "utf8"));
+  return true;
+}
+
+function sendWebSocketFrame(client: WebSocketClient, opcode: number, payload: Buffer): void {
+  if (client.closed) {
+    return;
+  }
+  try {
+    client.socket.write(createWebSocketFrame(opcode, payload));
+  } catch {
+    client.closed = true;
+  }
+}
+
+function closeWebSocketClient(client: WebSocketClient, statusCode: number, reason: string): void {
+  if (client.closed) {
+    return;
+  }
+  const reasonBytes = Buffer.from(fitUtf8Text(reason, 120, "[truncated]"), "utf8");
+  const payload = Buffer.alloc(2 + reasonBytes.byteLength);
+  payload.writeUInt16BE(statusCode, 0);
+  reasonBytes.copy(payload, 2);
+  client.closed = true;
+  client.socket.end(createWebSocketFrame(0x8, payload));
+  setTimeout(() => {
+    client.socket.destroy();
+  }, 1000).unref();
+}
+
+function createWebSocketFrame(opcode: number, payload: Buffer): Buffer {
+  const payloadLength = payload.byteLength;
+  if (payloadLength < 126) {
+    return Buffer.concat([Buffer.from([0x80 | opcode, payloadLength]), payload]);
+  }
+  if (payloadLength <= 0xffff) {
+    const header = Buffer.alloc(4);
+    header[0] = 0x80 | opcode;
+    header[1] = 126;
+    header.writeUInt16BE(payloadLength, 2);
+    return Buffer.concat([header, payload]);
+  }
+  const header = Buffer.alloc(10);
+  header[0] = 0x80 | opcode;
+  header[1] = 127;
+  header.writeBigUInt64BE(BigInt(payloadLength), 2);
+  return Buffer.concat([header, payload]);
+}
+
+function applyCors(response: ServerResponse): void {
+  response.setHeader("access-control-allow-origin", "http://localhost");
+  response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
+  response.setHeader("access-control-allow-headers", "content-type,authorization,x-dragon-secret");
+}
+
+function isDragonSource(value: unknown): value is DragonSource {
+  return ["cli", "gateway", "web", "ide", "cron", "api"].includes(String(value));
+}
+
+function isDragonThinking(value: unknown): value is DragonThinkingLevel {
+  return ["none", "low", "medium", "high"].includes(String(value));
+}
+
+function isTurnStatus(value: unknown): value is DragonTurnResult["status"] {
+  return ["ok", "error", "cancelled", "timeout"].includes(String(value));
+}
+
+function isMemoryCandidateStatusFilter(value: unknown): value is NonNullable<GatewayMemoryCandidateListParams["status"]> {
+  return ["pending", "promoted", "rejected", "all"].includes(String(value));
+}
+
+function isMemoryScope(value: unknown): value is NonNullable<GatewayMemoryCandidatePromoteParams["scope"]> {
+  return ["user", "project", "session", "skill"].includes(String(value));
+}
+
+function normalizeShortText(value: string, fieldName: string, maxChars: number): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    badRequest(`${fieldName} cannot be empty.`);
+  }
+  if (trimmed.length > maxChars) {
+    badRequest(`${fieldName} must be ${maxChars} characters or fewer.`);
+  }
+  return trimmed;
+}
+
+function normalizeBoundedText(value: string, fieldName: string, maxChars: number): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    badRequest(`${fieldName} cannot be empty.`);
+  }
+  if (trimmed.length > maxChars) {
+    badRequest(`${fieldName} must be ${maxChars} characters or fewer.`);
+  }
+  return trimmed;
+}
+
+function normalizeDate(value: string, fieldName: string): string {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    badRequest(`${fieldName} must use YYYY-MM-DD.`);
+  }
+  const parsed = new Date(`${trimmed}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== trimmed) {
+    badRequest(`${fieldName} must use YYYY-MM-DD.`);
+  }
+  return trimmed;
+}
+
+function normalizeIsoTimestamp(value: string, fieldName: string): string {
+  const trimmed = value.trim();
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    badRequest(`${fieldName} must be a valid ISO timestamp.`);
+  }
+  return parsed.toISOString();
+}
+
+function normalizeProviderSummaries(values: readonly GatewayProviderSummary[]): readonly GatewayProviderSummary[] {
+  return Object.freeze(values.map(provider => {
+    const summary: GatewayProviderSummary = {
+      id: trimBounded(provider.id, 120),
+      displayName: trimBounded(provider.displayName, 160),
+      supportsToolCalling: Boolean(provider.supportsToolCalling),
+    };
+    if (provider.defaultModel !== undefined) {
+      summary.defaultModel = trimBounded(provider.defaultModel, 200);
+    }
+    return Object.freeze(summary);
+  }));
+}
+
+function normalizePluginSummaries(values: readonly GatewayPluginSummary[]): readonly GatewayPluginSummary[] {
+  return Object.freeze(values.map(plugin => {
+    const summary: GatewayPluginSummary = {
+      name: trimBounded(plugin.name, 120),
+      version: trimBounded(plugin.version, 80),
+      tools: Object.freeze(plugin.tools.map(tool => {
+        const toolSummary: GatewayPluginToolSummary = {
+          name: trimBounded(tool.name, 120),
+        };
+        if (tool.description !== undefined) {
+          toolSummary.description = trimBounded(tool.description, 300);
+        }
+        if (tool.permission !== undefined) {
+          toolSummary.permission = tool.permission;
+        }
+        if (tool.capabilities !== undefined) {
+          toolSummary.capabilities = Object.freeze(tool.capabilities.map(capability => trimBounded(capability, 80)));
+        }
+        return Object.freeze(toolSummary);
+      })),
+      providers: Object.freeze(plugin.providers.map(provider => {
+        const providerSummary: GatewayPluginProviderSummary = {
+          id: trimBounded(provider.id, 120),
+          displayName: trimBounded(provider.displayName, 160),
+          supportsToolCalling: Boolean(provider.supportsToolCalling),
+        };
+        if (provider.defaultModel !== undefined) {
+          providerSummary.defaultModel = trimBounded(provider.defaultModel, 200);
+        }
+        return Object.freeze(providerSummary);
+      })),
+    };
+    if (plugin.memoryBackends !== undefined) {
+      summary.memoryBackends = Object.freeze(plugin.memoryBackends.map(backend => Object.freeze({
+        id: trimBounded(backend.id, 120),
+        displayName: trimBounded(backend.displayName, 160),
+      })));
+    }
+    if (plugin.lifecycleHooks !== undefined) {
+      summary.lifecycleHooks = Object.freeze(plugin.lifecycleHooks.map(hook => trimBounded(hook, 120)));
+    }
+    if (plugin.description !== undefined) {
+      summary.description = trimBounded(plugin.description, 500);
+    }
+    if (plugin.dragonVersion !== undefined) {
+      summary.dragonVersion = trimBounded(plugin.dragonVersion, 80);
+    }
+    return Object.freeze(summary);
+  }));
+}
+
+function isDirectToolCandidate(tool: ToolDefinition, directToolNames: ReadonlySet<string>): boolean {
+  if (!directToolNames.has(tool.name) || tool.permission !== "allow") {
+    return false;
+  }
+  const capabilities = tool.capabilities ?? [];
+  if (
+    capabilities.includes("write")
+    || capabilities.includes("custom")
+    || capabilities.includes("network")
+    || capabilities.includes("memory")
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function sanitizeDirectToolResult(result: unknown, permission: ToolPermissionResult): unknown {
+  const permissionSummary = {
+    decision: permission.decision,
+    reason: permission.reason,
+  };
+  try {
+    const json = JSON.stringify({ result, permission: permissionSummary }, jsonSafeReplacer);
+    if (!json) {
+      return {
+        result: { ok: false, error: "Tool result could not be serialized." },
+        permission: permissionSummary,
+      };
+    }
+    if (Buffer.byteLength(json, "utf8") <= MAX_DIRECT_TOOL_RESULT_BYTES) {
+      return JSON.parse(json) as unknown;
+    }
+    return {
+      result: {
+        ok: readBooleanProperty(result, "ok") ?? false,
+        truncated: true,
+        preview: fitUtf8Text(json, MAX_DIRECT_TOOL_PREVIEW_BYTES, "[tool result truncated]"),
+      },
+      permission: permissionSummary,
+    };
+  } catch (error) {
+    return {
+      result: {
+        ok: false,
+        error: `Tool result could not be serialized: ${error instanceof Error ? error.message : String(error)}`,
+      },
+      permission: permissionSummary,
+    };
+  }
+}
+
+function sanitizeToolOutput(result: ToolResult, permission: ToolPermissionResult): unknown {
+  if (!result.ok) {
+    throw new Error(result.error ?? "Tool invocation failed.");
+  }
+  const permissionSummary = {
+    decision: permission.decision,
+    reason: permission.reason,
+  };
+  try {
+    const json = JSON.stringify({ output: result.output, permission: permissionSummary }, jsonSafeReplacer);
+    if (!json) {
+      return {
+        output: undefined,
+        permission: permissionSummary,
+      };
+    }
+    if (Buffer.byteLength(json, "utf8") <= MAX_DIRECT_TOOL_RESULT_BYTES) {
+      return JSON.parse(json) as unknown;
+    }
+    return {
+      output: {
+        truncated: true,
+        preview: fitUtf8Text(json, MAX_DIRECT_TOOL_PREVIEW_BYTES, "[tool output truncated]"),
+      },
+      permission: permissionSummary,
+    };
+  } catch (error) {
+    return {
+      output: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+      permission: permissionSummary,
+    };
+  }
+}
+
+function fitUtf8Text(value: string, maxBytes: number, suffix: string): string {
+  const suffixBytes = Buffer.byteLength(suffix, "utf8");
+  if (maxBytes <= suffixBytes) {
+    return Buffer.from(suffix, "utf8").subarray(0, Math.max(0, maxBytes)).toString("utf8");
+  }
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) {
+    return value;
+  }
+  const budget = maxBytes - suffixBytes;
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (Buffer.byteLength(value.slice(0, mid), "utf8") <= budget) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return `${value.slice(0, low)}${suffix}`;
+}
+
+function jsonSafeReplacer(_key: string, value: unknown): unknown {
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  return value;
+}
+
+function readBooleanProperty(value: unknown, key: string): boolean | undefined {
+  return isRecord(value) && typeof value[key] === "boolean" ? value[key] : undefined;
+}
+
+function trimBounded(value: string, maxChars: number): string {
+  const trimmed = value.trim();
+  return trimmed.length > maxChars ? `${trimmed.slice(0, Math.max(0, maxChars - 14))}... [truncated]` : trimmed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+class GatewayHttpError extends Error {
+  constructor(
+    readonly statusCode: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "GatewayHttpError";
+  }
+}

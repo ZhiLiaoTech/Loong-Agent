@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.dragon/
+coverage/
+.turbo/
+.cache/
+*.log
+.env
+.env.*
+!.env.example

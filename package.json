@@ -1,0 +1,19 @@
+{
+  "name": "dragon-agent-framework",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dragon (Qianlong) is a TypeScript-native, local-first agent framework.",
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "build": "corepack pnpm -r build",
+    "check": "corepack pnpm -r check",
+    "clean": "corepack pnpm -r clean",
+    "test": "corepack pnpm -r build && corepack pnpm --filter @dragon/test-suite test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "tsx": "^4.20.6"
+  }
+}

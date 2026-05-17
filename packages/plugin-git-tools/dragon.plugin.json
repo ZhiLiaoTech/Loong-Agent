@@ -1,0 +1,7 @@
+{
+  "name": "dragon.git-tools",
+  "version": "0.0.0",
+  "entry": "dist/index.js",
+  "description": "Registers read-only Git inspection tools for Dragon agents.",
+  "dragonVersion": "0.x"
+}
