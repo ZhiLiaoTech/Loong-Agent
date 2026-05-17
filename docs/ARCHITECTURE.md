@@ -65,6 +65,7 @@ Owns chat-channel adapter primitives:
 - Telegram webhook payload normalization
 - Slack event and slash-command normalization
 - stable Gateway webhook payload generation
+- Gateway webhook delivery target for channel bridge workers
 - channel metadata projection without coupling platform details into Gateway
 
 ### `@dragon/tools`
@@ -76,8 +77,11 @@ Owns tool definitions and execution contracts:
 - execution result shape
 - permission hints
 - built-ins: file, shell, patch, sandbox command execution, browser page
-  snapshots, git, memory, skills; future built-ins include richer browser
-  automation, web, and MCP
+  snapshots with link/form extraction, basic browser form submission, git,
+  memory, skills
+- sandbox policy profiles for default inspection, version checks, Git reads,
+  search reads, and combined repository reads; future built-ins include richer
+  browser automation, web, and MCP
 
 ### `@dragon/providers`
 
@@ -85,6 +89,7 @@ Owns model provider contracts:
 
 - provider registry
 - model reference resolution
+- retryable model fallback routing with buffered attempts
 - request/response shape
 - tool-call compatibility
 - OpenAI-compatible and Anthropic Messages API provider adapters
@@ -167,7 +172,8 @@ Owns the command-line entrypoint:
   and omitted permission asks; ask is skipped when no handler is available
 - reference read-only Git tool plugin for status, diff, and log inspection
 - `sandbox_exec` for routing the conservative read-only command allowlist
-  through local, Docker, or SSH backends when a target is explicitly provided
+  through local, Docker, or SSH backends when a target is explicitly provided,
+  with opt-in `versions`, `git-read`, `search-read`, and `repo-read` profiles
 - Markdown memory files in the selected memory dir are injected as read-only
   context when present
 - older session messages beyond the recent history window are injected as

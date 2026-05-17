@@ -42,6 +42,7 @@ import {
 import { createFileSkillRuntime, createSkillTools, type LoadedSkill, type SkillSummary } from "@dragon/skills";
 import {
   createFilePatchTool,
+  createBrowserFormSubmitTool,
   createBrowserSnapshotTool,
   createFileReadTool,
   createFileSearchTool,
@@ -169,6 +170,7 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
       source: "cli",
       message: parsed.message,
       ...(parsed.model !== undefined ? { model: parsed.model } : {}),
+      ...(parsed.modelFallbacks !== undefined ? { modelFallbacks: parsed.modelFallbacks } : {}),
       metadata: {
         mode,
         agentAlias: mode === "agent",
@@ -400,8 +402,8 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
               "Use trajectory_list and trajectory_get to inspect recent Dragon run records when debugging prior behavior.",
               loadedPluginLine,
               "Only use shell_exec for conservative read-only commands.",
-              "Use sandbox_exec for conservative read-only commands in local, Docker, or SSH sandboxes when the user provides the target.",
-              "Use browser_snapshot for bounded HTTP(S) page inspection when the user asks to inspect a web page.",
+              "Use sandbox_exec for conservative read-only commands in local, Docker, or SSH sandboxes when the user provides the target; keep the default inspect profile unless broader git-read, search-read, or repo-read access is explicitly useful.",
+              "Use browser_snapshot for bounded HTTP(S) page inspection and browser_form_submit for basic GET/POST HTML forms when the user asks to inspect or submit a web page.",
               options.allowWrite
                 ? "You may use file_patch for exact text replacements and skill_create/skill_improve for reviewable skill updates when requested."
                 : "Write tools require CLI approval and may be denied.",
@@ -783,6 +785,7 @@ interface ParsedChatArgs {
   memoryDir: string;
   memoryBackendId?: string;
   model?: string;
+  modelFallbacks?: string[];
   noSession: boolean;
   allowWrite: boolean;
   skillRoots?: string[];
@@ -796,6 +799,7 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
   let memoryDir = process.env.DRAGON_MEMORY_DIR?.trim() || path.join(process.cwd(), ".dragon", "memory");
   let memoryBackendId = mode === "agent" ? process.env.DRAGON_MEMORY_BACKEND?.trim() || undefined : undefined;
   let model = process.env.DRAGON_MODEL?.trim() || undefined;
+  const modelFallbacks = parseListEnv(process.env.DRAGON_MODEL_FALLBACKS);
   let noSession = false;
   let allowWrite = false;
   const defaultSkillRoots = mode === "agent" ? configuredSkillRoots() : [];
@@ -827,6 +831,23 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
         throw new Error(`Usage: dragon ${mode} --model=<provider:model> <message>`);
       }
       model = value;
+      continue;
+    }
+    if (arg === "--model-fallback") {
+      const value = args[index + 1]?.trim();
+      if (!value) {
+        throw new Error(`Usage: dragon ${mode} --model-fallback <provider:model> <message>`);
+      }
+      modelFallbacks.push(value);
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith("--model-fallback=")) {
+      const value = arg.slice("--model-fallback=".length).trim();
+      if (!value) {
+        throw new Error(`Usage: dragon ${mode} --model-fallback=<provider:model> <message>`);
+      }
+      modelFallbacks.push(value);
       continue;
     }
     if (arg === "--session") {
@@ -964,11 +985,18 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
     memoryDir: path.resolve(memoryDir),
     ...(memoryBackendId !== undefined ? { memoryBackendId } : {}),
     ...(model !== undefined ? { model } : {}),
+    ...(modelFallbacks.length > 0 ? { modelFallbacks } : {}),
     noSession,
     allowWrite,
     pluginRoots: uniquePaths(pluginRoots),
     ...(mode === "agent" ? { skillRoots: uniquePaths([...skillRoots, ...defaultSkillRoots]) } : {}),
   };
+}
+
+function parseListEnv(value: string | undefined): string[] {
+  return value === undefined
+    ? []
+    : value.split(",").map(item => item.trim()).filter(Boolean);
 }
 
 type SkillsSlashCommand =
@@ -1605,8 +1633,8 @@ function printHelp(): void {
   console.log(`Dragon (Qianlong)
 
 Usage:
-  dragon chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--plugin-root <path>] <message>
-  dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--model <ref>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] <message>
+  dragon chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--model-fallback <ref>] [--plugin-root <path>] <message>
+  dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--model <ref>] [--model-fallback <ref>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] <message>
   dragon gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>]
   dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] [--once] [--interval-ms <ms>]
 
@@ -1617,7 +1645,7 @@ Provider:
   Optional: DRAGON_ANTHROPIC_BASE_URL, DRAGON_ANTHROPIC_MODEL, DRAGON_ANTHROPIC_PROVIDER_ID.
   Provider plugins can also be loaded from .dragon/plugins, DRAGON_PLUGIN_ROOTS, or --plugin-root <path>.
   Model refs with a registered provider prefix, such as openai:gpt-4o or anthropic:claude-sonnet-4-5, route explicitly to that provider.
-  Optional: DRAGON_MODEL, --model <ref>.
+  Optional: DRAGON_MODEL, --model <ref>, DRAGON_MODEL_FALLBACKS, --model-fallback <ref>.
 
 Permissions:
   Write tools prompt for approval in an interactive terminal.
@@ -1667,6 +1695,7 @@ function createAgentTools(
     createFileReadTool(),
     createFileSearchTool(),
     createBrowserSnapshotTool(),
+    createBrowserFormSubmitTool(),
     createShellExecTool(),
     createSandboxExecTool(),
     createFilePatchTool(),

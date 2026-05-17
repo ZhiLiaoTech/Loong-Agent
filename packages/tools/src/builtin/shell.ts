@@ -7,10 +7,12 @@ export interface ShellExecInput {
 }
 
 export type SandboxExecBackend = "local" | "docker" | "ssh";
+export type SandboxPolicyProfile = "versions" | "inspect" | "git-read" | "search-read" | "repo-read";
 
 export interface SandboxExecInput {
   command: string;
   backend?: SandboxExecBackend;
+  profile?: SandboxPolicyProfile;
   timeoutMs?: number;
   docker?: {
     container: string;
@@ -37,6 +39,7 @@ export interface ShellExecOutput {
 
 export interface SandboxExecOutput extends ShellExecOutput {
   backend: SandboxExecBackend;
+  profile: SandboxPolicyProfile;
   innerExecutable: string;
   innerArgs: string[];
   target?: string;
@@ -48,8 +51,16 @@ interface ParsedCommand {
   args: string[];
 }
 
+interface SandboxPolicy {
+  profile: SandboxPolicyProfile;
+  allowVersions: boolean;
+  git: "none" | "status" | "read";
+  allowSearch: boolean;
+}
+
 export interface SandboxExecPlan {
   backend: SandboxExecBackend;
+  profile: SandboxPolicyProfile;
   command: string;
   executable: string;
   args: string[];
@@ -78,6 +89,7 @@ const sandboxExecSchema: ToolJsonSchema = {
   properties: {
     command: { type: "string" },
     backend: { type: "string", enum: ["local", "docker", "ssh"] },
+    profile: { type: "string", enum: ["versions", "inspect", "git-read", "search-read", "repo-read"] },
     timeoutMs: { type: "number" },
     docker: {
       type: "object",
@@ -142,6 +154,7 @@ export function createSandboxExecTool(): ToolDefinition<SandboxExecInput, Sandbo
         return {
           ...result,
           backend: plan.backend,
+          profile: plan.profile,
           innerExecutable: plan.innerExecutable,
           innerArgs: plan.innerArgs,
           ...(plan.target !== undefined ? { target: plan.target } : {}),
@@ -152,14 +165,15 @@ export function createSandboxExecTool(): ToolDefinition<SandboxExecInput, Sandbo
   };
 }
 
-export function isAllowedReadOnlyCommand(command: string): boolean {
-  return parseAllowedReadOnlyCommand(command) !== undefined;
+export function isAllowedReadOnlyCommand(command: string, profile: SandboxPolicyProfile = "inspect"): boolean {
+  return parseAllowedReadOnlyCommand(command, profile) !== undefined;
 }
 
-export function parseAllowedReadOnlyCommand(command: string): ParsedCommand | undefined {
+export function parseAllowedReadOnlyCommand(command: string, profile: SandboxPolicyProfile = "inspect"): ParsedCommand | undefined {
   if (hasShellMetacharacters(command)) {
     return undefined;
   }
+  const policy = resolveSandboxPolicy(profile);
 
   const tokens = splitCommand(command);
   const [executable, ...args] = tokens;
@@ -168,16 +182,16 @@ export function parseAllowedReadOnlyCommand(command: string): ParsedCommand | un
   }
 
   const name = executable.toLowerCase();
-  if (name === "node" && args.length === 1 && args[0] === "--version") {
+  if (policy.allowVersions && name === "node" && args.length === 1 && args[0] === "--version") {
     return { executable, args };
   }
-  if ((name === "npm" || name === "pnpm") && args.length === 1 && args[0] === "--version") {
+  if (policy.allowVersions && (name === "npm" || name === "pnpm") && args.length === 1 && args[0] === "--version") {
     return { executable, args };
   }
-  if (name === "git" && isAllowedGitArgs(args)) {
+  if (name === "git" && isAllowedGitArgs(args, policy.git)) {
     return { executable, args };
   }
-  if (name === "rg" && isAllowedRgArgs(args)) {
+  if (policy.allowSearch && name === "rg" && isAllowedRgArgs(args)) {
     return { executable, args };
   }
 
@@ -185,9 +199,10 @@ export function parseAllowedReadOnlyCommand(command: string): ParsedCommand | un
 }
 
 export function planSandboxExecCommand(input: SandboxExecInput, defaultWorkspace?: string): SandboxExecPlan {
-  const parsed = parseAllowedReadOnlyCommand(input.command);
+  const profile = input.profile ?? "inspect";
+  const parsed = parseAllowedReadOnlyCommand(input.command, profile);
   if (!parsed) {
-    throw new Error(`Command is not in the read-only allowlist: ${input.command}`);
+    throw new Error(`Command is not allowed by sandbox profile "${profile}": ${input.command}`);
   }
   const backend = input.backend ?? "local";
   if (backend === "local") {
@@ -196,6 +211,7 @@ export function planSandboxExecCommand(input: SandboxExecInput, defaultWorkspace
     }
     return {
       backend,
+      profile,
       command: input.command,
       executable: parsed.executable,
       args: parsed.args,
@@ -214,6 +230,7 @@ export function planSandboxExecCommand(input: SandboxExecInput, defaultWorkspace
     const workspace = normalizeSandboxWorkspace(docker.workspace ?? defaultWorkspace, "docker.workspace");
     return {
       backend,
+      profile,
       command: input.command,
       executable: "docker",
       args: ["exec", "-i", "-w", workspace, container, parsed.executable, ...parsed.args],
@@ -237,6 +254,7 @@ export function planSandboxExecCommand(input: SandboxExecInput, defaultWorkspace
       : `exec ${quotePosix(parsed.executable)}${formatPosixArgs(parsed.args)}`;
     return {
       backend,
+      profile,
       command: input.command,
       executable: "ssh",
       args: [
@@ -256,11 +274,78 @@ export function planSandboxExecCommand(input: SandboxExecInput, defaultWorkspace
   throw new Error(`Unsupported sandbox backend: ${String(backend)}`);
 }
 
-function isAllowedGitArgs(args: string[]): boolean {
+function resolveSandboxPolicy(profile: SandboxPolicyProfile): SandboxPolicy {
+  if (profile === "versions") {
+    return { profile, allowVersions: true, git: "none", allowSearch: false };
+  }
+  if (profile === "git-read") {
+    return { profile, allowVersions: true, git: "read", allowSearch: false };
+  }
+  if (profile === "search-read") {
+    return { profile, allowVersions: true, git: "none", allowSearch: true };
+  }
+  if (profile === "repo-read") {
+    return { profile, allowVersions: true, git: "read", allowSearch: true };
+  }
+  return { profile: "inspect", allowVersions: true, git: "status", allowSearch: true };
+}
+
+function isAllowedGitArgs(args: string[], mode: SandboxPolicy["git"]): boolean {
+  if (mode === "none") {
+    return false;
+  }
   if (args.length === 1 && args[0] === "status") {
     return true;
   }
+  if (mode !== "read") {
+    return false;
+  }
+  if (args.length === 0) {
+    return false;
+  }
+  const [subcommand, ...rest] = args;
+  if (subcommand === "diff") {
+    return rest.length <= 20 && rest.every(isSafeGitReadArg);
+  }
+  if (subcommand === "log") {
+    return rest.length <= 20 && rest.every(isSafeGitReadArg);
+  }
+  if (subcommand === "show") {
+    return rest.length <= 12 && rest.every(isSafeGitReadArg);
+  }
+  if (subcommand === "branch") {
+    return rest.length <= 4 && rest.every(arg => ["-a", "--all", "-r", "--remotes", "--show-current"].includes(arg));
+  }
+  if (subcommand === "rev-parse") {
+    return rest.length > 0 && rest.length <= 8 && rest.every(isSafeGitReadArg);
+  }
   return false;
+}
+
+function isSafeGitReadArg(arg: string): boolean {
+  if (!isSafeReadOnlyArg(arg)) {
+    return false;
+  }
+  if (isUnsafePathArg(arg)) {
+    return false;
+  }
+  if (arg.startsWith("--output") || arg === "-o") {
+    return false;
+  }
+  if (isUnsafeGitReadFlag(arg)) {
+    return false;
+  }
+  return true;
+}
+
+function isUnsafeGitReadFlag(arg: string): boolean {
+  const normalized = arg.toLowerCase();
+  return normalized === "--ext-diff"
+    || normalized === "--textconv"
+    || normalized === "--no-textconv"
+    || normalized.startsWith("--ext-diff=")
+    || normalized.startsWith("--textconv=")
+    || normalized.startsWith("--exec-path");
 }
 
 function isAllowedRgArgs(args: string[]): boolean {
@@ -420,6 +505,12 @@ function parseSandboxExecInput(input: unknown): SandboxExecInput {
     }
     parsed.backend = input.backend;
   }
+  if (input.profile !== undefined) {
+    if (!isSandboxPolicyProfile(input.profile)) {
+      throw new Error("sandbox_exec profile must be versions, inspect, git-read, search-read, or repo-read.");
+    }
+    parsed.profile = input.profile;
+  }
   if (input.docker !== undefined) {
     if (!isRecord(input.docker)) {
       throw new Error("sandbox_exec docker options must be an object.");
@@ -441,6 +532,14 @@ function parseSandboxExecInput(input: unknown): SandboxExecInput {
     };
   }
   return parsed;
+}
+
+function isSandboxPolicyProfile(value: unknown): value is SandboxPolicyProfile {
+  return value === "versions"
+    || value === "inspect"
+    || value === "git-read"
+    || value === "search-read"
+    || value === "repo-read";
 }
 
 function parseShellExecInput(input: unknown): ShellExecInput {

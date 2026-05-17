@@ -9,6 +9,7 @@ export interface DragonTurnInput {
   history?: DragonMessage[];
   workspace?: string;
   model?: string;
+  modelFallbacks?: string[];
   thinking?: DragonThinkingLevel;
   signal?: AbortSignal;
   metadata?: Record<string, unknown>;

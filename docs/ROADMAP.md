@@ -14,8 +14,8 @@ Goal: establish the TypeScript workspace and design boundaries.
   candidate review, runtime tool-call loops, and provider tool-call
   translation/streaming. It also covers CLI skill slash commands, trajectory
   persistence/RPC, Gateway webhook channel delivery, channel adapters, sandbox
-  command planning/execution, cron schedule/delivery targets, cron file
-  stores/runners, browser snapshotting, delegation planning/running,
+  command planning/execution, sandbox policy profiles, cron schedule/delivery
+  targets, cron file stores/runners, browser snapshotting, delegation planning/running,
   runtime-backed delegation, and model provider plugin loading/routing.
 
 ## Phase 1: Minimal Coding Agent
@@ -23,6 +23,8 @@ Goal: establish the TypeScript workspace and design boundaries.
 Goal: make Dragon useful from the CLI.
 
 - Implement provider registry.
+  Initial runtime fallback routing is implemented for retryable provider
+  failures, with CLI `--model-fallback` / `DRAGON_MODEL_FALLBACKS` support.
 - Add one model provider.
 - Implement basic session persistence.
 - Implement file read/search tools.
@@ -132,12 +134,17 @@ Goal: make Dragon available wherever the user works.
 - IDE integration is out of scope for the current Dragon plan.
 - Add selected chat channels. Initial authenticated Gateway webhook channel is
   implemented at `POST /channels/webhook`. Initial `@dragon/channels`
-  adapters normalize Telegram and Slack payloads into that Gateway surface.
+  adapters normalize Telegram and Slack payloads into that Gateway surface, and
+  a Gateway webhook delivery target can forward normalized messages from
+  channel bridge workers.
 - Add browser automation. Initial `browser_snapshot` tool implements bounded
-  HTTP(S) page inspection with title, visible text, and links.
+  HTTP(S) page inspection with title, visible text, links, and form structure
+  extraction. Initial `browser_form_submit` handles basic GET and URL-encoded
+  POST HTML forms with same-origin protection by default.
 - Add Docker and SSH sandbox backends. Initial `sandbox_exec` support routes
   Dragon's conservative read-only command allowlist through local, Docker, or
-  SSH backends.
+  SSH backends. Sandbox policy profiles are implemented for `versions`,
+  `inspect`, `git-read`, `search-read`, and `repo-read`.
 - Add cron delivery targets. Initial `@dragon/cron` package implements
   five-field schedule parsing, next-run calculation, file-backed job storage,
   due-job runner controls, Gateway webhook delivery, and a `dragon cron`

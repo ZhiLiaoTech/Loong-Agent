@@ -8,13 +8,13 @@ export function getDashboardHtml(): string {
   <style>
     :root {
       color-scheme: light;
-      --bg: #f7f7f5;
-      --panel: #ffffff;
+      --bg: #ffffff;
+      --panel: transparent;
       --text: #171716;
-      --muted: #74716b;
-      --line: #dedbd3;
-      --soft: #f0efeb;
-      --accent: #111111;
+      --muted: #6f6f6a;
+      --line: #e5e5e0;
+      --soft: #f6f6f3;
+      --accent: #171716;
       --ok: #18703a;
       --warn: #9a6500;
       --danger: #8f1d1d;
@@ -28,15 +28,15 @@ export function getDashboardHtml(): string {
       letter-spacing: 0;
     }
     main {
-      width: min(1080px, calc(100% - 32px));
-      margin: 22px auto 48px;
+      width: min(1120px, calc(100% - 36px));
+      margin: 18px auto 48px;
     }
     header {
       display: flex;
-      align-items: end;
+      align-items: center;
       justify-content: space-between;
       gap: 16px;
-      padding-bottom: 16px;
+      padding-bottom: 14px;
       border-bottom: 1px solid var(--line);
     }
     h1, h2, h3, p {
@@ -44,7 +44,7 @@ export function getDashboardHtml(): string {
       letter-spacing: 0;
     }
     h1 {
-      font-size: 24px;
+      font-size: 23px;
       line-height: 1.15;
       font-weight: 640;
     }
@@ -63,12 +63,12 @@ export function getDashboardHtml(): string {
       letter-spacing: 0;
     }
     button {
-      min-height: 34px;
+      min-height: 32px;
       border: 1px solid var(--accent);
-      border-radius: 6px;
+      border-radius: 4px;
       background: var(--accent);
       color: #fff;
-      padding: 7px 12px;
+      padding: 6px 11px;
       cursor: pointer;
       white-space: nowrap;
     }
@@ -98,7 +98,7 @@ export function getDashboardHtml(): string {
     input, textarea {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 6px;
+      border-radius: 4px;
       background: #fff;
       color: var(--text);
       outline: none;
@@ -151,7 +151,7 @@ export function getDashboardHtml(): string {
       overflow: auto;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
-      border-radius: 6px;
+      border-radius: 4px;
       background: var(--soft);
       color: var(--muted);
       padding: 8px;
@@ -159,14 +159,14 @@ export function getDashboardHtml(): string {
     .subtle { color: var(--muted); }
     .stack {
       display: grid;
-      gap: 16px;
-      margin-top: 18px;
+      gap: 18px;
+      margin-top: 16px;
     }
     .panel {
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border-top: 1px solid var(--line);
+      border-radius: 0;
       background: var(--panel);
-      padding: 16px;
+      padding: 16px 0 0;
     }
     .panel-head,
     .actions,
@@ -217,12 +217,12 @@ export function getDashboardHtml(): string {
     .overview {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 0;
+      gap: 24px;
     }
     .metric {
       min-width: 0;
-      padding: 0 14px;
-      border-left: 1px solid var(--line);
+      padding: 0;
+      border-left: 0;
     }
     .metric:first-child {
       padding-left: 0;
@@ -242,19 +242,27 @@ export function getDashboardHtml(): string {
     }
     .tabs {
       display: flex;
-      gap: 8px;
+      gap: 18px;
       overflow-x: auto;
-      padding-bottom: 2px;
+      padding-bottom: 0;
+      border-bottom: 1px solid var(--line);
     }
     .tab {
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      min-height: 34px;
+      padding: 4px 0 8px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
     }
     .tab[aria-selected="true"] {
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #fff;
+      border-bottom-color: var(--accent);
+      background: transparent;
+      color: var(--text);
     }
     .count {
       color: inherit;
@@ -380,7 +388,7 @@ export function getDashboardHtml(): string {
         border-top: 0;
       }
       .panel {
-        padding: 14px;
+        padding: 14px 0 0;
       }
       th:nth-child(3),
       td:nth-child(3) {

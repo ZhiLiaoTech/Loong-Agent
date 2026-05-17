@@ -28,10 +28,21 @@ without prompting.
 It remains an `ask` tool by default. Docker execution avoids shell expansion by
 calling `docker exec` with fixed arguments. SSH execution quotes a bounded
 remote command and requires explicit host/user/workspace input from the caller.
+The default `inspect` profile stays narrow: version checks, `git status`, and
+safe `rg` inspection. Callers can opt into `versions`, `git-read`,
+`search-read`, or `repo-read` profiles when broader read-only inspection is
+useful. Expanded Git profiles still reject flags that can invoke external
+commands, such as external diff or text conversion.
 
 `browser_snapshot` performs bounded HTTP(S) page inspection and is also an
 `ask` tool because it uses network access. It rejects non-HTTP(S) URLs and URLs
-with embedded credentials.
+with embedded credentials. HTML snapshots include links and form structure, but
+hidden and password field values are not exposed in the tool output.
+`browser_form_submit` submits basic GET and `application/x-www-form-urlencoded`
+POST forms and returns the resulting snapshot. It preserves hidden fields
+internally for normal form submission, refuses cross-origin actions unless the
+caller explicitly opts in, and rejects unsupported encodings such as multipart
+forms.
 
 Gateway direct `tool.invoke` remains stricter: it only runs explicitly
 allowlisted read-only non-memory tools. Memory candidate review uses dedicated

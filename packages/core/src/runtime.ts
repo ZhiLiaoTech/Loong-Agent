@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import type {
   ModelMessage,
   ModelProvider,
+  ModelResponse,
   ModelToolCall,
   ProviderRegistry,
+  ProviderResolution,
 } from "@dragon/providers";
 import { ProviderError, createProviderRegistry } from "@dragon/providers";
 import type {
@@ -47,9 +49,20 @@ export interface DragonRuntimeOptions {
   contextProviders?: DragonContextProvider[];
   lifecycleHooks?: DragonLifecycleHook[];
   defaultModel?: string;
+  modelFallbacks?: string[];
   systemPrompt?: string;
   maxToolIterations?: number;
   maxContextChars?: number;
+}
+
+interface ModelAttemptFailure {
+  requestedModel?: string;
+  providerId?: string;
+  model?: string;
+  message: string;
+  retryable?: boolean;
+  status?: number;
+  code?: string;
 }
 
 export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
@@ -62,6 +75,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   readonly #contextProviders: DragonContextProvider[];
   readonly #lifecycleHooks: DragonLifecycleHook[];
   readonly #defaultModel: string | undefined;
+  readonly #modelFallbacks: string[];
   readonly #systemPrompt: string;
   readonly #maxToolIterations: number;
   readonly #maxContextChars: number;
@@ -80,6 +94,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#contextProviders = [...(options.contextProviders ?? [])];
     this.#lifecycleHooks = [...(options.lifecycleHooks ?? [])];
     this.#defaultModel = options.defaultModel;
+    this.#modelFallbacks = normalizeModelRefs(options.modelFallbacks ?? []);
     this.#systemPrompt = options.systemPrompt ?? "You are Dragon, a TypeScript-native local-first agent.";
     this.#maxToolIterations = options.maxToolIterations ?? 4;
     this.#maxContextChars = options.maxContextChars ?? 12_000;
@@ -118,20 +133,17 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       const history = input.history ?? await this.#loadSessionMessages(input.sessionId);
       const contextItems = await this.#buildContextItems(input, history, runId, createdAt);
 
-      const resolution = this.#providerRegistry.resolveModel(input.model ?? this.#defaultModel);
-      if (!resolution) {
-        throw new Error(
-          "No model provider is configured. Set DRAGON_OPENAI_API_KEY or register a provider.",
-        );
-      }
-
       const modelMessages: ModelMessage[] = [
         { role: "system", content: composeSystemPrompt(this.#systemPrompt, contextItems, this.#maxContextChars) },
         ...toModelHistory(history),
         { role: "user", content: input.message },
       ];
 
-      let providerResponse = await this.#completeModel(resolution.provider, resolution.model, modelMessages, input, runId);
+      const modelRefs = modelAttemptRefs(input.model, this.#defaultModel, input.modelFallbacks, this.#modelFallbacks);
+      let completion = await this.#completeModelWithFallback(modelRefs, modelMessages, input, runId);
+      let providerResponse = completion.response;
+      let resolution = completion.resolution;
+      let fallbackFailures = completion.failures;
 
       if (input.signal?.aborted) {
         throw new DragonCancelledError("Turn was cancelled.");
@@ -155,7 +167,10 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
           });
         }
 
-        providerResponse = await this.#completeModel(resolution.provider, resolution.model, modelMessages, input, runId);
+        completion = await this.#completeModelWithFallback(modelRefs, modelMessages, input, runId);
+        providerResponse = completion.response;
+        resolution = completion.resolution;
+        fallbackFailures = completion.failures;
       }
 
       if (providerResponse.toolCalls?.length) {
@@ -166,12 +181,18 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       if (assistantText && !providerResponse.streamedText) {
         this.#emit({ type: "assistant_delta", runId, text: assistantText });
       }
-      const assistantMessage = createMessage("assistant", assistantText, new Date().toISOString(), {
+      const assistantMetadata: Record<string, unknown> = {
         providerId: resolution.provider.id,
         model: resolution.model,
         requestedModel: resolution.requestedModel,
-        ...(providerResponse.toolCalls ? { toolCalls: providerResponse.toolCalls } : {}),
-      });
+      };
+      if (providerResponse.toolCalls) {
+        assistantMetadata.toolCalls = providerResponse.toolCalls;
+      }
+      if (fallbackFailures.length > 0) {
+        assistantMetadata.modelFallbacks = fallbackFailures;
+      }
+      const assistantMessage = createMessage("assistant", assistantText, new Date().toISOString(), assistantMetadata);
       resultMessages = [userMessage, assistantMessage];
 
       const result: DragonTurnResult = {
@@ -364,7 +385,8 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     messages: ModelMessage[],
     input: DragonTurnInput,
     runId: string,
-  ) {
+    streamDeltas = true,
+  ): Promise<ModelResponse> {
     let streamedText = false;
     const onTextDelta = (delta: string): void => {
       if (!delta) {
@@ -378,7 +400,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       messages,
       ...(provider.supportsToolCalling ? { tools: this.#toolRegistry.list().map(toModelTool) } : {}),
       ...(input.signal !== undefined ? { signal: input.signal } : {}),
-      onTextDelta,
+      ...(streamDeltas ? { onTextDelta } : {}),
       metadata: {
         runId,
         sessionId: input.sessionId,
@@ -389,6 +411,55 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       response.streamedText = true;
     }
     return response;
+  }
+
+  async #completeModelWithFallback(
+    modelRefs: Array<string | undefined>,
+    messages: ModelMessage[],
+    input: DragonTurnInput,
+    runId: string,
+  ): Promise<{ resolution: ProviderResolution; response: ModelResponse; failures: ModelAttemptFailure[] }> {
+    const failures: ModelAttemptFailure[] = [];
+    const streamDeltas = modelRefs.length === 1;
+
+    for (let index = 0; index < modelRefs.length; index += 1) {
+      const requestedModel = modelRefs[index];
+      const resolution = this.#providerRegistry.resolveModel(requestedModel);
+      if (!resolution) {
+        failures.push({
+          ...(requestedModel !== undefined ? { requestedModel } : {}),
+          message: requestedModel === undefined
+            ? "No model provider is configured. Set DRAGON_OPENAI_API_KEY or register a provider."
+            : `No provider could resolve model "${requestedModel}".`,
+          retryable: true,
+        });
+        continue;
+      }
+
+      try {
+        const response = await this.#completeModel(
+          resolution.provider,
+          resolution.model,
+          messages,
+          input,
+          runId,
+          streamDeltas,
+        );
+        return { resolution, response, failures };
+      } catch (error) {
+        if (input.signal?.aborted) {
+          throw error;
+        }
+        const failure = toModelAttemptFailure(resolution, error);
+        failures.push(failure);
+        const hasNext = index < modelRefs.length - 1;
+        if (!hasNext || !isFallbackEligible(error)) {
+          throw failures.length > 1 ? new DragonModelFallbackError(failures) : error;
+        }
+      }
+    }
+
+    throw new DragonModelFallbackError(failures);
   }
 
   async #runToolCall(
@@ -596,6 +667,9 @@ function toLifecycleMetadata(input: DragonTurnInput): Record<string, unknown> {
   }
   if (input.model !== undefined) {
     metadata.requestedModel = input.model;
+  }
+  if (input.modelFallbacks !== undefined) {
+    metadata.requestedModelFallbacks = [...input.modelFallbacks];
   }
   return metadata;
 }
@@ -889,6 +963,9 @@ function toSessionTurnRecord(
   if (input.model !== undefined) {
     metadata.requestedModel = input.model;
   }
+  if (input.modelFallbacks !== undefined) {
+    metadata.requestedModelFallbacks = [...input.modelFallbacks];
+  }
   if (input.thinking !== undefined) {
     metadata.thinking = input.thinking;
   }
@@ -969,6 +1046,76 @@ function toDragonUsage(
     dragonUsage.totalTokens = usage.inputTokens + usage.outputTokens;
   }
   return dragonUsage;
+}
+
+function modelAttemptRefs(
+  requestedModel: string | undefined,
+  defaultModel: string | undefined,
+  inputFallbacks: string[] | undefined,
+  defaultFallbacks: string[],
+): Array<string | undefined> {
+  const refs: Array<string | undefined> = [];
+  const primary = requestedModel ?? defaultModel;
+  if (primary === undefined) {
+    refs.push(undefined);
+  } else {
+    refs.push(...splitModelRefs(primary));
+  }
+  refs.push(...normalizeModelRefs(inputFallbacks ?? []));
+  refs.push(...defaultFallbacks);
+
+  const seen = new Set<string>();
+  const unique: Array<string | undefined> = [];
+  for (const ref of refs) {
+    if (ref === undefined) {
+      if (!seen.has("")) {
+        seen.add("");
+        unique.push(undefined);
+      }
+      continue;
+    }
+    if (!seen.has(ref)) {
+      seen.add(ref);
+      unique.push(ref);
+    }
+  }
+  return unique.length > 0 ? unique : [undefined];
+}
+
+function normalizeModelRefs(values: string[]): string[] {
+  return values.flatMap(splitModelRefs);
+}
+
+function splitModelRefs(value: string): string[] {
+  return value
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function toModelAttemptFailure(resolution: ProviderResolution, error: unknown): ModelAttemptFailure {
+  const failure: ModelAttemptFailure = {
+    requestedModel: resolution.requestedModel,
+    providerId: resolution.provider.id,
+    model: resolution.model,
+    message: error instanceof Error ? error.message : String(error),
+  };
+  if (error instanceof ProviderError) {
+    failure.retryable = error.retryable;
+    if (error.status !== undefined) {
+      failure.status = error.status;
+    }
+    if (error.code !== undefined) {
+      failure.code = error.code;
+    }
+  }
+  return failure;
+}
+
+function isFallbackEligible(error: unknown): boolean {
+  return error instanceof ProviderError
+    ? error.retryable === true
+    : true;
 }
 
 function toModelHistory(history: DragonMessage[]): ModelMessage[] {
@@ -1107,6 +1254,15 @@ interface ErrorDetails {
 }
 
 function errorToDetails(error: unknown): ErrorDetails {
+  if (error instanceof DragonModelFallbackError) {
+    return {
+      message: error.message,
+      metadata: {
+        modelFallbacks: error.failures,
+      },
+    };
+  }
+
   if (error instanceof ProviderError) {
     const metadata: Record<string, unknown> = {
       providerId: error.providerId,
@@ -1137,6 +1293,31 @@ class DragonCancelledError extends Error {
     super(message);
     this.name = "DragonCancelledError";
   }
+}
+
+class DragonModelFallbackError extends Error {
+  readonly failures: ModelAttemptFailure[];
+
+  constructor(failures: ModelAttemptFailure[]) {
+    super(formatModelFallbackError(failures));
+    this.name = "DragonModelFallbackError";
+    this.failures = failures;
+  }
+}
+
+function formatModelFallbackError(failures: ModelAttemptFailure[]): string {
+  if (failures.length === 0) {
+    return "No model provider is configured. Set DRAGON_OPENAI_API_KEY or register a provider.";
+  }
+  return `All model fallback attempts failed: ${failures.map(formatModelFailure).join("; ")}`;
+}
+
+function formatModelFailure(failure: ModelAttemptFailure): string {
+  const target = [
+    failure.providerId,
+    failure.model,
+  ].filter(Boolean).join(":") || failure.requestedModel || "default";
+  return `${target}: ${failure.message}`;
 }
 
 class DragonPersistenceError extends Error {

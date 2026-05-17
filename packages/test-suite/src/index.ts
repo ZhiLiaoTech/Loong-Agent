@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { parseSlackWebhook, parseTelegramWebhook, toGatewayWebhookPayload } from "@dragon/channels";
+import { createGatewayWebhookChannelTarget, parseSlackWebhook, parseTelegramWebhook, toGatewayWebhookPayload } from "@dragon/channels";
 import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
 import { createDragonRuntime } from "@dragon/core";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
@@ -25,8 +25,8 @@ import {
   type MemoryCandidateRejectInput,
   type MemoryCandidateRejectOutput,
 } from "@dragon/memory";
-import { createAnthropicProvider, createOpenAICompatibleProvider, type ModelProvider, type ModelRequest } from "@dragon/providers";
-import { createBrowserSnapshotTool, createSandboxExecTool, createToolPermissionEngine, planSandboxExecCommand, type ToolDefinition } from "@dragon/tools";
+import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@dragon/providers";
+import { createBrowserFormSubmitTool, createBrowserSnapshotTool, createSandboxExecTool, createToolPermissionEngine, planSandboxExecCommand, type ToolDefinition } from "@dragon/tools";
 
 const TEST_TIMEOUT_MS = 5000;
 type AnyBuffer = Buffer<ArrayBufferLike>;
@@ -51,8 +51,9 @@ async function main(): Promise<void> {
     ["sandbox exec tool", testSandboxExecTool],
     ["cron schedule and gateway delivery", testCronScheduleAndGatewayDelivery],
     ["cron file store and runner", testCronFileStoreAndRunner],
-    ["browser snapshot tool", testBrowserSnapshotTool],
+    ["browser snapshot and form submit tools", testBrowserSnapshotTool],
     ["delegation planner and runner", testDelegationPlannerAndRunner],
+    ["runtime model fallback", testRuntimeModelFallback],
     ["runtime tool-call loop", testRuntimeToolCallLoop],
     ["openai provider tool call translation", testOpenAIProviderToolCallTranslation],
     ["openai provider streaming", testOpenAIProviderStreaming],
@@ -98,6 +99,8 @@ async function testCliSkillsSlashCommand(): Promise<void> {
 
     const help = await runCli(["gateway", "--help"]);
     assert(help.stdout.includes("--cron-jobs <path>"), "gateway help should document cron jobs configuration");
+    assert(help.stdout.includes("--model-fallback <ref>"), "CLI help should document model fallback configuration");
+    assert(help.stdout.includes("DRAGON_MODEL_FALLBACKS"), "CLI help should document model fallback environment variable");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -540,6 +543,61 @@ async function testChannelAdapters(): Promise<void> {
 
   const ignored = parseSlackWebhook({ type: "event_callback", event: { type: "reaction_added", user: "U1" } });
   assert(ignored === undefined, "slack adapter should ignore non-text events");
+
+  const deliveries: Array<{
+    url: string | undefined;
+    authorization: string | undefined;
+    body: Record<string, unknown>;
+  }> = [];
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    request.on("end", () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+      deliveries.push({
+        url: request.url,
+        authorization: readHeader(request.headers.authorization),
+        body,
+      });
+      if (body.message === "fail") {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "gateway down" }));
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: true, payload: { accepted: true } }));
+    });
+  });
+  const port = await listenOnLoopback(server);
+  try {
+    const target = createGatewayWebhookChannelTarget({
+      gatewayUrl: `http://127.0.0.1:${port}/`,
+      sharedSecret: "secret",
+      defaults: {
+        sessionPrefix: "dragon",
+        model: "mock:model",
+        metadata: { global: "yes" },
+      },
+    });
+    const result = await target.deliver(telegram, { metadata: { source: "test" } });
+    assert(result.ok && result.status === 200, "channel target should deliver successfully");
+    assert(readPath(result.payload, ["payload", "accepted"]) === true, "channel target should return success payload");
+    assert(deliveries[0]?.url === "/channels/webhook", "channel target should deliver to Gateway webhook channel");
+    assert(deliveries[0]?.authorization === "Bearer secret", "channel target should forward shared secret auth");
+    assert(deliveries[0]?.body.sessionId === "dragon:telegram:-1001", "channel target should derive stable session id");
+    assert(deliveries[0]?.body.channel === "telegram", "channel target should carry channel name");
+    assert(deliveries[0]?.body.message === "hello dragon", "channel target should carry message text");
+    assert(deliveries[0]?.body.model === "mock:model", "channel target should apply default model");
+    assert(readPath(deliveries[0]?.body, ["metadata", "global"]) === "yes", "channel target should apply default metadata");
+    assert(readPath(deliveries[0]?.body, ["metadata", "source"]) === "test", "channel target should merge delivery metadata");
+    assert(readPath(deliveries[0]?.body, ["metadata", "channelMessageId"]) === "456", "channel target should preserve channel message id");
+
+    const failed = await target.deliver({ channel: "telegram", text: "fail", threadId: "thread-fail" });
+    assert(!failed.ok && failed.status === 500, "channel target should report Gateway errors");
+    assert(failed.error === "gateway down", "channel target should expose Gateway error text");
+  } finally {
+    await closeServer(server);
+  }
 }
 
 async function testGatewayCronRpc(): Promise<void> {
@@ -912,14 +970,64 @@ async function testSandboxExecTool(): Promise<void> {
   });
   assert(dockerPlan.executable === "docker", "docker sandbox should use docker executable");
   assert(JSON.stringify(dockerPlan.args) === JSON.stringify(["exec", "-i", "-w", "/workspace", "dragon-dev", "git", "status"]), "docker sandbox plan should be stable");
+  assert(dockerPlan.profile === "inspect", "sandbox default profile should remain inspect");
   assert(dockerPlan.innerExecutable === "git", "docker sandbox should retain inner executable");
+
+  let defaultRejected = false;
+  try {
+    planSandboxExecCommand({
+      backend: "docker",
+      command: "git diff --stat",
+      docker: { container: "dragon-dev", workspace: "/workspace" },
+    });
+  } catch {
+    defaultRejected = true;
+  }
+  assert(defaultRejected, "default sandbox profile should not expand Git read commands");
+
+  const repoReadPlan = planSandboxExecCommand({
+    backend: "docker",
+    profile: "repo-read",
+    command: "git diff --stat",
+    docker: { container: "dragon-dev", workspace: "/workspace" },
+  });
+  assert(repoReadPlan.profile === "repo-read", "sandbox plan should preserve selected profile");
+  assert(repoReadPlan.innerExecutable === "git", "repo-read profile should allow read-only Git commands");
+
+  let unsafeGitReadRejected = false;
+  try {
+    planSandboxExecCommand({
+      backend: "docker",
+      profile: "repo-read",
+      command: "git diff --ext-diff",
+      docker: { container: "dragon-dev", workspace: "/workspace" },
+    });
+  } catch {
+    unsafeGitReadRejected = true;
+  }
+  assert(unsafeGitReadRejected, "repo-read profile should reject Git flags that can trigger external commands");
+
+  let gitProfileBlocksSearch = false;
+  try {
+    planSandboxExecCommand({
+      backend: "docker",
+      profile: "git-read",
+      command: "rg hello src",
+      docker: { container: "dragon-dev", workspace: "/workspace" },
+    });
+  } catch {
+    gitProfileBlocksSearch = true;
+  }
+  assert(gitProfileBlocksSearch, "git-read profile should not allow search commands");
 
   const sshPlan = planSandboxExecCommand({
     backend: "ssh",
+    profile: "search-read",
     command: "rg hello src",
     ssh: { host: "example.test", user: "dragon", port: 2222, workspace: "/srv/dragon" },
   });
   assert(sshPlan.executable === "ssh", "ssh sandbox should use ssh executable");
+  assert(sshPlan.profile === "search-read", "ssh sandbox should preserve selected profile");
   assert(sshPlan.args.includes("dragon@example.test"), "ssh sandbox should include user and host");
   assert(sshPlan.args.includes("2222"), "ssh sandbox should include port");
   assert(sshPlan.args.at(-1) === "cd '/srv/dragon' && exec 'rg' 'hello' 'src'", "ssh sandbox should quote the remote command");
@@ -940,12 +1048,13 @@ async function testSandboxExecTool(): Promise<void> {
   const local = await tool.invoke({
     id: "sandbox-local-1",
     name: tool.name,
-    input: { backend: "local", command: "node --version" },
+    input: { backend: "local", profile: "versions", command: "node --version" },
     sessionId: "sandbox-session",
     workspace: WORKSPACE_ROOT,
   });
   assert(local.ok, `local sandbox_exec failed: ${local.error}`);
   assert(local.output?.backend === "local", "local sandbox output should report backend");
+  assert(local.output?.profile === "versions", "local sandbox output should report profile");
   assert(local.output?.innerExecutable.toLowerCase() === "node", "local sandbox output should report inner executable");
   assert(local.output?.stdout.trim().startsWith("v"), "local sandbox should execute node --version");
 }
@@ -1107,7 +1216,22 @@ async function testCronFileStoreAndRunner(): Promise<void> {
 }
 
 async function testBrowserSnapshotTool(): Promise<void> {
-  const server = createServer((_request, response) => {
+  let submitted: { method?: string; url?: string; body?: string } = {};
+  const server = createServer((request, response) => {
+    if (request.url === "/login") {
+      const chunks: Buffer[] = [];
+      request.on("data", chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      request.on("end", () => {
+        submitted = {
+          body: Buffer.concat(chunks).toString("utf8"),
+          ...(request.method !== undefined ? { method: request.method } : {}),
+          ...(request.url !== undefined ? { url: request.url } : {}),
+        };
+        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        response.end("<!doctype html><title>Submitted</title><p>Submitted OK</p><a href='/done'>Done</a>");
+      });
+      return;
+    }
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end([
       "<!doctype html>",
@@ -1119,6 +1243,16 @@ async function testBrowserSnapshotTool(): Promise<void> {
       "<p>Minimal page inspection.</p>",
       "<a href='/docs'>Docs</a>",
       "<a href='https://example.com/out'>External</a>",
+      "<form id='login' name='loginForm' action='/login' method='post'>",
+      "<label for='email'>Email</label>",
+      "<input id='email' name='email' type='email' required>",
+      "<input name='csrf' type='hidden' value='secret-token'>",
+      "<input name='password' type='password' value='secret-password'>",
+      "<textarea name='note'>hello &amp; welcome</textarea>",
+      "<select name='plan'><option value='free'>Free</option><option selected value='pro'>Pro</option></select>",
+      "</form>",
+      "<form id='external' action='https://example.com/collect' method='post'><input name='q'></form>",
+      "<form id='upload' action='/upload' method='post' enctype='multipart/form-data'><input name='file' type='file'></form>",
       "</body>",
       "</html>",
     ].join(""));
@@ -1126,6 +1260,7 @@ async function testBrowserSnapshotTool(): Promise<void> {
   const port = await listenOnLoopback(server);
   try {
     const tool = createBrowserSnapshotTool();
+    const submitTool = createBrowserFormSubmitTool();
     const result = await tool.invoke({
       id: "browser-1",
       name: tool.name,
@@ -1138,6 +1273,51 @@ async function testBrowserSnapshotTool(): Promise<void> {
     assert(result.output?.text.includes("Dragon Browser"), "browser_snapshot should include visible text");
     assert(!result.output?.text.includes("hidden"), "browser_snapshot should remove script content");
     assert(result.output?.links.some(link => link.href === `http://127.0.0.1:${port}/docs` && link.text === "Docs"), "browser_snapshot should resolve relative links");
+    assert(result.output?.forms[0]?.action === `http://127.0.0.1:${port}/login`, "browser_snapshot should resolve form actions");
+    assert(result.output?.forms[0]?.method === "post", "browser_snapshot should parse form methods");
+    assert(result.output?.forms[0]?.fields.some(field => field.name === "email" && field.type === "email" && field.label === "Email" && field.required), "browser_snapshot should parse labeled required inputs");
+    const hiddenField = result.output?.forms[0]?.fields.find(field => field.name === "csrf");
+    assert(hiddenField?.type === "hidden" && hiddenField.value === undefined, "browser_snapshot should not expose hidden field values");
+    const passwordField = result.output?.forms[0]?.fields.find(field => field.name === "password");
+    assert(passwordField?.type === "password" && passwordField.value === undefined, "browser_snapshot should not expose password values");
+    assert(result.output?.forms[0]?.fields.some(field => field.name === "note" && field.value === "hello & welcome"), "browser_snapshot should decode textarea defaults");
+    assert(result.output?.forms[0]?.fields.some(field => field.name === "plan" && field.value === "pro" && field.options?.includes("free")), "browser_snapshot should parse select defaults and options");
+
+    const submittedResult = await submitTool.invoke({
+      id: "browser-submit-1",
+      name: submitTool.name,
+      input: {
+        url: `http://127.0.0.1:${port}/`,
+        formId: "login",
+        fields: { email: "reader@example.test", note: "override", plan: "free" },
+        timeoutMs: 1000,
+      },
+      sessionId: "browser-session",
+    });
+    assert(submittedResult.ok, `browser_form_submit failed: ${submittedResult.error}`);
+    assert(submitted.method === "POST", "browser_form_submit should use form method");
+    assert(submitted.body?.includes("csrf=secret-token"), "browser_form_submit should preserve hidden fields internally");
+    assert(submitted.body?.includes("email=reader%40example.test"), "browser_form_submit should submit caller fields");
+    assert(submitted.body?.includes("note=override"), "browser_form_submit should override defaults");
+    assert(submittedResult.output?.submitted.fieldNames.includes("csrf"), "browser_form_submit should report submitted field names");
+    assert(submittedResult.output?.snapshot.title === "Submitted", "browser_form_submit should return resulting page snapshot");
+    assert(submittedResult.output?.snapshot.links.some(link => link.href === `http://127.0.0.1:${port}/done`), "browser_form_submit should snapshot resulting links");
+
+    const crossOrigin = await submitTool.invoke({
+      id: "browser-submit-2",
+      name: submitTool.name,
+      input: { url: `http://127.0.0.1:${port}/`, formId: "external", fields: { q: "x" }, timeoutMs: 1000 },
+      sessionId: "browser-session",
+    });
+    assert(!crossOrigin.ok && crossOrigin.error?.includes("cross-origin"), "browser_form_submit should block cross-origin forms by default");
+
+    const multipart = await submitTool.invoke({
+      id: "browser-submit-3",
+      name: submitTool.name,
+      input: { url: `http://127.0.0.1:${port}/`, formId: "upload", timeoutMs: 1000 },
+      sessionId: "browser-session",
+    });
+    assert(!multipart.ok && multipart.error?.includes("application/x-www-form-urlencoded"), "browser_form_submit should reject unsupported form encodings");
 
     const blocked = await tool.invoke({
       id: "browser-2",
@@ -1409,6 +1589,80 @@ async function testAnthropicProviderStreaming(): Promise<void> {
   assert(response.toolCalls?.[0]?.id === "toolu_stream", "Anthropic streaming tool_use id should be accumulated");
   assert(response.toolCalls?.[0]?.function?.arguments === JSON.stringify({ porcelain: true }), "Anthropic streaming tool args should be accumulated");
   assert(response.usage?.inputTokens === 5 && response.usage.outputTokens === 3, "Anthropic streaming usage should be mapped");
+}
+
+async function testRuntimeModelFallback(): Promise<void> {
+  const calls: string[] = [];
+  const primary: ModelProvider = {
+    id: "primary",
+    displayName: "Primary",
+    defaultModel: "broken",
+    supportsToolCalling: false,
+    async complete(request) {
+      calls.push(`primary:${request.model}:${request.onTextDelta === undefined ? "buffered" : "streaming"}`);
+      throw new ProviderError({
+        providerId: "primary",
+        status: 503,
+        retryable: true,
+        message: "Primary provider unavailable.",
+      });
+    },
+  };
+  const backup: ModelProvider = {
+    id: "backup",
+    displayName: "Backup",
+    defaultModel: "stable",
+    supportsToolCalling: false,
+    async complete(request) {
+      calls.push(`backup:${request.model}:${request.onTextDelta === undefined ? "buffered" : "streaming"}`);
+      return { id: "backup-ok", text: `backup:${request.model}` };
+    },
+  };
+  const runtime = createDragonRuntime({
+    providers: [primary, backup],
+    defaultModel: "primary:broken",
+    modelFallbacks: ["backup:stable"],
+  });
+  const events: DragonEvent[] = [];
+  const unsubscribe = runtime.subscribe(event => events.push(event));
+  try {
+    const result = await runtime.runTurn({
+      sessionId: "fallback",
+      source: "cli",
+      message: "hello",
+    });
+    assert(result.status === "ok", `runtime model fallback failed: ${result.error}`);
+    assert(result.messages[1]?.content === "backup:stable", "runtime should return backup model response");
+    assert(calls.join(",") === "primary:broken:buffered,backup:stable:buffered", "fallback attempts should be buffered and ordered");
+    assert(readPath(result.messages[1]?.metadata, ["providerId"]) === "backup", "assistant metadata should record final provider");
+    assert(readPath(result.messages[1]?.metadata, ["modelFallbacks", 0, "providerId"]) === "primary", "assistant metadata should record failed provider");
+    assert(events.filter(event => event.type === "assistant_delta").map(event => event.text).join("") === "backup:stable", "runtime should emit only the successful fallback text");
+  } finally {
+    unsubscribe();
+  }
+
+  const nonRetryableRuntime = createDragonRuntime({
+    providers: [{
+      ...primary,
+      async complete() {
+        throw new ProviderError({
+          providerId: "primary",
+          status: 400,
+          retryable: false,
+          message: "Primary provider rejected the request.",
+        });
+      },
+    }, backup],
+    defaultModel: "primary:broken",
+    modelFallbacks: ["backup:stable"],
+  });
+  const failed = await nonRetryableRuntime.runTurn({
+    sessionId: "fallback-non-retryable",
+    source: "cli",
+    message: "hello",
+  });
+  assert(failed.status === "error", "runtime should not fallback after non-retryable provider errors");
+  assert(failed.error?.includes("Primary provider rejected"), "runtime should preserve non-retryable provider error");
 }
 
 async function testRuntimeToolCallLoop(): Promise<void> {

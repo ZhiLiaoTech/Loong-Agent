@@ -26,6 +26,27 @@ export interface DragonChannelGatewayOptions {
   metadata?: Record<string, unknown>;
 }
 
+export interface DragonChannelDeliveryResult {
+  ok: boolean;
+  status: number;
+  payload?: unknown;
+  error?: string;
+}
+
+export interface DragonChannelDeliveryTarget {
+  deliver(
+    message: DragonChannelMessage,
+    options?: DragonChannelGatewayOptions,
+  ): Promise<DragonChannelDeliveryResult>;
+}
+
+export interface GatewayWebhookChannelTargetOptions {
+  gatewayUrl: string;
+  sharedSecret?: string;
+  fetchImpl?: typeof fetch;
+  defaults?: DragonChannelGatewayOptions;
+}
+
 export function parseTelegramWebhook(payload: unknown): DragonChannelMessage | undefined {
   if (!isRecord(payload)) {
     throw new Error("Telegram webhook payload must be an object.");
@@ -116,6 +137,47 @@ export function parseSlackWebhook(payload: unknown): DragonChannelMessage | unde
   };
 }
 
+export function createGatewayWebhookChannelTarget(options: GatewayWebhookChannelTargetOptions): DragonChannelDeliveryTarget {
+  const gatewayUrl = normalizeGatewayUrl(options.gatewayUrl);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  return {
+    async deliver(message, deliveryOptions = {}) {
+      const payload = toGatewayWebhookPayload(message, mergeGatewayOptions(options.defaults, deliveryOptions));
+      let response: Response;
+      try {
+        response = await fetchImpl(`${gatewayUrl}/channels/webhook`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(options.sharedSecret !== undefined ? { authorization: `Bearer ${options.sharedSecret}` } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          status: 0,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+      const responsePayload = await readResponsePayload(response);
+      if (!response.ok) {
+        return {
+          ok: false,
+          status: response.status,
+          error: readResponseError(responsePayload) ?? `Gateway webhook delivery failed with HTTP ${response.status}.`,
+          ...(responsePayload !== undefined ? { payload: responsePayload } : {}),
+        };
+      }
+      return {
+        ok: true,
+        status: response.status,
+        ...(responsePayload !== undefined ? { payload: responsePayload } : {}),
+      };
+    },
+  };
+}
+
 export function toGatewayWebhookPayload(
   message: DragonChannelMessage,
   options: DragonChannelGatewayOptions = {},
@@ -148,6 +210,36 @@ function readTelegramEvent(payload: Record<string, unknown>): { type: string; me
     }
   }
   return undefined;
+}
+
+function mergeGatewayOptions(
+  defaults: DragonChannelGatewayOptions | undefined,
+  options: DragonChannelGatewayOptions,
+): DragonChannelGatewayOptions {
+  const merged: DragonChannelGatewayOptions = {};
+  const sessionPrefix = options.sessionPrefix ?? defaults?.sessionPrefix;
+  const sessionId = options.sessionId ?? defaults?.sessionId;
+  const workspace = options.workspace ?? defaults?.workspace;
+  const model = options.model ?? defaults?.model;
+  const metadata = defaults?.metadata !== undefined || options.metadata !== undefined
+    ? { ...(defaults?.metadata ?? {}), ...(options.metadata ?? {}) }
+    : undefined;
+  if (sessionPrefix !== undefined) {
+    merged.sessionPrefix = sessionPrefix;
+  }
+  if (sessionId !== undefined) {
+    merged.sessionId = sessionId;
+  }
+  if (workspace !== undefined) {
+    merged.workspace = workspace;
+  }
+  if (model !== undefined) {
+    merged.model = model;
+  }
+  if (metadata !== undefined) {
+    merged.metadata = metadata;
+  }
+  return merged;
 }
 
 function normalizeChannelMessage(message: DragonChannelMessage): DragonChannelMessage {
@@ -213,6 +305,40 @@ function readMetadata(value: unknown): Record<string, unknown> {
     throw new Error("Channel metadata must be an object.");
   }
   return { ...value };
+}
+
+function normalizeGatewayUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    throw new Error("Gateway URL cannot be empty.");
+  }
+  const parsed = new URL(trimmed);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Gateway URL must use http or https.");
+  }
+  return parsed.toString().replace(/\/+$/, "");
+}
+
+async function readResponsePayload(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+function readResponseError(payload: unknown): string | undefined {
+  if (typeof payload === "string") {
+    return payload;
+  }
+  if (isRecord(payload) && typeof payload.error === "string") {
+    return payload.error;
+  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

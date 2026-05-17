@@ -15,7 +15,8 @@ in TypeScript where they fit the framework.
 
 - `@dragon/core`: agent turn runtime, lifecycle events, sessions, queues.
 - `@dragon/gateway`: WebSocket/HTTP control plane.
-- `@dragon/channels`: chat-channel webhook adapters for Gateway delivery.
+- `@dragon/channels`: chat-channel webhook adapters and Gateway delivery
+  targets.
 - `@dragon/tools`: tool registry, permissions, and built-in tool contracts.
 - `@dragon/providers`: model provider routing contracts.
 - `@dragon/memory`: Markdown, SQLite, and search memory contracts.
@@ -40,8 +41,8 @@ notes.
 ## Current CLI Shape
 
 ```bash
-dragon chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--plugin-root <path>] <message>
-dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--model <ref>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] <message>
+dragon chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--model-fallback <ref>] [--plugin-root <path>] <message>
+dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--model <ref>] [--model-fallback <ref>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] <message>
 dragon gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>]
 dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] [--once] [--interval-ms <ms>]
 ```
@@ -49,9 +50,13 @@ dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] [--once] [-
 `dragon agent` can read/search workspace files, run a conservative read-only
 shell allowlist, run the same read-only allowlist through `sandbox_exec` local,
 Docker, or SSH backends, inspect bounded HTTP(S) page snapshots with
-`browser_snapshot`, and use `file_patch` for exact text replacements. Write
-tools ask for approval in an interactive terminal; `--allow-write` skips that
-prompt.
+`browser_snapshot` including links and form structure, submit basic GET/POST
+HTML forms with `browser_form_submit`, and use `file_patch` for exact text
+replacements. Write tools ask for approval in an interactive terminal;
+`--allow-write` skips that prompt.
+`sandbox_exec` keeps the default `inspect` profile narrow and supports explicit
+`versions`, `git-read`, `search-read`, and `repo-read` profiles for broader
+read-only sandbox inspection.
 `dragon agent /skills`, `dragon agent /skills <query>`, and
 `dragon agent /skills load <name>` run locally against configured skill roots
 without requiring a model provider.
@@ -72,7 +77,8 @@ a simple authenticated JSON body with `sessionId`, `message`, optional
 `channel`, `userId`, `threadId`, `workspace`, `model`, and metadata, then
 routes the message through the same agent lane and event pipeline.
 `@dragon/channels` provides Telegram and Slack webhook adapters that normalize
-platform payloads into this Gateway webhook body.
+platform payloads into this Gateway webhook body, plus a reusable Gateway
+webhook delivery target for chat-channel bridges.
 `@dragon/cron` can compute next runs for five-field cron expressions, persist
 jobs in a JSON store, run due jobs with a bounded runner, and deliver scheduled
 jobs to this webhook surface with `channel: "cron"`.
@@ -102,6 +108,10 @@ Model refs with a registered provider prefix, such as `openai:gpt-4o` or
 `anthropic:claude-sonnet-4-5`, route explicitly to that provider. Use this form
 with `--model <ref>`, `DRAGON_MODEL`, or the dashboard Model field when a model
 name such as `owner/model` collides with a loaded provider id.
+CLI turns can also provide retryable model fallback candidates with
+`--model-fallback <ref>` or comma-separated `DRAGON_MODEL_FALLBACKS`; Dragon
+buffers fallback attempts so failed streamed output is not shown before the
+successful model response.
 
 Agent mode exposes `skill_create`, `skill_improve`, memory candidate promotion,
 and memory candidate rejection as write tools for reviewable updates.
@@ -158,8 +168,10 @@ corepack pnpm test
 `corepack pnpm test` builds the workspace and runs the TypeScript regression
 suite for CLI skill slash commands, Gateway direct tools, Gateway WebSocket
 RPC/events, Gateway webhook channel delivery, Gateway cron RPC, channel
-adapters, memory candidate review, trajectory persistence/RPC, runtime tool-call loops, sandbox command
-planning/execution, cron schedule/delivery targets, browser snapshotting,
+adapters, memory candidate review, trajectory persistence/RPC, runtime
+tool-call loops, sandbox command planning/execution and policy profiles, cron
+schedule/delivery targets, browser snapshotting with form extraction,
+basic browser form submission,
 cron file stores/runners, delegation planning/running, runtime-backed
 delegation, model provider plugin loading/routing, and provider
 translation/streaming.
