@@ -9,6 +9,7 @@
     "build": "corepack pnpm -r build",
     "check": "corepack pnpm -r check",
     "clean": "corepack pnpm -r clean",
+    "smoke:gateway": "tsx scripts/smoke-gateway.ts",
     "test": "corepack pnpm -r build && corepack pnpm --filter @dragon/test-suite test"
   },
   "devDependencies": {

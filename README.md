@@ -41,6 +41,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [docs/REUSE_PLAN.md](docs/REUSE_PLAN.md) for the implementation plan.
 See [docs/PLUGINS.md](docs/PLUGINS.md) for the plugin authoring and loading
 notes.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for local Gateway smoke testing
+and Docker Compose deployment testing.
 
 ## Current CLI Shape
 
@@ -174,6 +176,7 @@ auditable rejection without storing the content.
 corepack pnpm check
 corepack pnpm build
 corepack pnpm test
+corepack pnpm smoke:gateway
 ```
 
 `corepack pnpm test` builds the workspace and runs the TypeScript regression

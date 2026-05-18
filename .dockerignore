@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.dragon/
+.git/
+.github/
+.cache/
+.turbo/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
