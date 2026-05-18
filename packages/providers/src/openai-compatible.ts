@@ -1,3 +1,4 @@
+import { normalizeProviderModelEntries, type DragonProviderModelCatalogEntry } from "@dragon/model-catalog";
 import { ProviderError, sanitizeProviderBody } from "./errors.js";
 import { readServerSentEvents } from "./sse.js";
 import type {
@@ -14,6 +15,7 @@ export interface OpenAICompatibleProviderOptions {
   apiKey: string;
   baseUrl?: string;
   defaultModel?: string;
+  models?: readonly DragonProviderModelCatalogEntry[];
   supportsToolCalling?: boolean;
   headers?: Record<string, string>;
   fetchImpl?: typeof fetch;
@@ -122,6 +124,12 @@ export function createOpenAICompatibleProvider(
 
   if (options.defaultModel !== undefined) {
     provider.defaultModel = options.defaultModel;
+  }
+  if (options.models !== undefined || provider.defaultModel !== undefined) {
+    provider.models = normalizeProviderModelEntries(options.models ?? [], {
+      ...(provider.defaultModel !== undefined ? { defaultModel: provider.defaultModel } : {}),
+      supportsToolCalling: provider.supportsToolCalling,
+    });
   }
 
   return provider;

@@ -31,6 +31,7 @@ import {
   type MemoryCandidateRejectInput,
   type MemoryCandidateRejectOutput,
 } from "@dragon/memory";
+import { catalogEntriesFromProviders, createModelCatalog } from "@dragon/model-catalog";
 import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@dragon/providers";
 import { createBrowserFormSubmitTool, createBrowserSnapshotTool, createSandboxExecTool, createToolPermissionEngine, planSandboxExecCommand, type ToolDefinition } from "@dragon/tools";
 
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
     ["gateway memory candidate review RPC", testGatewayMemoryCandidateRpc],
     ["dashboard memory review smoke", testDashboardMemoryReviewSmoke],
     ["memory candidate review tools", testMemoryCandidateTools],
+    ["model catalog", testModelCatalog],
     ["trajectory persistence and gateway RPC", testTrajectoryPersistenceAndGatewayRpc],
     ["sandbox exec tool", testSandboxExecTool],
     ["cron schedule and gateway delivery", testCronScheduleAndGatewayDelivery],
@@ -304,6 +306,12 @@ async function testGatewayDirectToolRpc(): Promise<void> {
       displayName: "OpenAI Compatible",
       defaultModel: "gpt-test",
       supportsToolCalling: true,
+      models: [{
+        id: "gpt-test",
+        aliases: ["test-model"],
+        capabilities: { toolCalling: true },
+        default: true,
+      }],
     }],
     tools,
     permissionEngine,
@@ -329,6 +337,8 @@ async function testGatewayDirectToolRpc(): Promise<void> {
     assert(providers.status === 200 && providers.json.ok === true, "providers.list should succeed");
     assert(readPath(providers.json, ["payload", "providers", 0, "id"]) === "openai", "provider id should be returned");
     assert(readPath(providers.json, ["payload", "providers", 0, "supportsToolCalling"]) === true, "provider tool capability should be returned");
+    assert(readPath(providers.json, ["payload", "providers", 0, "models", 0, "id"]) === "gpt-test", "provider model catalog should be returned");
+    assert(readPath(providers.json, ["payload", "providers", 0, "models", 0, "default"]) === true, "provider default model flag should be returned");
 
     const health = await rpc(address.url, "health");
     assert(readPath(health.json, ["payload", "providerCount"]) === 1, "health should include provider count");
@@ -898,6 +908,42 @@ async function testMemoryCandidateTools(): Promise<void> {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+async function testModelCatalog(): Promise<void> {
+  const entries = catalogEntriesFromProviders([
+    {
+      id: "openai",
+      displayName: "OpenAI Compatible",
+      defaultModel: "gpt-4.1-mini",
+      supportsToolCalling: true,
+      models: [
+        {
+          id: "gpt-4.1",
+          aliases: ["gpt-main"],
+          contextWindow: 1_000_000,
+          capabilities: { toolCalling: true, streaming: true },
+          status: "stable",
+        },
+      ],
+    },
+    {
+      id: "local",
+      displayName: "Local",
+      models: [{ id: "small", default: true, status: "preview" }],
+    },
+  ]);
+  const defaultEntry = entries.find(entry => entry.providerId === "openai" && entry.id === "gpt-4.1-mini");
+  assert(defaultEntry?.default === true, "model catalog should add provider default model entries");
+  assert(defaultEntry.capabilities?.toolCalling === true, "model catalog should inherit provider tool capability for default entries");
+  const catalog = createModelCatalog(entries);
+  assert(catalog.resolve("openai:gpt-4.1")?.id === "gpt-4.1", "model catalog should resolve provider-colon refs");
+  assert(catalog.resolve("openai/gpt-4.1")?.id === "gpt-4.1", "model catalog should resolve provider-slash refs");
+  assert(catalog.resolve("gpt-main")?.providerId === "openai", "model catalog should resolve unique aliases");
+  assert(catalog.listByProvider("local")[0]?.id === "small", "model catalog should list by provider");
+  const first = entries[0];
+  assert(first !== undefined, "model catalog test fixture should include entries");
+  assertThrows(() => createModelCatalog([first, first]), "duplicate model registration should fail");
 }
 
 async function testTrajectoryPersistenceAndGatewayRpc(): Promise<void> {
@@ -1550,6 +1596,7 @@ async function testAnthropicProviderToolUse(): Promise<void> {
   });
 
   assert(provider.supportsToolCalling === true, "Anthropic provider should advertise tool calling");
+  assert(provider.models?.[0]?.id === "claude-test" && provider.models[0].default === true, "Anthropic provider should expose its default model catalog entry");
   const response = await provider.complete({
     model: "claude-test",
     messages: [
@@ -1845,6 +1892,7 @@ async function testOpenAIProviderToolCallTranslation(): Promise<void> {
   });
 
   assert(provider.supportsToolCalling === true, "OpenAI-compatible provider should advertise tool calling by default");
+  assert(provider.models?.[0]?.id === "openai-test" && provider.models[0].default === true, "OpenAI-compatible provider should expose its default model catalog entry");
   const response = await provider.complete({
     model: "openai-test",
     messages: [
@@ -2379,6 +2427,15 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function assertThrows(fn: () => unknown, message: string): void {
+  try {
+    fn();
+  } catch {
+    return;
+  }
+  throw new Error(message);
 }
 
 async function delay(ms: number): Promise<void> {

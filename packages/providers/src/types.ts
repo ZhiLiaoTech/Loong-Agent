@@ -1,3 +1,5 @@
+import type { DragonProviderModelCatalogEntry } from "@dragon/model-catalog";
+
 export type ModelMessageRole = "system" | "user" | "assistant" | "tool";
 
 export interface ModelToolCallFunction {
@@ -45,6 +47,7 @@ export interface ModelProvider {
   displayName: string;
   supportsToolCalling: boolean;
   defaultModel?: string;
+  models?: readonly DragonProviderModelCatalogEntry[];
   canHandleModel?(modelRef: string): boolean;
   normalizeModel?(modelRef: string): string;
   complete(request: ModelRequest): Promise<ModelResponse>;

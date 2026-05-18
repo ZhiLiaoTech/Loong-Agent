@@ -98,6 +98,9 @@ importers:
       '@dragon/cron':
         specifier: workspace:*
         version: link:../cron
+      '@dragon/model-catalog':
+        specifier: workspace:*
+        version: link:../model-catalog
       '@dragon/tools':
         specifier: workspace:*
         version: link:../tools
@@ -114,6 +117,12 @@ importers:
       '@dragon/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/model-catalog:
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -179,6 +188,9 @@ importers:
       '@dragon/memory':
         specifier: workspace:*
         version: link:../memory
+      '@dragon/model-catalog':
+        specifier: workspace:*
+        version: link:../model-catalog
       '@dragon/providers':
         specifier: workspace:*
         version: link:../providers
@@ -191,6 +203,10 @@ importers:
         version: 5.9.3
 
   packages/providers:
+    dependencies:
+      '@dragon/model-catalog':
+        specifier: workspace:*
+        version: link:../model-catalog
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -226,6 +242,9 @@ importers:
       '@dragon/memory':
         specifier: workspace:*
         version: link:../memory
+      '@dragon/model-catalog':
+        specifier: workspace:*
+        version: link:../model-catalog
       '@dragon/providers':
         specifier: workspace:*
         version: link:../providers

@@ -1506,6 +1506,7 @@ function summarizeLoadedPlugins(plugins: LoadedDragonPlugin[]): GatewayPluginSum
         displayName: provider.displayName,
         supportsToolCalling: provider.supportsToolCalling,
         ...(provider.defaultModel !== undefined ? { defaultModel: provider.defaultModel } : {}),
+        ...(provider.models !== undefined ? { models: provider.models.map(model => ({ ...model })) } : {}),
       })),
       memoryBackends: plugin.memoryBackends.map(backend => ({
         id: backend.id,
@@ -1531,6 +1532,7 @@ function summarizeProviders(providers: ModelProvider[]): GatewayProviderSummary[
     displayName: provider.displayName,
     supportsToolCalling: provider.supportsToolCalling,
     ...(provider.defaultModel !== undefined ? { defaultModel: provider.defaultModel } : {}),
+    ...(provider.models !== undefined ? { models: provider.models.map(model => ({ ...model })) } : {}),
   }));
 }
 

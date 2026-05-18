@@ -19,6 +19,8 @@ in TypeScript where they fit the framework.
   targets.
 - `@dragon/tools`: tool registry, permissions, and built-in tool contracts.
 - `@dragon/providers`: model provider routing contracts.
+- `@dragon/model-catalog`: provider-scoped model metadata and model reference
+  lookup helpers.
 - `@dragon/memory`: Markdown, SQLite, and search memory contracts.
 - `@dragon/skills`: `SKILL.md` runtime and skill authoring contracts.
 - `@dragon/cron`: cron schedule parsing, file-backed jobs, runner, and Gateway
@@ -122,9 +124,10 @@ reviewable updates. `--allow-write` allows those tools alongside `file_patch`;
 otherwise they require interactive approval.
 
 `providers.list` returns configured provider ids, display names, default models,
-and tool-calling capability. `plugins.list` returns plugin name/version, tool
-summaries, provider summaries, memory backend summaries, and hook names. It
-intentionally omits plugin filesystem paths.
+provider-scoped model catalog entries, and tool-calling capability.
+`plugins.list` returns plugin name/version, tool summaries, provider summaries,
+memory backend summaries, and hook names. It intentionally omits plugin
+filesystem paths.
 
 `tools.catalog` returns the runtime tool catalog. `tool.invoke` is deliberately
 stricter than the agent tool loop: direct Gateway invocation only runs explicit
@@ -176,5 +179,5 @@ tool-call loops, sandbox command planning/execution and policy profiles, cron
 schedule/delivery targets, browser snapshotting with form extraction,
 basic browser form submission,
 cron file stores/runners, delegation planning/running, runtime-backed
-delegation, the `delegation_run` agent tool, model provider plugin
-loading/routing, and provider translation/streaming.
+delegation, the `delegation_run` agent tool, model catalog behavior, model
+provider plugin loading/routing, and provider translation/streaming.

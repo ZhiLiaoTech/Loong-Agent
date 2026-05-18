@@ -3,6 +3,7 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type { DragonLifecycleHook } from "@dragon/core";
 import type { MemoryStore } from "@dragon/memory";
+import { normalizeProviderModelEntries } from "@dragon/model-catalog";
 import type { ModelProvider } from "@dragon/providers";
 import type { ToolCapability, ToolDefinition, ToolPermissionDecision } from "@dragon/tools";
 
@@ -300,6 +301,7 @@ function normalizeProvider(provider: ModelProvider): ModelProvider {
   const rawSupportsToolCalling = provider.supportsToolCalling;
   const rawComplete = provider.complete;
   const rawDefaultModel = provider.defaultModel;
+  const rawModels = provider.models;
   const rawCanHandleModel = provider.canHandleModel;
   const rawNormalizeModel = provider.normalizeModel;
   const id = normalizeIdentifier(rawId, "provider.id");
@@ -311,6 +313,9 @@ function normalizeProvider(provider: ModelProvider): ModelProvider {
   }
   if (rawDefaultModel !== undefined && typeof rawDefaultModel !== "string") {
     throw new Error("Plugin provider defaultModel must be a string.");
+  }
+  if (rawModels !== undefined && !Array.isArray(rawModels)) {
+    throw new Error("Plugin provider models must be an array.");
   }
   if (rawCanHandleModel !== undefined && typeof rawCanHandleModel !== "function") {
     throw new Error("Plugin provider canHandleModel must be a function.");
@@ -329,6 +334,12 @@ function normalizeProvider(provider: ModelProvider): ModelProvider {
   };
   if (rawDefaultModel !== undefined) {
     normalized.defaultModel = rawDefaultModel;
+  }
+  if (rawModels !== undefined || rawDefaultModel !== undefined) {
+    normalized.models = normalizeProviderModelEntries(rawModels ?? [], {
+      ...(rawDefaultModel !== undefined ? { defaultModel: rawDefaultModel } : {}),
+      supportsToolCalling: rawSupportsToolCalling,
+    });
   }
   if (rawCanHandleModel !== undefined) {
     normalized.canHandleModel = rawCanHandleModel;

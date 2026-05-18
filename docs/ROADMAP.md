@@ -17,7 +17,7 @@ Goal: establish the TypeScript workspace and design boundaries.
   command planning/execution, sandbox policy profiles, cron schedule/delivery
   targets, cron file stores/runners, browser snapshotting, delegation
   planning/running, runtime-backed delegation, the `delegation_run` agent tool,
-  and model provider plugin loading/routing.
+  model catalog behavior, and model provider plugin loading/routing.
 
 ## Phase 1: Minimal Coding Agent
 
@@ -26,6 +26,9 @@ Goal: make Dragon useful from the CLI.
 - Implement provider registry.
   Initial runtime fallback routing is implemented for retryable provider
   failures, with CLI `--model-fallback` / `DRAGON_MODEL_FALLBACKS` support.
+- Implement model catalog. Initial `@dragon/model-catalog` package is
+  implemented with provider-scoped metadata, default model derivation, aliases,
+  and Gateway provider list exposure.
 - Add one model provider.
 - Implement basic session persistence.
 - Implement file read/search tools.
@@ -109,7 +112,8 @@ Goal: make Dragon extensible without editing core.
 - Add plugin observability. Initial gateway RPC and dashboard summary are
   implemented with `plugins.list`.
 - Add provider observability. Initial gateway RPC and dashboard summary are
-  implemented with `providers.list`.
+  implemented with `providers.list`, including provider-scoped model catalog
+  entries when available.
 - Add gateway tool observability and safe direct invocation. Initial
   `tools.catalog` and conservative `tool.invoke` RPCs are implemented with a
   default direct allowlist for read-only Git inspection tools.

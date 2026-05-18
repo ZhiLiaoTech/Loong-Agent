@@ -101,6 +101,18 @@ is registered, `openai:gpt-4o`, `openai/gpt-4o`, or
 collides with a provider id, callers should use an explicit provider prefix for
 the intended target.
 
+### `@dragon/model-catalog`
+
+Owns provider-scoped model metadata:
+
+- model ids, aliases, default flags, and display names
+- optional context/output token metadata
+- optional capability flags such as tool calling, streaming, vision, reasoning,
+  and JSON mode
+- catalog generation from registered providers for CLI and Gateway surfaces
+- model reference lookup for `provider:model`, `provider/model`, and unique
+  aliases
+
 ### `@dragon/memory`
 
 Owns memory abstractions:

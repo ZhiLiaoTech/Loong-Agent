@@ -12,6 +12,7 @@ import type {
   DragonTurnResult,
 } from "@dragon/core";
 import type { DragonCronJob, DragonCronJobStore, DragonCronRunner } from "@dragon/cron";
+import type { DragonModelCapabilities, DragonModelStatus } from "@dragon/model-catalog";
 import {
   createToolPermissionEngine,
   createToolRegistry,
@@ -119,9 +120,21 @@ export interface GatewayPluginProviderSummary {
   displayName: string;
   defaultModel?: string;
   supportsToolCalling: boolean;
+  models?: readonly GatewayModelSummary[];
 }
 
 export interface GatewayProviderSummary extends GatewayPluginProviderSummary {}
+
+export interface GatewayModelSummary {
+  id: string;
+  displayName?: string;
+  aliases?: readonly string[];
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  capabilities?: DragonModelCapabilities;
+  status?: DragonModelStatus;
+  default?: boolean;
+}
 
 export interface GatewayPluginMemoryBackendSummary {
   id: string;
@@ -2163,6 +2176,9 @@ function normalizeProviderSummaries(values: readonly GatewayProviderSummary[]): 
     if (provider.defaultModel !== undefined) {
       summary.defaultModel = trimBounded(provider.defaultModel, 200);
     }
+    if (provider.models !== undefined) {
+      summary.models = normalizeModelSummaries(provider.models);
+    }
     return Object.freeze(summary);
   }));
 }
@@ -2196,6 +2212,9 @@ function normalizePluginSummaries(values: readonly GatewayPluginSummary[]): read
         if (provider.defaultModel !== undefined) {
           providerSummary.defaultModel = trimBounded(provider.defaultModel, 200);
         }
+        if (provider.models !== undefined) {
+          providerSummary.models = normalizeModelSummaries(provider.models);
+        }
         return Object.freeze(providerSummary);
       })),
     };
@@ -2216,6 +2235,56 @@ function normalizePluginSummaries(values: readonly GatewayPluginSummary[]): read
     }
     return Object.freeze(summary);
   }));
+}
+
+function normalizeModelSummaries(values: readonly GatewayModelSummary[]): readonly GatewayModelSummary[] {
+  return Object.freeze(values.map(model => {
+    const summary: GatewayModelSummary = {
+      id: trimBounded(model.id, 200),
+    };
+    if (model.displayName !== undefined) {
+      summary.displayName = trimBounded(model.displayName, 240);
+    }
+    if (model.aliases !== undefined) {
+      summary.aliases = Object.freeze(model.aliases.map(alias => trimBounded(alias, 200)));
+    }
+    if (model.contextWindow !== undefined && Number.isSafeInteger(model.contextWindow) && model.contextWindow > 0) {
+      summary.contextWindow = model.contextWindow;
+    }
+    if (model.maxOutputTokens !== undefined && Number.isSafeInteger(model.maxOutputTokens) && model.maxOutputTokens > 0) {
+      summary.maxOutputTokens = model.maxOutputTokens;
+    }
+    if (model.capabilities !== undefined) {
+      summary.capabilities = normalizeModelCapabilities(model.capabilities);
+    }
+    if (model.status !== undefined) {
+      summary.status = model.status;
+    }
+    if (model.default !== undefined) {
+      summary.default = Boolean(model.default);
+    }
+    return Object.freeze(summary);
+  }));
+}
+
+function normalizeModelCapabilities(capabilities: DragonModelCapabilities): DragonModelCapabilities {
+  const summary: DragonModelCapabilities = {};
+  if (capabilities.toolCalling !== undefined) {
+    summary.toolCalling = Boolean(capabilities.toolCalling);
+  }
+  if (capabilities.streaming !== undefined) {
+    summary.streaming = Boolean(capabilities.streaming);
+  }
+  if (capabilities.vision !== undefined) {
+    summary.vision = Boolean(capabilities.vision);
+  }
+  if (capabilities.reasoning !== undefined) {
+    summary.reasoning = Boolean(capabilities.reasoning);
+  }
+  if (capabilities.jsonMode !== undefined) {
+    summary.jsonMode = Boolean(capabilities.jsonMode);
+  }
+  return Object.freeze(summary);
 }
 
 function isDirectToolCandidate(tool: ToolDefinition, directToolNames: ReadonlySet<string>): boolean {

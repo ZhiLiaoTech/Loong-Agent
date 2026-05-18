@@ -1,3 +1,4 @@
+import { normalizeProviderModelEntries } from "@dragon/model-catalog";
 import type { ModelProvider, ProviderRegistry, ProviderResolution } from "./types.js";
 
 export interface ProviderRegistryOptions {
@@ -33,6 +34,12 @@ export class DefaultProviderRegistry implements ProviderRegistry {
       ...provider,
       id,
     };
+    if (provider.models !== undefined || provider.defaultModel !== undefined) {
+      registered.models = normalizeProviderModelEntries(provider.models ?? [], {
+        ...(provider.defaultModel !== undefined ? { defaultModel: provider.defaultModel } : {}),
+        supportsToolCalling: provider.supportsToolCalling,
+      });
+    }
     this.#providers.set(id, Object.freeze(registered));
     this.#defaultProviderId ??= id;
   }

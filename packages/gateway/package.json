@@ -18,6 +18,7 @@
   "dependencies": {
     "@dragon/core": "workspace:*",
     "@dragon/cron": "workspace:*",
+    "@dragon/model-catalog": "workspace:*",
     "@dragon/tools": "workspace:*"
   },
   "devDependencies": {

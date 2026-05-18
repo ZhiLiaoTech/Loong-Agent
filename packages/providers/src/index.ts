@@ -9,6 +9,9 @@ export type {
   ProviderRegistry,
   ProviderResolution,
 } from "./types.js";
+export type {
+  DragonProviderModelCatalogEntry,
+} from "@dragon/model-catalog";
 export {
   ProviderError,
   sanitizeProviderBody,

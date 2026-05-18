@@ -504,7 +504,7 @@ export function getDashboardHtml(): string {
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Provider</th><th>Default Model</th><th>Tools</th></tr>
+              <tr><th>Provider</th><th>Default Model</th><th>Models</th><th>Tools</th></tr>
             </thead>
             <tbody id="providersBody"></tbody>
           </table>
@@ -1049,9 +1049,18 @@ export function getDashboardHtml(): string {
       $("metricProviders").textContent = String(state.providers.length);
       $("providersEmpty").style.display = state.providers.length ? "none" : "block";
       $("providersBody").innerHTML = state.providers.map(provider => {
+        const modelText = (provider.models || []).map(model => {
+          const badges = [
+            model.default ? "default" : "",
+            model.capabilities && model.capabilities.toolCalling ? "tools" : "",
+            model.contextWindow ? formatCompactNumber(model.contextWindow) + " ctx" : "",
+          ].filter(Boolean).join(" / ");
+          return model.id + (badges ? " (" + badges + ")" : "");
+        }).join("\\n");
         return "<tr>" +
           "<td><strong>" + escapeHtml(provider.id || "") + "</strong><br><span class='subtle'>" + escapeHtml(provider.displayName || "") + "</span></td>" +
           "<td>" + escapeHtml(provider.defaultModel || "") + "</td>" +
+          "<td><pre>" + escapeHtml(modelText) + "</pre></td>" +
           "<td>" + escapeHtml(provider.supportsToolCalling ? "yes" : "no") + "</td>" +
           "</tr>";
       }).join("");
@@ -1061,8 +1070,18 @@ export function getDashboardHtml(): string {
           values.push(provider.defaultModel);
           values.push(provider.id + ":" + provider.defaultModel);
         }
+        (provider.models || []).forEach(model => {
+          values.push(model.id);
+          values.push(provider.id + ":" + model.id);
+          values.push(provider.id + "/" + model.id);
+          (model.aliases || []).forEach(alias => {
+            values.push(alias);
+            values.push(provider.id + ":" + alias);
+          });
+        });
         return values;
-      }).map(value => "<option value='" + escapeHtml(value) + "'></option>").join("");
+      }).filter((value, index, values) => values.indexOf(value) === index)
+        .map(value => "<option value='" + escapeHtml(value) + "'></option>").join("");
     }
 
     function renderTools() {
@@ -1268,6 +1287,13 @@ export function getDashboardHtml(): string {
       const minutes = Math.floor(seconds / 60);
       if (minutes < 60) return minutes + "m";
       return Math.floor(minutes / 60) + "h";
+    }
+    function formatCompactNumber(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return "";
+      if (number >= 1000000) return Math.round(number / 100000) / 10 + "M";
+      if (number >= 1000) return Math.round(number / 100) / 10 + "K";
+      return String(number);
     }
     function escapeHtml(value) {
       return String(value)

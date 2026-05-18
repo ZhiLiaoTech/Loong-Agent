@@ -1,3 +1,4 @@
+import { normalizeProviderModelEntries, type DragonProviderModelCatalogEntry } from "@dragon/model-catalog";
 import { ProviderError, sanitizeProviderBody } from "./errors.js";
 import { readServerSentEvents } from "./sse.js";
 import type { ModelMessage, ModelProvider, ModelRequest, ModelResponse, ModelToolCall } from "./types.js";
@@ -8,6 +9,7 @@ export interface AnthropicProviderOptions {
   apiKey: string;
   baseUrl?: string;
   defaultModel?: string;
+  models?: readonly DragonProviderModelCatalogEntry[];
   maxTokens?: number;
   apiVersion?: string;
   supportsToolCalling?: boolean;
@@ -137,6 +139,12 @@ export function createAnthropicProvider(options: AnthropicProviderOptions): Mode
 
   if (options.defaultModel !== undefined) {
     provider.defaultModel = options.defaultModel;
+  }
+  if (options.models !== undefined || provider.defaultModel !== undefined) {
+    provider.models = normalizeProviderModelEntries(options.models ?? [], {
+      ...(provider.defaultModel !== undefined ? { defaultModel: provider.defaultModel } : {}),
+      supportsToolCalling: provider.supportsToolCalling,
+    });
   }
 
   return provider;
