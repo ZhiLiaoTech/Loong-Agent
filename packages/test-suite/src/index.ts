@@ -365,6 +365,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
     ],
   });
   let savedModelConfig: unknown;
+  let savedAgentConfig: unknown;
   const gateway = createHttpGateway({
     runtime: createNoopRuntime(),
     providerSummaries: [{
@@ -402,6 +403,30 @@ async function testGatewayDirectToolRpc(): Promise<void> {
           appliesOn: "restart",
           configPath: "/tmp/dragon/providers.json",
           providers: config.providers,
+        };
+      },
+    },
+    agentConfigStore: {
+      async load() {
+        return {
+          configPath: "/tmp/dragon/agents.json",
+          defaultProfileId: "default",
+          profiles: [{
+            id: "default",
+            name: "Default Agent",
+            defaultModel: "openai:gpt-test",
+            thinking: "low",
+            memoryEnabled: true,
+            toolsEnabled: true,
+          }],
+        };
+      },
+      async save(config) {
+        savedAgentConfig = config;
+        return {
+          configPath: "/tmp/dragon/agents.json",
+          profiles: config.profiles,
+          ...(config.defaultProfileId !== undefined ? { defaultProfileId: config.defaultProfileId } : {}),
         };
       },
     },
@@ -454,12 +479,35 @@ async function testGatewayDirectToolRpc(): Promise<void> {
     assert(!JSON.stringify(saved.json).includes("new-secret"), "saved model config must not return raw API keys");
     assert(readPath(savedModelConfig, ["providers", 0, "apiKey"]) === "new-secret", "model config store should receive submitted API key");
 
+    const agentConfig = await rpc(address.url, "agent.config.get");
+    assert(agentConfig.status === 200 && agentConfig.json.ok === true, "agent.config.get should succeed");
+    assert(readPath(agentConfig.json, ["payload", "profiles", 0, "id"]) === "default", "agent config profile id should be returned");
+    assert(readPath(agentConfig.json, ["payload", "profiles", 0, "thinking"]) === "low", "agent config profile thinking should be returned");
+
+    const savedAgent = await rpc(address.url, "agent.config.save", {
+      defaultProfileId: "ops",
+      profiles: [{
+        id: "ops",
+        name: "Ops Agent",
+        defaultModel: "openai:gpt-test",
+        workspace: "/tmp/project",
+        thinking: "medium",
+        memoryEnabled: true,
+        toolsEnabled: true,
+      }],
+    });
+    assert(savedAgent.status === 200 && savedAgent.json.ok === true, "agent.config.save should succeed");
+    assert(readPath(savedAgent.json, ["payload", "defaultProfileId"]) === "ops", "agent config default profile should round-trip");
+    assert(readPath(savedAgentConfig, ["profiles", 0, "id"]) === "ops", "agent config store should receive submitted profile");
+
     const health = await rpc(address.url, "health");
     assert(readPath(health.json, ["payload", "providerCount"]) === 1, "health should include provider count");
     const connect = await rpc(address.url, "connect");
     assert(readArray(connect.json.payload, "capabilities").includes("providers.list"), "connect should advertise providers.list");
     assert(readArray(connect.json.payload, "capabilities").includes("model.config.get"), "connect should advertise model.config.get");
     assert(readArray(connect.json.payload, "capabilities").includes("model.config.save"), "connect should advertise model.config.save");
+    assert(readArray(connect.json.payload, "capabilities").includes("agent.config.get"), "connect should advertise agent.config.get");
+    assert(readArray(connect.json.payload, "capabilities").includes("agent.config.save"), "connect should advertise agent.config.save");
 
     const ok = await rpc(address.url, "tool.invoke", {
       toolName: "git_status",
@@ -914,15 +962,19 @@ async function testDashboardMemoryReviewSmoke(): Promise<void> {
     const response = await fetch(address.url);
     const html = await response.text();
     assert(response.status === 200, `Expected dashboard status 200, got ${response.status}`);
-    assert(html.includes('data-tab="memory"'), "dashboard should include the Memory tab");
-    assert(html.includes('data-tab="providers"'), "dashboard should include the Providers tab");
+    assert(html.includes('data-tab="run"'), "dashboard should include the Run workspace");
     assert(html.includes('data-tab="models"'), "dashboard should include the Models tab");
-    assert(html.includes('data-tab="cron"'), "dashboard should include the Cron tab");
+    assert(html.includes('data-tab="agents"'), "dashboard should include the Agents tab");
+    assert(html.includes('data-tab="observe"'), "dashboard should include the Observe tab");
+    assert(html.includes('data-tab="system"'), "dashboard should include the System tab");
     assert(html.includes("providers.list"), "dashboard should call providers.list RPC");
     assert(html.includes("model.config.get"), "dashboard should call model config get RPC");
     assert(html.includes("model.config.save"), "dashboard should call model config save RPC");
+    assert(html.includes("agent.config.get"), "dashboard should call agent config get RPC");
+    assert(html.includes("agent.config.save"), "dashboard should call agent config save RPC");
     assert(html.includes('id="model"'), "dashboard should expose a model input");
     assert(html.includes('id="modelProviderKey"'), "dashboard should expose a model API key input");
+    assert(html.includes('id="runProfile"'), "dashboard should expose an agent profile selector");
     assert(html.includes("modelSuggestions"), "dashboard should expose model suggestions");
     assert(html.includes("memory.candidates.list"), "dashboard should call memory candidate list RPC");
     assert(html.includes("memory.candidate.promote"), "dashboard should call memory candidate promote RPC");

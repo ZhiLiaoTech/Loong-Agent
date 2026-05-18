@@ -165,6 +165,34 @@ export interface GatewayModelConfigStore {
   save(config: GatewayModelConfigSaveParams): Promise<GatewayModelConfig>;
 }
 
+export interface GatewayAgentProfileConfig {
+  id: string;
+  name: string;
+  description?: string;
+  defaultModel?: string;
+  workspace?: string;
+  thinking?: DragonThinkingLevel;
+  memoryEnabled?: boolean;
+  toolsEnabled?: boolean;
+  systemPrompt?: string;
+}
+
+export interface GatewayAgentConfig {
+  profiles: readonly GatewayAgentProfileConfig[];
+  defaultProfileId?: string;
+  configPath?: string;
+}
+
+export interface GatewayAgentConfigSaveParams {
+  profiles: readonly GatewayAgentProfileConfig[];
+  defaultProfileId?: string;
+}
+
+export interface GatewayAgentConfigStore {
+  load(): Promise<GatewayAgentConfig>;
+  save(config: GatewayAgentConfigSaveParams): Promise<GatewayAgentConfig>;
+}
+
 export interface GatewayPluginMemoryBackendSummary {
   id: string;
   displayName: string;
@@ -237,6 +265,8 @@ export type GatewayRequest =
   | { type: "providers.list"; id: string }
   | { type: "model.config.get"; id: string }
   | { type: "model.config.save"; id: string; params: GatewayModelConfigSaveParams }
+  | { type: "agent.config.get"; id: string }
+  | { type: "agent.config.save"; id: string; params: GatewayAgentConfigSaveParams }
   | { type: "plugins.list"; id: string }
   | { type: "tools.catalog"; id: string; params?: { includeSchemas?: boolean } }
   | { type: "tool.invoke"; id: string; params: GatewayToolInvokeParams }
@@ -280,6 +310,7 @@ export interface HttpDragonGatewayOptions {
   pluginSummaries?: readonly GatewayPluginSummary[];
   providerSummaries?: readonly GatewayProviderSummary[];
   modelConfigStore?: GatewayModelConfigStore;
+  agentConfigStore?: GatewayAgentConfigStore;
   tools?: readonly ToolDefinition[];
   toolRegistry?: ToolRegistry;
   permissionEngine?: ToolPermissionEngine;
@@ -341,6 +372,7 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #plugins: readonly GatewayPluginSummary[];
   readonly #providers: readonly GatewayProviderSummary[];
   readonly #modelConfigStore: GatewayModelConfigStore | undefined;
+  readonly #agentConfigStore: GatewayAgentConfigStore | undefined;
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
   readonly #directToolNames: ReadonlySet<string>;
@@ -366,6 +398,7 @@ export class HttpDragonGateway implements DragonGateway {
     this.#plugins = normalizePluginSummaries(options.pluginSummaries ?? []);
     this.#providers = normalizeProviderSummaries(options.providerSummaries ?? []);
     this.#modelConfigStore = options.modelConfigStore;
+    this.#agentConfigStore = options.agentConfigStore;
     this.#toolRegistry = options.toolRegistry ?? createToolRegistry([...(options.tools ?? [])]);
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
@@ -666,6 +699,7 @@ export class HttpDragonGateway implements DragonGateway {
               "runs.list",
               "providers.list",
               ...(this.#modelConfigStore ? ["model.config.get", "model.config.save"] : []),
+              ...(this.#agentConfigStore ? ["agent.config.get", "agent.config.save"] : []),
               "plugins.list",
               "tools.catalog",
               "tool.invoke",
@@ -696,6 +730,12 @@ export class HttpDragonGateway implements DragonGateway {
       }
       if (request.type === "model.config.save") {
         return { type: "response", id: request.id, ok: true, payload: await this.#saveModelConfig(request.params) };
+      }
+      if (request.type === "agent.config.get") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#loadAgentConfig() };
+      }
+      if (request.type === "agent.config.save") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#saveAgentConfig(request.params) };
       }
       if (request.type === "plugins.list") {
         return { type: "response", id: request.id, ok: true, payload: this.#listPlugins() };
@@ -1159,6 +1199,20 @@ export class HttpDragonGateway implements DragonGateway {
     return sanitizeModelConfig(await this.#modelConfigStore.save(params));
   }
 
+  async #loadAgentConfig(): Promise<GatewayAgentConfig> {
+    if (!this.#agentConfigStore) {
+      throw new GatewayHttpError(404, "Agent configuration store is not available.");
+    }
+    return sanitizeAgentConfig(await this.#agentConfigStore.load());
+  }
+
+  async #saveAgentConfig(params: GatewayAgentConfigSaveParams): Promise<GatewayAgentConfig> {
+    if (!this.#agentConfigStore) {
+      throw new GatewayHttpError(404, "Agent configuration store is not available.");
+    }
+    return sanitizeAgentConfig(await this.#agentConfigStore.save(params));
+  }
+
   #listPlugins(): { plugins: readonly GatewayPluginSummary[] } {
     return {
       plugins: this.#plugins.map(plugin => {
@@ -1398,6 +1452,16 @@ function parseGatewayRequest(value: unknown): GatewayRequest {
       params: parseModelConfigSaveParams(value.params),
     };
   }
+  if (value.type === "agent.config.get") {
+    return { type: "agent.config.get", id: value.id };
+  }
+  if (value.type === "agent.config.save") {
+    return {
+      type: "agent.config.save",
+      id: value.id,
+      params: parseAgentConfigSaveParams(value.params),
+    };
+  }
   if (value.type === "plugins.list") {
     return { type: "plugins.list", id: value.id };
   }
@@ -1568,6 +1632,60 @@ function parseModelProviderConfig(value: unknown, index: number): GatewayModelPr
     provider.enabled = value.enabled;
   }
   return provider;
+}
+
+function parseAgentConfigSaveParams(value: unknown): GatewayAgentConfigSaveParams {
+  if (!isRecord(value) || !Array.isArray(value.profiles)) {
+    badRequest("agent.config.save requires params.profiles.");
+  }
+  const params: GatewayAgentConfigSaveParams = {
+    profiles: value.profiles.map((profile, index) => parseAgentProfileConfig(profile, index)),
+  };
+  if (typeof value.defaultProfileId === "string" && value.defaultProfileId.trim()) {
+    params.defaultProfileId = normalizeShortText(value.defaultProfileId, "defaultProfileId", 120);
+  }
+  return params;
+}
+
+function parseAgentProfileConfig(value: unknown, index: number): GatewayAgentProfileConfig {
+  if (!isRecord(value)) {
+    badRequest(`agent.config.save profile ${index + 1} must be an object.`);
+  }
+  if (typeof value.id !== "string" || !value.id.trim()) {
+    badRequest(`agent.config.save profile ${index + 1} requires id.`);
+  }
+  if (typeof value.name !== "string" || !value.name.trim()) {
+    badRequest(`agent.config.save profile ${index + 1} requires name.`);
+  }
+  const profile: GatewayAgentProfileConfig = {
+    id: normalizeShortText(value.id, "profile id", 120),
+    name: normalizeShortText(value.name, "profile name", 160),
+  };
+  if (typeof value.description === "string" && value.description.trim()) {
+    profile.description = normalizeBoundedText(value.description, "description", 1000);
+  }
+  if (typeof value.defaultModel === "string" && value.defaultModel.trim()) {
+    profile.defaultModel = normalizeShortText(value.defaultModel, "defaultModel", 200);
+  }
+  if (typeof value.workspace === "string" && value.workspace.trim()) {
+    profile.workspace = normalizeShortText(value.workspace, "workspace", 4000);
+  }
+  if (value.thinking !== undefined) {
+    if (!isDragonThinking(value.thinking)) {
+      badRequest("agent.config.save profile thinking is invalid.");
+    }
+    profile.thinking = value.thinking;
+  }
+  if (typeof value.memoryEnabled === "boolean") {
+    profile.memoryEnabled = value.memoryEnabled;
+  }
+  if (typeof value.toolsEnabled === "boolean") {
+    profile.toolsEnabled = value.toolsEnabled;
+  }
+  if (typeof value.systemPrompt === "string" && value.systemPrompt.trim()) {
+    profile.systemPrompt = normalizeBoundedText(value.systemPrompt, "systemPrompt", 16_000);
+  }
+  return profile;
 }
 
 function parseToolInvokeParams(value: unknown): GatewayToolInvokeParams {
@@ -2309,6 +2427,46 @@ function sanitizeModelConfig(config: GatewayModelConfig): GatewayModelConfig {
     }),
     appliesOn: "restart",
   };
+  if (config.configPath !== undefined) {
+    sanitized.configPath = trimBounded(config.configPath, 1000);
+  }
+  return sanitized;
+}
+
+function sanitizeAgentConfig(config: GatewayAgentConfig): GatewayAgentConfig {
+  const sanitized: GatewayAgentConfig = {
+    profiles: config.profiles.map(profile => {
+      const summary: GatewayAgentProfileConfig = {
+        id: trimBounded(profile.id, 120),
+        name: trimBounded(profile.name, 160),
+      };
+      if (profile.description !== undefined) {
+        summary.description = trimBounded(profile.description, 1000);
+      }
+      if (profile.defaultModel !== undefined) {
+        summary.defaultModel = trimBounded(profile.defaultModel, 200);
+      }
+      if (profile.workspace !== undefined) {
+        summary.workspace = trimBounded(profile.workspace, 4000);
+      }
+      if (profile.thinking !== undefined) {
+        summary.thinking = profile.thinking;
+      }
+      if (profile.memoryEnabled !== undefined) {
+        summary.memoryEnabled = profile.memoryEnabled;
+      }
+      if (profile.toolsEnabled !== undefined) {
+        summary.toolsEnabled = profile.toolsEnabled;
+      }
+      if (profile.systemPrompt !== undefined) {
+        summary.systemPrompt = trimBounded(profile.systemPrompt, 16_000);
+      }
+      return summary;
+    }),
+  };
+  if (config.defaultProfileId !== undefined) {
+    sanitized.defaultProfileId = trimBounded(config.defaultProfileId, 120);
+  }
   if (config.configPath !== undefined) {
     sanitized.configPath = trimBounded(config.configPath, 1000);
   }

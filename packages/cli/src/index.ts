@@ -16,6 +16,10 @@ import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarge
 import { createRuntimeDelegationTool } from "@dragon/delegation";
 import {
   createHttpGateway,
+  type GatewayAgentConfig,
+  type GatewayAgentConfigSaveParams,
+  type GatewayAgentConfigStore,
+  type GatewayAgentProfileConfig,
   type GatewayConfig,
   type GatewayModelConfig,
   type GatewayModelConfigSaveParams,
@@ -227,6 +231,7 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
 async function runGateway(args: string[]): Promise<void> {
   const parsed = parseGatewayArgs(args);
   const modelConfigPath = configuredModelConfigPath();
+  const agentConfigPath = configuredAgentConfigPath();
   const builtinProviders = await createBuiltinProviders();
   const trajectoryStore = createFileTrajectoryStore({ rootDir: path.join(parsed.memoryDir, "trajectories") });
   const cronStore = createFileCronJobStore({ filePath: parsed.cronJobsFile });
@@ -258,6 +263,7 @@ async function runGateway(args: string[]): Promise<void> {
     pluginSummaries: summarizeLoadedPlugins(runtimeBundle.plugins),
     providerSummaries: summarizeProviders(runtimeBundle.providers),
     modelConfigStore: createModelConfigStore(modelConfigPath),
+    agentConfigStore: createAgentConfigStore(agentConfigPath),
     tools: runtimeBundle.tools,
     ...(runtimeBundle.permissionEngine ? { permissionEngine: runtimeBundle.permissionEngine } : {}),
   });
@@ -1049,6 +1055,150 @@ function readModelProviderType(value: unknown, source: string): GatewayModelProv
     return value;
   }
   throw new Error(`${source} type must be openai-compatible or anthropic.`);
+}
+
+function configuredAgentConfigPath(): string {
+  const configured = process.env.DRAGON_AGENT_CONFIG?.trim();
+  return path.resolve(configured || path.join(process.cwd(), ".dragon", "config", "agents.json"));
+}
+
+function createAgentConfigStore(filePath: string): GatewayAgentConfigStore {
+  return {
+    async load() {
+      return toSafeAgentConfig(await loadPersistedAgentConfig(filePath), filePath);
+    },
+    async save(config: GatewayAgentConfigSaveParams) {
+      return await savePersistedAgentConfig(filePath, config);
+    },
+  };
+}
+
+async function loadPersistedAgentConfig(filePath: string): Promise<GatewayAgentConfigSaveParams> {
+  let text: string;
+  try {
+    text = await readFile(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { profiles: [] };
+    }
+    throw error;
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Invalid agent config JSON at ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return normalizePersistedAgentConfig(json, filePath);
+}
+
+async function savePersistedAgentConfig(
+  filePath: string,
+  config: GatewayAgentConfigSaveParams,
+): Promise<GatewayAgentConfig> {
+  const profiles = config.profiles.map((profile, index) => normalizePersistedAgentProfile(profile, index, filePath));
+  assertUniqueAgentProfileIds(profiles);
+  const defaultProfileId = config.defaultProfileId?.trim();
+  if (defaultProfileId && !profiles.some(profile => profile.id === defaultProfileId)) {
+    throw new Error(`Default agent profile "${defaultProfileId}" is not configured.`);
+  }
+  const persisted: GatewayAgentConfigSaveParams = {
+    profiles,
+    ...(defaultProfileId ? { defaultProfileId } : {}),
+  };
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
+  return toSafeAgentConfig(persisted, filePath);
+}
+
+function normalizePersistedAgentConfig(value: unknown, source: string): GatewayAgentConfigSaveParams {
+  if (!isRecord(value)) {
+    throw new Error(`Agent config at ${source} must be a JSON object.`);
+  }
+  const profiles = value.profiles ?? [];
+  if (!Array.isArray(profiles)) {
+    throw new Error(`Agent config at ${source} must contain a profiles array.`);
+  }
+  const config: GatewayAgentConfigSaveParams = {
+    profiles: profiles.map((profile, index) => normalizePersistedAgentProfile(profile, index, source)),
+  };
+  if (typeof value.defaultProfileId === "string" && value.defaultProfileId.trim()) {
+    config.defaultProfileId = normalizeConfigString(value.defaultProfileId, "defaultProfileId", 120, "Agent config");
+  }
+  return config;
+}
+
+function normalizePersistedAgentProfile(value: unknown, index: number, source: string): GatewayAgentProfileConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Agent profile ${index + 1} in ${source} must be an object.`);
+  }
+  const id = readConfigString(value, "id", 120, `Agent profile ${index + 1}`);
+  const name = readConfigString(value, "name", 160, `Agent profile ${id}`);
+  const profile: GatewayAgentProfileConfig = { id, name };
+  assignOptionalAgentString(profile, value, "description", 1000, `Agent profile ${id}`);
+  assignOptionalAgentString(profile, value, "defaultModel", 200, `Agent profile ${id}`);
+  assignOptionalAgentString(profile, value, "workspace", 4000, `Agent profile ${id}`);
+  assignOptionalAgentString(profile, value, "systemPrompt", 16_000, `Agent profile ${id}`);
+  assignOptionalAgentBoolean(profile, value, "memoryEnabled", `Agent profile ${id}`);
+  assignOptionalAgentBoolean(profile, value, "toolsEnabled", `Agent profile ${id}`);
+  if (value.thinking !== undefined) {
+    if (!["none", "low", "medium", "high"].includes(String(value.thinking))) {
+      throw new Error(`Agent profile ${id} thinking is invalid.`);
+    }
+    profile.thinking = value.thinking as NonNullable<GatewayAgentProfileConfig["thinking"]>;
+  }
+  return profile;
+}
+
+function toSafeAgentConfig(config: GatewayAgentConfigSaveParams, filePath: string): GatewayAgentConfig {
+  return {
+    profiles: config.profiles.map(profile => ({ ...profile })),
+    ...(config.defaultProfileId !== undefined ? { defaultProfileId: config.defaultProfileId } : {}),
+    configPath: filePath,
+  };
+}
+
+function assertUniqueAgentProfileIds(profiles: readonly GatewayAgentProfileConfig[]): void {
+  const seen = new Set<string>();
+  for (const profile of profiles) {
+    if (seen.has(profile.id)) {
+      throw new Error(`Agent profile "${profile.id}" is configured more than once.`);
+    }
+    seen.add(profile.id);
+  }
+}
+
+function assignOptionalAgentString(
+  target: GatewayAgentProfileConfig,
+  source: Record<string, unknown>,
+  key: "description" | "defaultModel" | "workspace" | "systemPrompt",
+  maxChars: number,
+  label: string,
+): void {
+  const value = source[key];
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return;
+  }
+  target[key] = normalizeConfigString(value, key, maxChars, label);
+}
+
+function assignOptionalAgentBoolean(
+  target: GatewayAgentProfileConfig,
+  source: Record<string, unknown>,
+  key: "memoryEnabled" | "toolsEnabled",
+  label: string,
+): void {
+  const value = source[key];
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "boolean") {
+    throw new Error(`${label} ${key} must be a boolean.`);
+  }
+  target[key] = value;
 }
 
 function gatewayUrlFromConfig(config: GatewayConfig): string {
@@ -1944,6 +2094,7 @@ Provider:
   Provider plugins can also be loaded from .dragon/plugins, DRAGON_PLUGIN_ROOTS, or --plugin-root <path>.
   Model refs with a registered provider prefix, such as openai:gpt-4o or anthropic:claude-sonnet-4-5, route explicitly to that provider.
   Dashboard model provider config is stored in .dragon/config/providers.json by default; override with DRAGON_MODEL_CONFIG.
+  Dashboard agent profile config is stored in .dragon/config/agents.json by default; override with DRAGON_AGENT_CONFIG.
   Optional: DRAGON_MODEL, --model <ref>, DRAGON_MODEL_FALLBACKS, --model-fallback <ref>.
 
 Permissions:

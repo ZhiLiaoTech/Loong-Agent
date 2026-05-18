@@ -48,6 +48,8 @@ The dashboard Models tab writes provider config to
 `/data/config/providers.json`, so model provider settings survive container
 restarts through the `dragon-data` volume. Saved provider changes apply after
 the Gateway process restarts.
+The dashboard Agents tab writes profile config to `DRAGON_AGENT_CONFIG`; Docker
+Compose defaults it to `/data/config/agents.json`.
 
 ## Production Notes
 

@@ -117,6 +117,11 @@ async function assertDashboard(target: SmokeTarget): Promise<void> {
   const html = await response.text();
   assert(response.ok, `Dashboard returned HTTP ${response.status}`);
   assert(html.includes("<title>Dragon</title>"), "Dashboard title was not rendered.");
+  assert(html.includes('data-tab="run"'), "Dashboard Run workspace was not rendered.");
+  assert(html.includes('data-tab="models"'), "Dashboard Models workspace was not rendered.");
+  assert(html.includes('data-tab="agents"'), "Dashboard Agents workspace was not rendered.");
+  assert(html.includes('data-tab="observe"'), "Dashboard Observe workspace was not rendered.");
+  assert(html.includes('data-tab="system"'), "Dashboard System workspace was not rendered.");
   assert(!html.includes("localStorage") && !html.includes("sessionStorage"), "Dashboard must not persist secrets in browser storage.");
 }
 

@@ -9,15 +9,15 @@ export function getDashboardHtml(): string {
     :root {
       color-scheme: light;
       --bg: #ffffff;
-      --panel: transparent;
-      --text: #171716;
-      --muted: #6f6f6a;
-      --line: #e5e5e0;
-      --soft: #f6f6f3;
-      --accent: #171716;
-      --ok: #18703a;
-      --warn: #9a6500;
-      --danger: #8f1d1d;
+      --side: #f7f7f4;
+      --text: #181816;
+      --muted: #70706a;
+      --line: #e4e4df;
+      --soft: #f4f4f0;
+      --accent: #181816;
+      --ok: #1d6d3d;
+      --warn: #8b6400;
+      --danger: #8d2424;
     }
     * { box-sizing: border-box; }
     body {
@@ -26,37 +26,6 @@ export function getDashboardHtml(): string {
       color: var(--text);
       font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
-    }
-    main {
-      width: min(1120px, calc(100% - 36px));
-      margin: 18px auto 48px;
-    }
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding-bottom: 14px;
-      border-bottom: 1px solid var(--line);
-    }
-    h1, h2, h3, p {
-      margin: 0;
-      letter-spacing: 0;
-    }
-    h1 {
-      font-size: 23px;
-      line-height: 1.15;
-      font-weight: 640;
-    }
-    h2 {
-      font-size: 13px;
-      font-weight: 620;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-    h3 {
-      font-size: 14px;
-      font-weight: 620;
     }
     button, input, textarea, select {
       font: inherit;
@@ -73,7 +42,7 @@ export function getDashboardHtml(): string {
       white-space: nowrap;
     }
     button.secondary,
-    button.tab {
+    button.nav-item {
       background: #fff;
       color: var(--text);
       border-color: var(--line);
@@ -81,19 +50,11 @@ export function getDashboardHtml(): string {
     button.danger {
       background: #fff;
       color: var(--danger);
-      border-color: #d8b6b6;
-    }
-    button.link {
-      min-height: auto;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      color: var(--text);
-      text-decoration: underline;
+      border-color: #d9bbbb;
     }
     button:disabled {
       cursor: not-allowed;
-      opacity: .55;
+      opacity: .56;
     }
     input, textarea, select {
       width: 100%;
@@ -109,10 +70,10 @@ export function getDashboardHtml(): string {
       margin: 0;
     }
     textarea {
-      min-height: 136px;
+      min-height: 128px;
       resize: vertical;
     }
-    input:focus, textarea:focus {
+    input:focus, textarea:focus, select:focus {
       border-color: var(--accent);
     }
     label {
@@ -121,13 +82,29 @@ export function getDashboardHtml(): string {
       color: var(--muted);
       font-size: 12px;
     }
+    h1, h2, h3, p {
+      margin: 0;
+      letter-spacing: 0;
+    }
+    h1 {
+      font-size: 22px;
+      line-height: 1.15;
+      font-weight: 650;
+    }
+    h2 {
+      font-size: 13px;
+      font-weight: 650;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    h3 {
+      font-size: 14px;
+      font-weight: 650;
+    }
     table {
       width: 100%;
+      min-width: 640px;
       border-collapse: collapse;
-      min-width: 620px;
-    }
-    .table-wrap {
-      overflow-x: auto;
     }
     th, td {
       border-top: 1px solid var(--line);
@@ -141,13 +118,9 @@ export function getDashboardHtml(): string {
       font-size: 12px;
       font-weight: 560;
     }
-    code, .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
-    }
     pre {
       margin: 8px 0 0;
-      max-height: 220px;
+      max-height: 230px;
       overflow: auto;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
@@ -156,33 +129,85 @@ export function getDashboardHtml(): string {
       color: var(--muted);
       padding: 8px;
     }
-    .subtle { color: var(--muted); }
-    .stack {
+    code, .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    .app {
+      min-height: 100vh;
       display: grid;
-      gap: 18px;
+      grid-template-columns: 212px minmax(0, 1fr);
+    }
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: var(--side);
+      padding: 18px 14px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+    }
+    .brand {
+      padding: 0 4px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand p {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .nav {
+      display: grid;
+      gap: 6px;
       margin-top: 16px;
     }
-    .panel {
-      border-top: 1px solid var(--line);
-      border-radius: 0;
-      background: var(--panel);
-      padding: 16px 0 0;
+    .nav-item {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      border-color: transparent;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      padding: 8px 9px;
     }
-    .panel-head,
+    .nav-item[aria-selected="true"] {
+      background: #fff;
+      color: var(--text);
+      border-color: var(--line);
+    }
+    .main {
+      min-width: 0;
+      padding: 18px 26px 56px;
+    }
+    .topbar,
+    .section-head,
     .actions,
-    .status,
+    .right-actions,
     .event-line,
-    .plugin-title {
+    .item-title {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
     }
-    .panel-head {
-      margin-bottom: 12px;
+    .topbar {
+      min-height: 46px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .topbar-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
     }
     .status {
-      justify-content: flex-end;
+      display: flex;
+      align-items: center;
+      gap: 8px;
       color: var(--muted);
       white-space: nowrap;
     }
@@ -194,61 +219,70 @@ export function getDashboardHtml(): string {
     }
     .dot.ok { background: var(--ok); }
     .dot.warn { background: var(--warn); }
-    .composer-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 200px 200px 200px;
-      gap: 12px;
-      align-items: end;
+    .secret-wrap {
+      width: min(260px, 34vw);
     }
-    .cron-grid {
+    .content {
+      margin-top: 18px;
       display: grid;
-      grid-template-columns: 160px 160px 160px minmax(0, 1fr) 92px;
-      gap: 12px;
-      align-items: end;
-      margin-bottom: 14px;
+      gap: 22px;
     }
-    .model-grid {
+    [data-panel] {
+      display: none;
+    }
+    [data-panel].active {
       display: grid;
-      grid-template-columns: 150px 150px minmax(150px, 1fr) minmax(180px, 1fr);
-      gap: 12px;
-      align-items: end;
+      gap: 22px;
+    }
+    .section {
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+      min-width: 0;
+    }
+    .section:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .section-head {
       margin-bottom: 12px;
     }
-    .check-row {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 14px;
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, .72fr);
+      gap: 22px;
+      align-items: start;
     }
-    .check-row label {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      margin: 0;
-      color: var(--text);
-      font-size: 13px;
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      align-items: end;
     }
-    .message-field {
-      margin-top: 12px;
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+    .composer {
+      display: grid;
+      gap: 12px;
+    }
+    .message-field textarea {
+      min-height: 220px;
     }
     .actions {
       justify-content: flex-end;
-      margin-top: 12px;
     }
     .overview {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 24px;
+      gap: 18px;
     }
     .metric {
       min-width: 0;
-      padding: 0;
-      border-left: 0;
-    }
-    .metric:first-child {
-      padding-left: 0;
-      border-left: 0;
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
     }
     .metric span {
       display: block;
@@ -259,107 +293,67 @@ export function getDashboardHtml(): string {
       display: block;
       margin-top: 3px;
       font-size: 20px;
-      font-weight: 620;
+      font-weight: 650;
       overflow-wrap: anywhere;
     }
-    .tabs {
-      display: flex;
-      gap: 18px;
+    .table-wrap {
       overflow-x: auto;
-      padding-bottom: 0;
-      border-bottom: 1px solid var(--line);
-    }
-    .tab {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      min-height: 34px;
-      padding: 4px 0 8px;
-      border: 0;
-      border-bottom: 2px solid transparent;
-      border-radius: 0;
-      background: transparent;
-      color: var(--muted);
-    }
-    .tab[aria-selected="true"] {
-      border-bottom-color: var(--accent);
-      background: transparent;
-      color: var(--text);
-    }
-    .count {
-      color: inherit;
-      opacity: .72;
-      font-size: 12px;
-    }
-    [data-panel] {
-      display: none;
-    }
-    [data-panel].active {
-      display: block;
-    }
-    .kv {
-      display: grid;
-      grid-template-columns: 112px minmax(0, 1fr);
-      gap: 6px 12px;
-      color: var(--muted);
-    }
-    .kv strong {
-      color: var(--text);
-      font-weight: 540;
-      overflow-wrap: anywhere;
     }
     .empty {
       color: var(--muted);
       border-top: 1px solid var(--line);
       padding-top: 12px;
     }
-    .events {
-      display: grid;
-      gap: 8px;
-      max-height: 540px;
-      overflow: auto;
-      padding-right: 2px;
-    }
-    .event,
-    .plugin,
-    .candidate {
+    .item {
       border-top: 1px solid var(--line);
-      padding-top: 10px;
+      padding: 10px 0 12px;
     }
-    .event:first-child,
-    .plugin:first-child,
-    .candidate:first-child {
+    .item:first-child {
       border-top: 0;
       padding-top: 0;
     }
-    .event b,
-    .plugin strong,
-    .candidate strong {
-      font-weight: 600;
+    .item strong {
+      font-weight: 620;
     }
-    .plugin {
-      padding-bottom: 10px;
-    }
-    .candidate {
-      display: grid;
-      gap: 8px;
-      padding-bottom: 12px;
-    }
-    .candidate-meta {
+    .item-meta,
+    .subtle {
       color: var(--muted);
-      font-size: 12px;
+    }
+    .item-meta {
+      margin-top: 4px;
       overflow-wrap: anywhere;
     }
-    .candidate-actions {
+    .check-row {
       display: flex;
-      justify-content: flex-end;
-      gap: 8px;
+      gap: 16px;
+      align-items: center;
       flex-wrap: wrap;
     }
-    .plugin-meta {
-      margin-top: 4px;
-      color: var(--muted);
-      overflow-wrap: anywhere;
+    .check-row label {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .result-box {
+      display: none;
+    }
+    .events {
+      display: grid;
+      gap: 8px;
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .event {
+      border-top: 1px solid var(--line);
+      padding-top: 9px;
+    }
+    .event:first-child {
+      border-top: 0;
+      padding-top: 0;
     }
     .state-running,
     .state-completed {
@@ -373,334 +367,440 @@ export function getDashboardHtml(): string {
     .state-error {
       color: var(--danger);
     }
-    .right-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      justify-content: flex-end;
-      flex-wrap: wrap;
+    .kv {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr);
+      gap: 7px 12px;
+      color: var(--muted);
     }
-    @media (max-width: 820px) {
-      main {
-        width: min(100% - 20px, 1080px);
-        margin-top: 14px;
+    .kv strong {
+      color: var(--text);
+      font-weight: 540;
+      overflow-wrap: anywhere;
+    }
+    .count {
+      color: inherit;
+      opacity: .72;
+      font-size: 12px;
+    }
+    @media (max-width: 980px) {
+      .app {
+        grid-template-columns: 1fr;
       }
-      header,
-      .composer-grid,
-      .cron-grid,
-      .model-grid,
+      .sidebar {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .nav {
+        display: flex;
+        overflow-x: auto;
+        padding-bottom: 2px;
+      }
+      .nav-item {
+        width: auto;
+      }
+      .main {
+        padding: 16px 18px 44px;
+      }
+      .grid-2,
+      .grid-3,
+      .grid-4,
       .overview {
-        display: block;
+        grid-template-columns: 1fr;
       }
-      .status {
-        justify-content: flex-start;
-        margin-top: 8px;
+      .secret-wrap {
+        width: 100%;
       }
-      .composer-grid > * + *,
-      .cron-grid > * + *,
-      .model-grid > * + *,
-      .metric + .metric {
-        margin-top: 12px;
-      }
-      .metric {
-        padding: 10px 0 0;
-        border-left: 0;
-        border-top: 1px solid var(--line);
-      }
-      .metric:first-child {
-        padding-top: 0;
-        border-top: 0;
-      }
-      .panel {
-        padding: 14px 0 0;
-      }
-      th:nth-child(3),
-      td:nth-child(3) {
-        display: none;
+      .topbar {
+        display: grid;
+        align-items: start;
       }
     }
   </style>
 </head>
 <body>
-  <main>
-    <header>
-      <div>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
         <h1>Dragon</h1>
-        <p class="subtle">Gateway</p>
+        <p>Gateway</p>
       </div>
-      <div class="status"><span id="healthDot" class="dot"></span><span id="healthText">checking</span></div>
-    </header>
-
-    <div class="stack">
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Run</h2>
-          <button id="sendBtn">Send</button>
-        </div>
-        <div class="composer-grid">
-          <div>
-            <label for="sessionId">Session</label>
-            <input id="sessionId" value="dashboard" autocomplete="off">
-          </div>
-          <div>
-            <label for="workspace">Workspace</label>
-            <input id="workspace" autocomplete="off" placeholder="optional">
-          </div>
-          <div>
-            <label for="model">Model</label>
-            <input id="model" list="modelSuggestions" autocomplete="off" placeholder="optional">
-            <datalist id="modelSuggestions"></datalist>
-          </div>
-          <div>
-            <label for="secret">Shared Secret</label>
-            <input id="secret" type="password" autocomplete="off" placeholder="optional">
-          </div>
-        </div>
-        <div class="message-field">
-          <label for="message">Message</label>
-          <textarea id="message"></textarea>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="overview">
-          <div class="metric"><span>Runs</span><strong id="metricRuns">0</strong></div>
-          <div class="metric"><span>Active</span><strong id="metricActive">0</strong></div>
-          <div class="metric"><span>Providers</span><strong id="metricProviders">0</strong></div>
-          <div class="metric"><span>Plugins</span><strong id="metricPlugins">0</strong></div>
-          <div class="metric"><span>Events</span><strong id="metricEvents">0</strong></div>
-        </div>
-      </section>
-
-      <nav class="tabs" aria-label="Dashboard views">
-        <button class="tab" data-tab="runs" aria-selected="true">Runs <span id="runCount" class="count">0</span></button>
-        <button class="tab" data-tab="events" aria-selected="false">Events <span id="eventCount" class="count">0</span></button>
-        <button class="tab" data-tab="providers" aria-selected="false">Providers <span id="providerCount" class="count">0</span></button>
-        <button class="tab" data-tab="models" aria-selected="false">Models <span id="modelConfigCount" class="count">0</span></button>
-        <button class="tab" data-tab="plugins" aria-selected="false">Plugins <span id="pluginCount" class="count">0</span></button>
-        <button class="tab" data-tab="tools" aria-selected="false">Tools <span id="toolCount" class="count">0</span></button>
-        <button class="tab" data-tab="memory" aria-selected="false">Memory <span id="memoryCount" class="count">0</span></button>
-        <button class="tab" data-tab="cron" aria-selected="false">Cron <span id="cronCount" class="count">0</span></button>
-        <button class="tab" data-tab="trajectory" aria-selected="false">Trajectory <span id="trajectoryCount" class="count">0</span></button>
-        <button class="tab" data-tab="gateway" aria-selected="false">Gateway</button>
+      <nav class="nav" aria-label="Dashboard views">
+        <button class="nav-item" data-tab="run" aria-selected="true">Run <span id="runCount" class="count">0</span></button>
+        <button class="nav-item" data-tab="models" aria-selected="false">Models <span id="modelConfigCount" class="count">0</span></button>
+        <button class="nav-item" data-tab="agents" aria-selected="false">Agents <span id="agentProfileCount" class="count">0</span></button>
+        <button class="nav-item" data-tab="observe" aria-selected="false">Observe <span id="eventCount" class="count">0</span></button>
+        <button class="nav-item" data-tab="system" aria-selected="false">System</button>
       </nav>
+    </aside>
 
-      <section id="runsPanel" class="panel active" data-panel="runs">
-        <div class="panel-head">
-          <h2>Runs</h2>
-          <button id="refreshRunsBtn" class="secondary">Refresh</button>
+    <main class="main">
+      <div class="topbar">
+        <div class="topbar-title">
+          <div class="status"><span id="healthDot" class="dot"></span><span id="healthText">checking</span></div>
+          <span class="subtle" id="eventStatus">connecting</span>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>State</th><th>Run</th><th>Preview</th><th></th></tr>
-            </thead>
-            <tbody id="runsBody"></tbody>
-          </table>
+        <div class="secret-wrap">
+          <label for="secret">Shared Secret</label>
+          <input id="secret" type="password" autocomplete="off" placeholder="optional">
         </div>
-        <div id="runsEmpty" class="empty">No runs yet.</div>
-      </section>
+      </div>
 
-      <section id="eventsPanel" class="panel" data-panel="events">
-        <div class="panel-head">
-          <h2>Events</h2>
-          <div class="right-actions">
-            <span class="subtle" id="eventStatus">connecting</span>
-            <button id="reconnectBtn" class="secondary">Reconnect</button>
+      <div class="content">
+        <section id="runPanel" class="active" data-panel="run">
+          <div class="grid-2">
+            <div class="section">
+              <div class="section-head">
+                <h2>Run</h2>
+                <button id="sendBtn">Send</button>
+              </div>
+              <div class="composer">
+                <div class="grid-4">
+                  <div>
+                    <label for="runProfile">Profile</label>
+                    <select id="runProfile"></select>
+                  </div>
+                  <div>
+                    <label for="sessionId">Session</label>
+                    <input id="sessionId" value="dashboard" autocomplete="off">
+                  </div>
+                  <div>
+                    <label for="model">Model</label>
+                    <input id="model" list="modelSuggestions" autocomplete="off" placeholder="optional">
+                    <datalist id="modelSuggestions"></datalist>
+                  </div>
+                  <div>
+                    <label for="thinking">Thinking</label>
+                    <select id="thinking">
+                      <option value="">Default</option>
+                      <option value="none">None</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label for="workspace">Workspace</label>
+                  <input id="workspace" autocomplete="off" placeholder="optional">
+                </div>
+                <div class="message-field">
+                  <label for="message">Message</label>
+                  <textarea id="message"></textarea>
+                </div>
+                <pre id="runOutput" class="result-box"></pre>
+              </div>
+            </div>
+            <div class="section">
+              <div class="overview">
+                <div class="metric"><span>Runs</span><strong id="metricRuns">0</strong></div>
+                <div class="metric"><span>Active</span><strong id="metricActive">0</strong></div>
+                <div class="metric"><span>Providers</span><strong id="metricProviders">0</strong></div>
+                <div class="metric"><span>Plugins</span><strong id="metricPlugins">0</strong></div>
+                <div class="metric"><span>Tools</span><strong id="metricTools">0</strong></div>
+              </div>
+              <div class="section" style="margin-top:18px;">
+                <div class="section-head">
+                  <h2>Recent Runs</h2>
+                  <button id="refreshRunsBtn" class="secondary">Refresh</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>State</th><th>Run</th><th>Preview</th><th></th></tr></thead>
+                    <tbody id="runsBody"></tbody>
+                  </table>
+                </div>
+                <div id="runsEmpty" class="empty">No runs yet.</div>
+              </div>
+            </div>
           </div>
-        </div>
-        <div id="events" class="events"></div>
-      </section>
+        </section>
 
-      <section id="pluginsPanel" class="panel" data-panel="plugins">
-        <div class="panel-head">
-          <h2>Plugins</h2>
-          <button id="refreshPluginsBtn" class="secondary">Refresh</button>
-        </div>
-        <div id="plugins"></div>
-        <div id="pluginsEmpty" class="empty">No plugins loaded.</div>
-      </section>
+        <section id="modelsPanel" data-panel="models">
+          <div class="section">
+            <div class="section-head">
+              <h2>Models</h2>
+              <div class="right-actions">
+                <button id="refreshModelConfigBtn" class="secondary">Refresh</button>
+                <button id="saveModelConfigBtn">Save</button>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <div class="grid-3">
+                  <div>
+                    <label for="modelProviderType">Type</label>
+                    <select id="modelProviderType">
+                      <option value="openai-compatible">OpenAI Compatible</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="modelProviderId">Provider ID</label>
+                    <input id="modelProviderId" autocomplete="off" placeholder="openai">
+                  </div>
+                  <div>
+                    <label for="modelProviderName">Display Name</label>
+                    <input id="modelProviderName" autocomplete="off" placeholder="OpenAI">
+                  </div>
+                  <div>
+                    <label for="modelProviderKey">API Key</label>
+                    <input id="modelProviderKey" type="password" autocomplete="off" placeholder="leave blank to keep">
+                  </div>
+                  <div>
+                    <label for="modelProviderBaseUrl">Base URL</label>
+                    <input id="modelProviderBaseUrl" autocomplete="off" placeholder="https://api.openai.com/v1">
+                  </div>
+                  <div>
+                    <label for="modelProviderDefaultModel">Default Model</label>
+                    <input id="modelProviderDefaultModel" autocomplete="off" placeholder="gpt-4.1-mini">
+                  </div>
+                </div>
+                <div class="check-row" style="margin-top:12px;">
+                  <label><input id="modelProviderEnabled" type="checkbox" checked> Enabled</label>
+                  <label><input id="modelProviderTools" type="checkbox" checked> Tool Calling</label>
+                  <button id="upsertModelProviderBtn">Add / Update</button>
+                  <button id="clearModelProviderBtn" class="secondary">Clear</button>
+                </div>
+                <pre id="modelConfigResult" class="result-box"></pre>
+              </div>
+              <div>
+                <div class="section-head">
+                  <h2>Configured</h2>
+                  <span id="modelConfigPath" class="subtle"></span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>Provider</th><th>Type</th><th>Model</th><th>Key</th><th></th></tr></thead>
+                    <tbody id="modelConfigBody"></tbody>
+                  </table>
+                </div>
+                <div id="modelConfigEmpty" class="empty">No model providers configured.</div>
+              </div>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-head">
+              <h2>Loaded Providers</h2>
+              <button id="refreshProvidersBtn" class="secondary">Refresh</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Provider</th><th>Default Model</th><th>Models</th><th>Tools</th></tr></thead>
+                <tbody id="providersBody"></tbody>
+              </table>
+            </div>
+            <div id="providersEmpty" class="empty">No providers loaded.</div>
+          </div>
+        </section>
 
-      <section id="providersPanel" class="panel" data-panel="providers">
-        <div class="panel-head">
-          <h2>Providers</h2>
-          <button id="refreshProvidersBtn" class="secondary">Refresh</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Provider</th><th>Default Model</th><th>Models</th><th>Tools</th></tr>
-            </thead>
-            <tbody id="providersBody"></tbody>
-          </table>
-        </div>
-        <div id="providersEmpty" class="empty">No providers loaded.</div>
-      </section>
+        <section id="agentsPanel" data-panel="agents">
+          <div class="section">
+            <div class="section-head">
+              <h2>Agents</h2>
+              <div class="right-actions">
+                <button id="refreshAgentConfigBtn" class="secondary">Refresh</button>
+                <button id="saveAgentConfigBtn">Save</button>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <div class="grid-3">
+                  <div>
+                    <label for="agentProfileId">Profile ID</label>
+                    <input id="agentProfileId" autocomplete="off" placeholder="default">
+                  </div>
+                  <div>
+                    <label for="agentProfileName">Name</label>
+                    <input id="agentProfileName" autocomplete="off" placeholder="Default Agent">
+                  </div>
+                  <div>
+                    <label for="agentProfileModel">Default Model</label>
+                    <input id="agentProfileModel" list="modelSuggestions" autocomplete="off" placeholder="optional">
+                  </div>
+                  <div>
+                    <label for="agentProfileWorkspace">Workspace</label>
+                    <input id="agentProfileWorkspace" autocomplete="off" placeholder="optional">
+                  </div>
+                  <div>
+                    <label for="agentProfileThinking">Thinking</label>
+                    <select id="agentProfileThinking">
+                      <option value="">Default</option>
+                      <option value="none">None</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="agentProfileDefault">Default</label>
+                    <input id="agentProfileDefault" type="checkbox">
+                  </div>
+                </div>
+                <div style="margin-top:12px;">
+                  <label for="agentProfileDescription">Description</label>
+                  <input id="agentProfileDescription" autocomplete="off" placeholder="optional">
+                </div>
+                <div style="margin-top:12px;">
+                  <label for="agentProfilePrompt">Instructions</label>
+                  <textarea id="agentProfilePrompt"></textarea>
+                </div>
+                <div class="check-row" style="margin-top:12px;">
+                  <label><input id="agentProfileMemory" type="checkbox" checked> Memory</label>
+                  <label><input id="agentProfileTools" type="checkbox" checked> Tools</label>
+                  <button id="upsertAgentProfileBtn">Add / Update</button>
+                  <button id="clearAgentProfileBtn" class="secondary">Clear</button>
+                </div>
+                <pre id="agentConfigResult" class="result-box"></pre>
+              </div>
+              <div>
+                <div class="section-head">
+                  <h2>Profiles</h2>
+                  <span id="agentConfigPath" class="subtle"></span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>Profile</th><th>Model</th><th>Workspace</th><th></th></tr></thead>
+                    <tbody id="agentProfilesBody"></tbody>
+                  </table>
+                </div>
+                <div id="agentProfilesEmpty" class="empty">No agent profiles configured.</div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <section id="modelsPanel" class="panel" data-panel="models">
-        <div class="panel-head">
-          <h2>Models</h2>
-          <div class="right-actions">
-            <button id="refreshModelConfigBtn" class="secondary">Refresh</button>
-            <button id="saveModelConfigBtn">Save</button>
+        <section id="observePanel" data-panel="observe">
+          <div class="section">
+            <div class="section-head">
+              <h2>Runs</h2>
+              <button id="refreshRunsObserveBtn" class="secondary">Refresh</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>State</th><th>Run</th><th>Preview</th><th></th></tr></thead>
+                <tbody id="runsObserveBody"></tbody>
+              </table>
+            </div>
+            <div id="runsObserveEmpty" class="empty">No runs yet.</div>
           </div>
-        </div>
-        <div class="model-grid">
-          <div>
-            <label for="modelProviderType">Type</label>
-            <select id="modelProviderType">
-              <option value="openai-compatible">OpenAI Compatible</option>
-              <option value="anthropic">Anthropic</option>
-            </select>
+          <div class="grid-2">
+            <div class="section">
+              <div class="section-head">
+                <h2>Events</h2>
+                <button id="reconnectBtn" class="secondary">Reconnect</button>
+              </div>
+              <div id="events" class="events"></div>
+            </div>
+            <div class="section">
+              <div class="section-head">
+                <h2>Memory</h2>
+                <button id="refreshMemoryBtn" class="secondary">Refresh</button>
+              </div>
+              <div id="memoryCandidates"></div>
+              <div id="memoryEmpty" class="empty">No pending memory candidates.</div>
+              <pre id="memoryResult" class="result-box"></pre>
+            </div>
           </div>
-          <div>
-            <label for="modelProviderId">Provider ID</label>
-            <input id="modelProviderId" autocomplete="off" placeholder="openai">
+          <div class="section">
+            <div class="section-head">
+              <h2>Trajectory</h2>
+              <button id="refreshTrajectoryBtn" class="secondary">Refresh</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Status</th><th>Run</th><th>Prompt</th><th></th></tr></thead>
+                <tbody id="trajectoryBody"></tbody>
+              </table>
+            </div>
+            <div id="trajectoryEmpty" class="empty">No trajectory for this session.</div>
+            <pre id="trajectoryDetail" class="result-box"></pre>
           </div>
-          <div>
-            <label for="modelProviderName">Display Name</label>
-            <input id="modelProviderName" autocomplete="off" placeholder="OpenAI">
-          </div>
-          <div>
-            <label for="modelProviderKey">API Key</label>
-            <input id="modelProviderKey" type="password" autocomplete="off" placeholder="leave blank to keep">
-          </div>
-          <div>
-            <label for="modelProviderBaseUrl">Base URL</label>
-            <input id="modelProviderBaseUrl" autocomplete="off" placeholder="https://api.openai.com/v1">
-          </div>
-          <div>
-            <label for="modelProviderDefaultModel">Default Model</label>
-            <input id="modelProviderDefaultModel" autocomplete="off" placeholder="gpt-4.1-mini">
-          </div>
-          <div>
-            <label>&nbsp;</label>
-            <button id="upsertModelProviderBtn">Add / Update</button>
-          </div>
-          <div>
-            <label>&nbsp;</label>
-            <button id="clearModelProviderBtn" class="secondary">Clear</button>
-          </div>
-        </div>
-        <div class="check-row">
-          <label><input id="modelProviderEnabled" type="checkbox" checked> Enabled</label>
-          <label><input id="modelProviderTools" type="checkbox" checked> Tool Calling</label>
-          <span id="modelConfigPath" class="subtle"></span>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Provider</th><th>Type</th><th>Default Model</th><th>API Key</th><th></th></tr>
-            </thead>
-            <tbody id="modelConfigBody"></tbody>
-          </table>
-        </div>
-        <div id="modelConfigEmpty" class="empty">No model providers configured.</div>
-        <pre id="modelConfigResult" style="display:none;"></pre>
-      </section>
+        </section>
 
-      <section id="toolsPanel" class="panel" data-panel="tools">
-        <div class="panel-head">
-          <h2>Tools</h2>
-          <button id="refreshToolsBtn" class="secondary">Refresh</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Tool</th><th>Access</th><th></th></tr>
-            </thead>
-            <tbody id="toolsBody"></tbody>
-          </table>
-        </div>
-        <div id="toolsEmpty" class="empty">No tools available.</div>
-        <pre id="toolResult" style="display:none;"></pre>
-      </section>
-
-      <section id="memoryPanel" class="panel" data-panel="memory">
-        <div class="panel-head">
-          <h2>Memory</h2>
-          <button id="refreshMemoryBtn" class="secondary">Refresh</button>
-        </div>
-        <div id="memoryCandidates"></div>
-        <div id="memoryEmpty" class="empty">No pending memory candidates.</div>
-        <pre id="memoryResult" style="display:none;"></pre>
-      </section>
-
-      <section id="cronPanel" class="panel" data-panel="cron">
-        <div class="panel-head">
-          <h2>Cron</h2>
-          <div class="right-actions">
-            <button id="tickCronBtn" class="secondary">Tick</button>
-            <button id="refreshCronBtn" class="secondary">Refresh</button>
+        <section id="systemPanel" data-panel="system">
+          <div class="grid-2">
+            <div class="section">
+              <div class="section-head">
+                <h2>Gateway</h2>
+                <button id="refreshHealthBtn" class="secondary">Refresh</button>
+              </div>
+              <div class="kv" id="healthDetails"></div>
+            </div>
+            <div class="section">
+              <div class="section-head">
+                <h2>Cron</h2>
+                <div class="right-actions">
+                  <button id="tickCronBtn" class="secondary">Tick</button>
+                  <button id="refreshCronBtn" class="secondary">Refresh</button>
+                </div>
+              </div>
+              <div class="grid-3">
+                <div>
+                  <label for="cronId">Job</label>
+                  <input id="cronId" autocomplete="off" placeholder="daily-review">
+                </div>
+                <div>
+                  <label for="cronSchedule">Schedule</label>
+                  <input id="cronSchedule" autocomplete="off" placeholder="0 9 * * *">
+                </div>
+                <div>
+                  <label for="cronSession">Session</label>
+                  <input id="cronSession" autocomplete="off" value="cron">
+                </div>
+              </div>
+              <div style="margin-top:12px;">
+                <label for="cronMessage">Message</label>
+                <input id="cronMessage" autocomplete="off" placeholder="Run scheduled task">
+              </div>
+              <div class="check-row" style="margin-top:12px;">
+                <label><input id="cronEnabled" type="checkbox" checked> Enabled</label>
+                <button id="saveCronBtn">Save Job</button>
+              </div>
+              <div class="table-wrap" style="margin-top:12px;">
+                <table>
+                  <thead><tr><th>Job</th><th>Schedule</th><th>Next</th><th></th></tr></thead>
+                  <tbody id="cronBody"></tbody>
+                </table>
+              </div>
+              <div id="cronEmpty" class="empty">No cron jobs configured.</div>
+              <pre id="cronResult" class="result-box"></pre>
+            </div>
           </div>
-        </div>
-        <div class="cron-grid">
-          <div>
-            <label for="cronId">Job</label>
-            <input id="cronId" autocomplete="off" placeholder="daily-review">
+          <div class="grid-2">
+            <div class="section">
+              <div class="section-head">
+                <h2>Plugins</h2>
+                <button id="refreshPluginsBtn" class="secondary">Refresh</button>
+              </div>
+              <div id="plugins"></div>
+              <div id="pluginsEmpty" class="empty">No plugins loaded.</div>
+            </div>
+            <div class="section">
+              <div class="section-head">
+                <h2>Tools</h2>
+                <button id="refreshToolsBtn" class="secondary">Refresh</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Tool</th><th>Access</th><th></th></tr></thead>
+                  <tbody id="toolsBody"></tbody>
+                </table>
+              </div>
+              <div id="toolsEmpty" class="empty">No tools available.</div>
+              <pre id="toolResult" class="result-box"></pre>
+            </div>
           </div>
-          <div>
-            <label for="cronSchedule">Schedule</label>
-            <input id="cronSchedule" autocomplete="off" placeholder="0 9 * * *">
-          </div>
-          <div>
-            <label for="cronSession">Session</label>
-            <input id="cronSession" autocomplete="off" value="cron">
-          </div>
-          <div>
-            <label for="cronMessage">Message</label>
-            <input id="cronMessage" autocomplete="off" placeholder="Run scheduled task">
-          </div>
-          <div>
-            <label for="cronEnabled">Enabled</label>
-            <input id="cronEnabled" type="checkbox" checked>
-          </div>
-        </div>
-        <div class="actions">
-          <button id="saveCronBtn">Save Job</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Job</th><th>Schedule</th><th>Next</th><th></th></tr>
-            </thead>
-            <tbody id="cronBody"></tbody>
-          </table>
-        </div>
-        <div id="cronEmpty" class="empty">No cron jobs configured.</div>
-        <pre id="cronResult" style="display:none;"></pre>
-      </section>
-
-      <section id="trajectoryPanel" class="panel" data-panel="trajectory">
-        <div class="panel-head">
-          <h2>Trajectory</h2>
-          <button id="refreshTrajectoryBtn" class="secondary">Refresh</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Status</th><th>Run</th><th>Prompt</th><th></th></tr>
-            </thead>
-            <tbody id="trajectoryBody"></tbody>
-          </table>
-        </div>
-        <div id="trajectoryEmpty" class="empty">No trajectory for this session.</div>
-        <pre id="trajectoryDetail" style="display:none;"></pre>
-      </section>
-
-      <section id="gatewayPanel" class="panel" data-panel="gateway">
-        <div class="panel-head">
-          <h2>Gateway</h2>
-          <button id="refreshHealthBtn" class="secondary">Refresh</button>
-        </div>
-        <div class="kv" id="healthDetails"></div>
-      </section>
-    </div>
-  </main>
+        </section>
+      </div>
+    </main>
+  </div>
 
   <script>
     const state = {
-      activeTab: "runs",
+      activeTab: "run",
       eventController: null,
       eventGeneration: 0,
       reconnectTimer: 0,
@@ -710,6 +810,8 @@ export function getDashboardHtml(): string {
       providers: [],
       modelConfig: { providers: [], appliesOn: "restart" },
       editingModelProviderId: "",
+      agentConfig: { profiles: [] },
+      editingAgentProfileId: "",
       plugins: [],
       tools: [],
       memoryCandidates: [],
@@ -725,12 +827,7 @@ export function getDashboardHtml(): string {
       state.secret = $("secret").value.trim();
     });
     $("secret").addEventListener("change", () => {
-      refreshHealth();
-      refreshPlugins();
-      refreshTools();
-      refreshMemoryCandidates();
-      refreshCronJobs();
-      refreshModelConfig();
+      refreshAllProtected();
       connectEvents();
     });
 
@@ -739,13 +836,19 @@ export function getDashboardHtml(): string {
     });
 
     $("sendBtn").addEventListener("click", sendRun);
+    $("runProfile").addEventListener("change", applySelectedAgentProfile);
     $("refreshRunsBtn").addEventListener("click", refreshRuns);
+    $("refreshRunsObserveBtn").addEventListener("click", refreshRuns);
     $("refreshTrajectoryBtn").addEventListener("click", refreshTrajectories);
     $("refreshProvidersBtn").addEventListener("click", refreshProviders);
     $("refreshModelConfigBtn").addEventListener("click", refreshModelConfig);
     $("saveModelConfigBtn").addEventListener("click", saveModelConfig);
     $("upsertModelProviderBtn").addEventListener("click", upsertModelProviderConfig);
     $("clearModelProviderBtn").addEventListener("click", clearModelProviderForm);
+    $("refreshAgentConfigBtn").addEventListener("click", refreshAgentConfig);
+    $("saveAgentConfigBtn").addEventListener("click", saveAgentConfig);
+    $("upsertAgentProfileBtn").addEventListener("click", upsertAgentProfile);
+    $("clearAgentProfileBtn").addEventListener("click", clearAgentProfileForm);
     $("refreshPluginsBtn").addEventListener("click", refreshPlugins);
     $("refreshToolsBtn").addEventListener("click", refreshTools);
     $("refreshMemoryBtn").addEventListener("click", refreshMemoryCandidates);
@@ -756,21 +859,30 @@ export function getDashboardHtml(): string {
     $("reconnectBtn").addEventListener("click", connectEvents);
 
     function setTab(tab) {
-      state.activeTab = tab || "runs";
+      state.activeTab = tab || "run";
       document.querySelectorAll("[data-tab]").forEach(button => {
         button.setAttribute("aria-selected", button.getAttribute("data-tab") === state.activeTab ? "true" : "false");
       });
       document.querySelectorAll("[data-panel]").forEach(panel => {
         panel.classList.toggle("active", panel.getAttribute("data-panel") === state.activeTab);
       });
-      if (state.activeTab === "trajectory") refreshTrajectories();
-      if (state.activeTab === "providers") refreshProviders();
-      if (state.activeTab === "models") refreshModelConfig();
-      if (state.activeTab === "plugins") refreshPlugins();
-      if (state.activeTab === "tools") refreshTools();
-      if (state.activeTab === "memory") refreshMemoryCandidates();
-      if (state.activeTab === "cron") refreshCronJobs();
-      if (state.activeTab === "gateway") refreshHealth();
+      if (state.activeTab === "run") refreshRuns();
+      if (state.activeTab === "models") {
+        refreshModelConfig();
+        refreshProviders();
+      }
+      if (state.activeTab === "agents") refreshAgentConfig();
+      if (state.activeTab === "observe") {
+        refreshRuns();
+        refreshTrajectories();
+        refreshMemoryCandidates();
+      }
+      if (state.activeTab === "system") {
+        refreshHealth();
+        refreshPlugins();
+        refreshTools();
+        refreshCronJobs();
+      }
     }
 
     function authHeaders(json = false) {
@@ -798,6 +910,19 @@ export function getDashboardHtml(): string {
       return json.payload;
     }
 
+    function refreshAllProtected() {
+      refreshHealth();
+      refreshRuns();
+      refreshProviders();
+      refreshModelConfig();
+      refreshAgentConfig();
+      refreshPlugins();
+      refreshTools();
+      refreshMemoryCandidates();
+      refreshCronJobs();
+      refreshTrajectories();
+    }
+
     async function refreshHealth() {
       try {
         const response = await fetch("/health", { headers: authHeaders() });
@@ -806,7 +931,7 @@ export function getDashboardHtml(): string {
         $("healthDot").className = "dot ok";
         $("healthText").textContent = "online";
         renderHealth(json);
-      } catch (error) {
+      } catch {
         $("healthDot").className = "dot warn";
         $("healthText").textContent = "offline";
         $("healthDetails").innerHTML = "";
@@ -826,26 +951,33 @@ export function getDashboardHtml(): string {
     }
 
     async function sendRun() {
-      const message = $("message").value.trim();
-      if (!message) return;
+      const rawMessage = $("message").value.trim();
+      if (!rawMessage) return;
       $("sendBtn").disabled = true;
+      $("runOutput").style.display = "block";
+      $("runOutput").textContent = "running...";
       try {
+        const profile = selectedAgentProfile();
         const params = {
           sessionId: $("sessionId").value.trim() || "dashboard",
-          message,
+          message: profile?.systemPrompt ? profile.systemPrompt + "\\n\\n" + rawMessage : rawMessage,
           source: "web",
+          metadata: profile ? { agentProfileId: profile.id } : { source: "dashboard" },
         };
-        const workspace = $("workspace").value.trim();
+        const workspace = $("workspace").value.trim() || profile?.workspace || "";
         if (workspace) params.workspace = workspace;
-        const model = $("model").value.trim();
+        const model = $("model").value.trim() || profile?.defaultModel || "";
         if (model) params.model = model;
-        await rpc("agent", params);
+        const thinking = $("thinking").value.trim() || profile?.thinking || "";
+        if (thinking) params.thinking = thinking;
+        const payload = await rpc("agent", params);
+        const assistant = [...(payload.result?.messages || [])].reverse().find(message => message.role === "assistant");
+        $("runOutput").textContent = assistant?.content || JSON.stringify(payload.result, null, 2);
         $("message").value = "";
         await refreshRuns();
-        setTab("runs");
       } catch (error) {
+        $("runOutput").textContent = error.message || String(error);
         pushLocalEvent("error", error.message || String(error));
-        setTab("events");
       } finally {
         $("sendBtn").disabled = false;
       }
@@ -909,8 +1041,23 @@ export function getDashboardHtml(): string {
       } catch (error) {
         state.modelConfig = { providers: [], appliesOn: "restart" };
         renderModelConfig();
-        $("modelConfigResult").style.display = "block";
-        $("modelConfigResult").textContent = error.message || String(error);
+        showResult("modelConfigResult", error.message || String(error));
+      }
+    }
+
+    async function refreshAgentConfig() {
+      try {
+        const payload = await rpc("agent.config.get");
+        state.agentConfig = {
+          profiles: payload.profiles || [],
+          defaultProfileId: payload.defaultProfileId || "",
+          configPath: payload.configPath || "",
+        };
+        renderAgentConfig();
+      } catch (error) {
+        state.agentConfig = { profiles: [] };
+        renderAgentConfig();
+        showResult("agentConfigResult", error.message || String(error));
       }
     }
 
@@ -950,8 +1097,7 @@ export function getDashboardHtml(): string {
     }
 
     async function saveModelConfig() {
-      $("modelConfigResult").style.display = "block";
-      $("modelConfigResult").textContent = "saving...";
+      showResult("modelConfigResult", "saving...");
       try {
         const payload = await rpc("model.config.save", {
           providers: state.modelConfig.providers || [],
@@ -962,10 +1108,10 @@ export function getDashboardHtml(): string {
           configPath: payload.configPath || "",
         };
         renderModelConfig();
-        $("modelConfigResult").textContent = "saved; restart required";
+        showResult("modelConfigResult", "saved; restart required");
         await refreshProviders();
       } catch (error) {
-        $("modelConfigResult").textContent = error.message || String(error);
+        showResult("modelConfigResult", error.message || String(error));
       }
     }
 
@@ -1039,14 +1185,123 @@ export function getDashboardHtml(): string {
       renderModelConfig();
     }
 
+    async function saveAgentConfig() {
+      showResult("agentConfigResult", "saving...");
+      try {
+        const payload = await rpc("agent.config.save", {
+          profiles: state.agentConfig.profiles || [],
+          defaultProfileId: state.agentConfig.defaultProfileId || undefined,
+        });
+        state.agentConfig = {
+          profiles: payload.profiles || [],
+          defaultProfileId: payload.defaultProfileId || "",
+          configPath: payload.configPath || "",
+        };
+        renderAgentConfig();
+        showResult("agentConfigResult", "saved");
+      } catch (error) {
+        showResult("agentConfigResult", error.message || String(error));
+      }
+    }
+
+    function upsertAgentProfile() {
+      const id = $("agentProfileId").value.trim();
+      const name = $("agentProfileName").value.trim();
+      if (!id || !name) return;
+      const profile = {
+        id,
+        name,
+        memoryEnabled: $("agentProfileMemory").checked,
+        toolsEnabled: $("agentProfileTools").checked,
+      };
+      const description = $("agentProfileDescription").value.trim();
+      const defaultModel = $("agentProfileModel").value.trim();
+      const workspace = $("agentProfileWorkspace").value.trim();
+      const thinking = $("agentProfileThinking").value.trim();
+      const systemPrompt = $("agentProfilePrompt").value.trim();
+      if (description) profile.description = description;
+      if (defaultModel) profile.defaultModel = defaultModel;
+      if (workspace) profile.workspace = workspace;
+      if (thinking) profile.thinking = thinking;
+      if (systemPrompt) profile.systemPrompt = systemPrompt;
+
+      const next = (state.agentConfig.profiles || [])
+        .filter(item => item.id !== id && item.id !== state.editingAgentProfileId);
+      next.push(profile);
+      state.agentConfig = {
+        ...state.agentConfig,
+        profiles: next.sort((left, right) => String(left.id).localeCompare(String(right.id))),
+        defaultProfileId: $("agentProfileDefault").checked ? id : state.agentConfig.defaultProfileId,
+      };
+      if (state.agentConfig.defaultProfileId && !state.agentConfig.profiles.some(item => item.id === state.agentConfig.defaultProfileId)) {
+        state.agentConfig.defaultProfileId = "";
+      }
+      clearAgentProfileForm();
+      renderAgentConfig();
+    }
+
+    function clearAgentProfileForm() {
+      state.editingAgentProfileId = "";
+      $("agentProfileId").value = "";
+      $("agentProfileName").value = "";
+      $("agentProfileDescription").value = "";
+      $("agentProfileModel").value = "";
+      $("agentProfileWorkspace").value = "";
+      $("agentProfileThinking").value = "";
+      $("agentProfilePrompt").value = "";
+      $("agentProfileMemory").checked = true;
+      $("agentProfileTools").checked = true;
+      $("agentProfileDefault").checked = false;
+    }
+
+    function editAgentProfile(id) {
+      const profile = (state.agentConfig.profiles || []).find(item => item.id === id);
+      if (!profile) return;
+      state.editingAgentProfileId = profile.id || "";
+      $("agentProfileId").value = profile.id || "";
+      $("agentProfileName").value = profile.name || "";
+      $("agentProfileDescription").value = profile.description || "";
+      $("agentProfileModel").value = profile.defaultModel || "";
+      $("agentProfileWorkspace").value = profile.workspace || "";
+      $("agentProfileThinking").value = profile.thinking || "";
+      $("agentProfilePrompt").value = profile.systemPrompt || "";
+      $("agentProfileMemory").checked = profile.memoryEnabled !== false;
+      $("agentProfileTools").checked = profile.toolsEnabled !== false;
+      $("agentProfileDefault").checked = state.agentConfig.defaultProfileId === profile.id;
+    }
+
+    function removeAgentProfile(id) {
+      state.agentConfig = {
+        ...state.agentConfig,
+        profiles: (state.agentConfig.profiles || []).filter(item => item.id !== id),
+        defaultProfileId: state.agentConfig.defaultProfileId === id ? "" : state.agentConfig.defaultProfileId,
+      };
+      if (state.editingAgentProfileId === id) {
+        clearAgentProfileForm();
+      }
+      renderAgentConfig();
+    }
+
+    function selectedAgentProfile() {
+      const id = $("runProfile").value;
+      return (state.agentConfig.profiles || []).find(profile => profile.id === id);
+    }
+
+    function applySelectedAgentProfile() {
+      const profile = selectedAgentProfile();
+      if (!profile) return;
+      if (profile.defaultModel) $("model").value = profile.defaultModel;
+      if (profile.workspace) $("workspace").value = profile.workspace;
+      $("thinking").value = profile.thinking || "";
+    }
+
     async function saveCronJob() {
       const id = $("cronId").value.trim();
       const schedule = $("cronSchedule").value.trim();
       const sessionId = $("cronSession").value.trim();
       const message = $("cronMessage").value.trim();
       if (!id || !schedule || !sessionId || !message) return;
-      $("cronResult").style.display = "block";
-      $("cronResult").textContent = "saving...";
+      showResult("cronResult", "saving...");
       try {
         const payload = await rpc("cron.job.upsert", {
           id,
@@ -1056,26 +1311,25 @@ export function getDashboardHtml(): string {
           enabled: $("cronEnabled").checked,
           metadata: { source: "dashboard" },
         });
-        $("cronResult").textContent = JSON.stringify(payload.job, null, 2);
+        showResult("cronResult", JSON.stringify(payload.job, null, 2));
         await refreshCronJobs();
       } catch (error) {
-        $("cronResult").textContent = error.message || String(error);
+        showResult("cronResult", error.message || String(error));
       }
     }
 
     async function removeCronJob(id) {
-      $("cronResult").style.display = "block";
-      $("cronResult").textContent = "removing...";
+      showResult("cronResult", "removing...");
       try {
         const payload = await rpc("cron.job.remove", { id });
-        $("cronResult").textContent = JSON.stringify(payload, null, 2);
+        showResult("cronResult", JSON.stringify(payload, null, 2));
         await refreshCronJobs();
       } catch (error) {
-        $("cronResult").textContent = error.message || String(error);
+        showResult("cronResult", error.message || String(error));
       }
     }
 
-    async function editCronJob(id) {
+    function editCronJob(id) {
       const job = state.cronJobs.find(item => item.id === id);
       if (!job) return;
       $("cronId").value = job.id || "";
@@ -1086,14 +1340,13 @@ export function getDashboardHtml(): string {
     }
 
     async function tickCron() {
-      $("cronResult").style.display = "block";
-      $("cronResult").textContent = "ticking...";
+      showResult("cronResult", "ticking...");
       try {
         const payload = await rpc("cron.tick");
-        $("cronResult").textContent = JSON.stringify(payload, null, 2);
+        showResult("cronResult", JSON.stringify(payload, null, 2));
         await refreshCronJobs();
       } catch (error) {
-        $("cronResult").textContent = error.message || String(error);
+        showResult("cronResult", error.message || String(error));
       }
     }
 
@@ -1107,13 +1360,12 @@ export function getDashboardHtml(): string {
       };
       const workspace = $("workspace").value.trim();
       if (workspace) params.workspace = workspace;
-      $("toolResult").style.display = "block";
-      $("toolResult").textContent = "running " + toolName + "...";
+      showResult("toolResult", "running " + toolName + "...");
       try {
         const payload = await rpc("tool.invoke", params);
-        $("toolResult").textContent = JSON.stringify(payload, null, 2);
+        showResult("toolResult", JSON.stringify(payload, null, 2));
       } catch (error) {
-        $("toolResult").textContent = error.message || String(error);
+        showResult("toolResult", error.message || String(error));
       }
     }
 
@@ -1125,26 +1377,24 @@ export function getDashboardHtml(): string {
     }
 
     async function promoteMemoryCandidate(id) {
-      $("memoryResult").style.display = "block";
-      $("memoryResult").textContent = "promoting...";
+      showResult("memoryResult", "promoting...");
       try {
         const payload = await rpc("memory.candidate.promote", { id, source: "dashboard" });
-        $("memoryResult").textContent = JSON.stringify(payload.output, null, 2);
+        showResult("memoryResult", JSON.stringify(payload.output, null, 2));
         await refreshMemoryCandidates();
       } catch (error) {
-        $("memoryResult").textContent = error.message || String(error);
+        showResult("memoryResult", error.message || String(error));
       }
     }
 
     async function rejectMemoryCandidate(id) {
-      $("memoryResult").style.display = "block";
-      $("memoryResult").textContent = "rejecting...";
+      showResult("memoryResult", "rejecting...");
       try {
         const payload = await rpc("memory.candidate.reject", { id, reason: "Rejected from dashboard." });
-        $("memoryResult").textContent = JSON.stringify(payload.output, null, 2);
+        showResult("memoryResult", JSON.stringify(payload.output, null, 2));
         await refreshMemoryCandidates();
       } catch (error) {
-        $("memoryResult").textContent = error.message || String(error);
+        showResult("memoryResult", error.message || String(error));
       }
     }
 
@@ -1155,11 +1405,9 @@ export function getDashboardHtml(): string {
           runId,
           maxEvents: 80,
         });
-        $("trajectoryDetail").style.display = "block";
-        $("trajectoryDetail").textContent = JSON.stringify(payload.record, null, 2);
+        showResult("trajectoryDetail", JSON.stringify(payload.record, null, 2));
       } catch (error) {
-        $("trajectoryDetail").style.display = "block";
-        $("trajectoryDetail").textContent = error.message || String(error);
+        showResult("trajectoryDetail", error.message || String(error));
       }
     }
 
@@ -1177,26 +1425,29 @@ export function getDashboardHtml(): string {
       $("runCount").textContent = String(state.runs.length);
       $("metricRuns").textContent = String(state.runs.length);
       $("metricActive").textContent = String(activeRuns);
+      const html = state.runs.map(run => renderRunRow(run)).join("");
+      $("runsBody").innerHTML = html;
+      $("runsObserveBody").innerHTML = html;
       $("runsEmpty").style.display = state.runs.length ? "none" : "block";
-      $("runsBody").innerHTML = state.runs.map(run => {
-        const canCancel = run.state === "running" || run.state === "cancelling";
-        const stateClass = "state-" + escapeHtml(run.state || "");
-        return "<tr>" +
-          "<td class='" + stateClass + "'>" + escapeHtml(run.state) + "</td>" +
-          "<td><code>" + escapeHtml(shortId(run.runId)) + "</code><br><span class='subtle'>" + escapeHtml(run.sessionId || "") + "</span></td>" +
-          "<td>" + escapeHtml(run.result?.assistantPreview || run.messagePreview || run.error || "") + "</td>" +
-          "<td>" + (canCancel ? "<button class='danger' data-cancel='" + escapeHtml(run.runId) + "'>Cancel</button>" : "") + "</td>" +
-          "</tr>";
-      }).join("");
+      $("runsObserveEmpty").style.display = state.runs.length ? "none" : "block";
       document.querySelectorAll("[data-cancel]").forEach(button => {
         button.addEventListener("click", () => cancelRun(button.getAttribute("data-cancel")));
       });
       renderMetrics();
     }
 
+    function renderRunRow(run) {
+      const canCancel = run.state === "running" || run.state === "cancelling";
+      const stateClass = "state-" + escapeHtml(run.state || "");
+      return "<tr>" +
+        "<td class='" + stateClass + "'>" + escapeHtml(run.state || "") + "</td>" +
+        "<td><code>" + escapeHtml(shortId(run.runId)) + "</code><br><span class='subtle'>" + escapeHtml(run.sessionId || "") + "</span></td>" +
+        "<td>" + escapeHtml(run.result?.assistantPreview || run.messagePreview || run.error || "") + "</td>" +
+        "<td>" + (canCancel ? "<button class='danger' data-cancel='" + escapeHtml(run.runId) + "'>Cancel</button>" : "") + "</td>" +
+        "</tr>";
+    }
+
     function renderTrajectories() {
-      $("trajectoryCount").textContent = String(state.trajectories.length);
-      $("trajectoryEmpty").style.display = state.trajectories.length ? "none" : "block";
       $("trajectoryBody").innerHTML = state.trajectories.map(item => {
         const statusClass = "state-" + escapeHtml(item.status || "");
         return "<tr>" +
@@ -1206,31 +1457,20 @@ export function getDashboardHtml(): string {
           "<td><button class='secondary' data-trajectory='" + escapeHtml(item.runId) + "'>View</button></td>" +
           "</tr>";
       }).join("");
+      $("trajectoryEmpty").style.display = state.trajectories.length ? "none" : "block";
       document.querySelectorAll("[data-trajectory]").forEach(button => {
         button.addEventListener("click", () => loadTrajectory(button.getAttribute("data-trajectory")));
       });
     }
 
     function renderPlugins() {
-      $("pluginCount").textContent = String(state.plugins.length);
       $("metricPlugins").textContent = String(state.plugins.length);
       $("pluginsEmpty").style.display = state.plugins.length ? "none" : "block";
       $("plugins").innerHTML = state.plugins.map(plugin => {
         const tools = (plugin.tools || []).map(tool => tool.name + (tool.permission ? ":" + tool.permission : "")).join(", ");
-        const providers = (plugin.providers || []).map(provider => {
-          return provider.displayName && provider.displayName !== provider.id
-            ? provider.id + " (" + provider.displayName + ")"
-            : provider.id;
-        }).join(", ");
-        const memoryBackends = (plugin.memoryBackends || []).map(backend => {
-          return backend.displayName && backend.displayName !== backend.id
-            ? backend.id + " (" + backend.displayName + ")"
-            : backend.id;
-        }).join(", ");
+        const providers = (plugin.providers || []).map(provider => provider.displayName && provider.displayName !== provider.id ? provider.id + " (" + provider.displayName + ")" : provider.id).join(", ");
+        const memoryBackends = (plugin.memoryBackends || []).map(backend => backend.displayName && backend.displayName !== backend.id ? backend.id + " (" + backend.displayName + ")" : backend.id).join(", ");
         const hooks = (plugin.lifecycleHooks || []).join(", ");
-        const counts = (plugin.tools || []).length + " tools / "
-          + (plugin.providers || []).length + " providers / "
-          + (plugin.memoryBackends || []).length + " memory";
         const details = [
           plugin.description || "",
           tools ? "tools: " + tools : "",
@@ -1238,16 +1478,16 @@ export function getDashboardHtml(): string {
           memoryBackends ? "memory: " + memoryBackends : "",
           hooks ? "hooks: " + hooks : "",
         ].filter(Boolean).join("\\n");
-        return "<div class='plugin'>" +
-          "<div class='plugin-title'><strong>" + escapeHtml(plugin.name || "") + "</strong><span class='subtle'>" + escapeHtml(plugin.version || "") + "</span></div>" +
-          "<div class='plugin-meta'>" + escapeHtml(counts) + "</div>" +
+        const counts = (plugin.tools || []).length + " tools / " + (plugin.providers || []).length + " providers / " + (plugin.memoryBackends || []).length + " memory";
+        return "<div class='item'>" +
+          "<div class='item-title'><strong>" + escapeHtml(plugin.name || "") + "</strong><span class='subtle'>" + escapeHtml(plugin.version || "") + "</span></div>" +
+          "<div class='item-meta'>" + escapeHtml(counts) + "</div>" +
           (details ? "<pre>" + escapeHtml(details) + "</pre>" : "") +
         "</div>";
       }).join("");
     }
 
     function renderProviders() {
-      $("providerCount").textContent = String(state.providers.length);
       $("metricProviders").textContent = String(state.providers.length);
       $("providersEmpty").style.display = state.providers.length ? "none" : "block";
       $("providersBody").innerHTML = state.providers.map(provider => {
@@ -1297,12 +1537,11 @@ export function getDashboardHtml(): string {
           provider.displayName || "",
           provider.baseUrl || "",
         ].filter(Boolean).join("\\n");
-        const model = provider.defaultModel || "";
         const apiKey = provider.apiKeyConfigured || provider.apiKey ? "configured" : "missing";
         return "<tr>" +
           "<td><strong>" + escapeHtml(provider.id || "") + "</strong>" + (meta ? "<pre>" + escapeHtml(meta) + "</pre>" : "") + "</td>" +
           "<td>" + escapeHtml(provider.type || "") + "</td>" +
-          "<td>" + escapeHtml(model) + "</td>" +
+          "<td>" + escapeHtml(provider.defaultModel || "") + "</td>" +
           "<td>" + escapeHtml(apiKey) + "</td>" +
           "<td><div class='right-actions'>" +
             "<button class='secondary' data-edit-model-provider='" + escapeHtml(provider.id || "") + "'>Edit</button>" +
@@ -1318,8 +1557,47 @@ export function getDashboardHtml(): string {
       });
     }
 
+    function renderAgentConfig() {
+      const profiles = state.agentConfig.profiles || [];
+      $("agentProfileCount").textContent = String(profiles.length);
+      $("agentProfilesEmpty").style.display = profiles.length ? "none" : "block";
+      $("agentConfigPath").textContent = state.agentConfig.configPath || "";
+      $("runProfile").innerHTML = "<option value=''>Default</option>" + profiles.map(profile => {
+        const suffix = state.agentConfig.defaultProfileId === profile.id ? " *" : "";
+        return "<option value='" + escapeHtml(profile.id || "") + "'>" + escapeHtml((profile.name || profile.id || "") + suffix) + "</option>";
+      }).join("");
+      if (state.agentConfig.defaultProfileId && !$("runProfile").value) {
+        $("runProfile").value = state.agentConfig.defaultProfileId;
+        applySelectedAgentProfile();
+      }
+      $("agentProfilesBody").innerHTML = profiles.map(profile => {
+        const meta = [
+          state.agentConfig.defaultProfileId === profile.id ? "default" : "",
+          profile.thinking ? "thinking: " + profile.thinking : "",
+          profile.memoryEnabled === false ? "memory off" : "",
+          profile.toolsEnabled === false ? "tools off" : "",
+          profile.description || "",
+        ].filter(Boolean).join("\\n");
+        return "<tr>" +
+          "<td><strong>" + escapeHtml(profile.name || profile.id || "") + "</strong><br><code>" + escapeHtml(profile.id || "") + "</code>" + (meta ? "<pre>" + escapeHtml(meta) + "</pre>" : "") + "</td>" +
+          "<td>" + escapeHtml(profile.defaultModel || "") + "</td>" +
+          "<td>" + escapeHtml(profile.workspace || "") + "</td>" +
+          "<td><div class='right-actions'>" +
+            "<button class='secondary' data-edit-agent-profile='" + escapeHtml(profile.id || "") + "'>Edit</button>" +
+            "<button class='danger' data-remove-agent-profile='" + escapeHtml(profile.id || "") + "'>Remove</button>" +
+          "</div></td>" +
+          "</tr>";
+      }).join("");
+      document.querySelectorAll("[data-edit-agent-profile]").forEach(button => {
+        button.addEventListener("click", () => editAgentProfile(button.getAttribute("data-edit-agent-profile")));
+      });
+      document.querySelectorAll("[data-remove-agent-profile]").forEach(button => {
+        button.addEventListener("click", () => removeAgentProfile(button.getAttribute("data-remove-agent-profile")));
+      });
+    }
+
     function renderTools() {
-      $("toolCount").textContent = String(state.tools.length);
+      $("metricTools").textContent = String(state.tools.length);
       $("toolsEmpty").style.display = state.tools.length ? "none" : "block";
       $("toolsBody").innerHTML = state.tools.map(tool => {
         const capabilities = (tool.capabilities || []).join(", ");
@@ -1343,7 +1621,6 @@ export function getDashboardHtml(): string {
     }
 
     function renderMemoryCandidates() {
-      $("memoryCount").textContent = String(state.memoryCandidates.length);
       $("memoryEmpty").style.display = state.memoryCandidates.length ? "none" : "block";
       const promoteAttrs = state.memoryReview.canPromote ? "" : " disabled title='Requires write permission'";
       const rejectAttrs = state.memoryReview.canReject ? "" : " disabled title='Requires write permission'";
@@ -1353,11 +1630,11 @@ export function getDashboardHtml(): string {
           candidate.sessionId ? "session " + shortId(candidate.sessionId) : "",
           candidate.createdAt ? formatTime(candidate.createdAt) : "",
         ].filter(Boolean).join(" / ");
-        return "<div class='candidate'>" +
+        return "<div class='item'>" +
           "<div><strong>" + escapeHtml(candidate.content || "") + "</strong></div>" +
-          "<div class='candidate-meta'>" + escapeHtml(meta) + "</div>" +
+          "<div class='item-meta'>" + escapeHtml(meta) + "</div>" +
           (candidate.reason ? "<pre>" + escapeHtml(candidate.reason) + "</pre>" : "") +
-          "<div class='candidate-actions'>" +
+          "<div class='right-actions' style='margin-top:8px;'>" +
             "<button class='secondary' data-promote-memory='" + escapeHtml(candidate.id || "") + "'" + promoteAttrs + ">Promote</button>" +
             "<button class='danger' data-reject-memory='" + escapeHtml(candidate.id || "") + "'" + rejectAttrs + ">Reject</button>" +
           "</div>" +
@@ -1372,7 +1649,6 @@ export function getDashboardHtml(): string {
     }
 
     function renderCronJobs() {
-      $("cronCount").textContent = String(state.cronJobs.length);
       $("cronEmpty").style.display = state.cronJobs.length ? "none" : "block";
       $("cronBody").innerHTML = state.cronJobs.map(job => {
         const status = job.enabled === false ? "disabled" : (job.lastStatus || "ready");
@@ -1454,7 +1730,7 @@ export function getDashboardHtml(): string {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         let split;
-        while ((split = buffer.indexOf("\n\n")) !== -1) {
+        while ((split = buffer.indexOf("\\n\\n")) !== -1) {
           const raw = buffer.slice(0, split);
           buffer = buffer.slice(split + 2);
           handleSseBlock(raw);
@@ -1464,9 +1740,9 @@ export function getDashboardHtml(): string {
 
     function handleSseBlock(raw) {
       if (!raw || raw.startsWith(":")) return;
-      const lines = raw.split(/\r?\n/);
+      const lines = raw.split(/\\r?\\n/);
       const name = (lines.find(line => line.startsWith("event: ")) || "event: message").slice(7);
-      const data = lines.filter(line => line.startsWith("data: ")).map(line => line.slice(6)).join("\n");
+      const data = lines.filter(line => line.startsWith("data: ")).map(line => line.slice(6)).join("\\n");
       if (!data) return;
       try {
         const parsed = JSON.parse(data);
@@ -1493,7 +1769,6 @@ export function getDashboardHtml(): string {
 
     function renderEvents() {
       $("eventCount").textContent = String(state.events.length);
-      $("metricEvents").textContent = String(state.events.length);
       $("events").innerHTML = state.events.map(envelope => {
         const event = envelope.event || {};
         const label = event.type === "lifecycle" ? event.type + ":" + event.phase : event.type || "event";
@@ -1509,7 +1784,12 @@ export function getDashboardHtml(): string {
     function renderMetrics() {
       $("metricProviders").textContent = String(state.providers.length);
       $("metricPlugins").textContent = String(state.plugins.length);
-      $("metricEvents").textContent = String(state.events.length);
+      $("metricTools").textContent = String(state.tools.length);
+    }
+
+    function showResult(id, text) {
+      $(id).style.display = "block";
+      $(id).textContent = text;
     }
 
     function shortId(value) { return value ? String(value).slice(0, 8) : ""; }
@@ -1538,19 +1818,10 @@ export function getDashboardHtml(): string {
         .replaceAll("'", "&#39;");
     }
 
-    refreshHealth();
-    refreshRuns();
-    refreshTrajectories();
-    refreshProviders();
-    refreshModelConfig();
-    refreshPlugins();
-    refreshTools();
-    refreshMemoryCandidates();
-    refreshCronJobs();
+    refreshAllProtected();
     connectEvents();
     setInterval(refreshHealth, 5000);
     setInterval(refreshRuns, 8000);
-    setInterval(refreshTrajectories, 12000);
     setInterval(refreshProviders, 15000);
     setInterval(refreshPlugins, 15000);
     setInterval(refreshTools, 15000);

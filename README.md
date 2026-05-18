@@ -71,8 +71,9 @@ without requiring a model provider.
 minimal dashboard at `/`. The first API endpoints are `GET /health`,
 `GET /events`, `GET /ws`, `POST /channels/webhook`, and `POST /rpc` for
 `connect`, `health`, `agent`, `run.status`, `run.cancel`, `runs.list`,
-`providers.list`, `model.config.get`, `model.config.save`, `plugins.list`,
-`tools.catalog`, `tool.invoke`,
+`providers.list`, `model.config.get`, `model.config.save`,
+`agent.config.get`, `agent.config.save`, `plugins.list`, `tools.catalog`,
+`tool.invoke`,
 `memory.candidates.list`, `memory.candidate.promote`,
 `memory.candidate.reject`, `trajectory.list`, `trajectory.get`,
 `cron.jobs.list`, `cron.job.upsert`, `cron.job.remove`, and `cron.tick`
@@ -100,9 +101,11 @@ tasks. In `dragon agent`, the bounded `delegation_run` tool exposes that runner
 to the model for independent or dependency-ordered subtasks.
 OpenAI-compatible and Anthropic-compatible providers can emit true text deltas
 into those streams through Dragon `assistant_delta` events.
-The dashboard keeps the surface minimal: run composer, runs/events, providers,
-model provider config, plugins, safe direct tools, memory candidate review,
-trajectories, cron jobs, and gateway health.
+The dashboard is organized into five minimal workspaces: Run, Models, Agents,
+Observe, and System. Run is the default console, Models manages provider
+configuration, Agents manages reusable profiles, Observe groups runs/events/
+trajectory/memory review, and System groups gateway health, plugins, tools, and
+cron jobs.
 
 Plugins can be loaded from `.dragon/plugins`, `DRAGON_PLUGIN_ROOTS`, or
 `--plugin-root <path>`. A plugin root can be either one plugin directory or a
@@ -121,6 +124,10 @@ Model provider config can be edited in the dashboard Models tab. It persists to
 set. The dashboard never returns raw API keys from `model.config.get` or
 `model.config.save`; saved provider changes apply on the next CLI/Gateway
 start.
+Agent profiles can be edited in the dashboard Agents tab. They persist to
+`.dragon/config/agents.json` by default, or to `DRAGON_AGENT_CONFIG` when set.
+A selected profile can apply a default model, workspace, thinking level, and
+profile instructions to dashboard runs.
 CLI turns can also provide retryable model fallback candidates with
 `--model-fallback <ref>` or comma-separated `DRAGON_MODEL_FALLBACKS`; Dragon
 buffers fallback attempts so failed streamed output is not shown before the
