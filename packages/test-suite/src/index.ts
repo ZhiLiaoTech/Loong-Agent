@@ -11,7 +11,13 @@ import { createGatewayWebhookChannelTarget, parseSlackWebhook, parseTelegramWebh
 import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
 import { createDragonRuntime } from "@dragon/core";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
-import { createDelegationPlan, createRuntimeDelegatedTaskExecutor, runDelegationPlan } from "@dragon/delegation";
+import {
+  createDelegationPlan,
+  createRuntimeDelegatedTaskExecutor,
+  createRuntimeDelegationTool,
+  runDelegationPlan,
+  type DragonRuntimeDelegationToolInput,
+} from "@dragon/delegation";
 import { createHttpGateway } from "@dragon/gateway";
 import {
   createFileMemoryStore,
@@ -1391,6 +1397,78 @@ async function testDelegationPlannerAndRunner(): Promise<void> {
   assert(runtimeInputs[1]?.message.includes("Dependency results:"), "dependent runtime task should receive dependency context");
   assert(runtimeInputs[1]?.message.includes("first task output"), "dependent runtime task should include upstream assistant output");
   assert(readPath(runtimeRun.results[1], ["output", "assistantMessage"]) === "used dependency context", "runtime delegation output should expose assistant message");
+
+  const toolRuntimeInputs: DragonTurnInput[] = [];
+  const delegationTool = createRuntimeDelegationTool({
+    runtime: {
+      async runTurn(input) {
+        toolRuntimeInputs.push(input);
+        const taskId = String(input.metadata?.delegationTaskId ?? "unknown");
+        return {
+          runId: `tool-run-${taskId}`,
+          status: "ok",
+          messages: [
+            { id: `tool-user-${taskId}`, role: "user", content: input.message, createdAt: "2026-05-17T10:00:00.000Z" },
+            { id: `tool-assistant-${taskId}`, role: "assistant", content: `tool:${taskId}`, createdAt: "2026-05-17T10:00:01.000Z" },
+          ],
+        };
+      },
+      subscribe() {
+        return () => undefined;
+      },
+    },
+    defaultSessionPrefix: "tool-delegate",
+    defaultWorkspace: "/tmp/tool",
+    defaultModel: "mock:tool",
+    maxTasks: 4,
+  });
+  const toolRun = await delegationTool.invoke({
+    id: "delegation-tool-1",
+    name: delegationTool.name,
+    input: {
+      tasks: [
+        { id: "alpha", title: "Alpha", prompt: "Draft alpha." },
+        { id: "beta", title: "Beta", prompt: "Review beta.", dependsOn: ["alpha"], role: "reviewer" },
+      ],
+      maxConcurrency: 2,
+    },
+    sessionId: "parent-session",
+    metadata: { runId: "parent-run" },
+  });
+  assert(toolRun.ok, `delegation_run tool failed: ${toolRun.error}`);
+  assert(toolRun.output?.status === "ok", "delegation_run tool should return a successful run");
+  assert(toolRuntimeInputs.length === 2, "delegation_run tool should call runtime once per task");
+  assert(toolRuntimeInputs[0]?.sessionId === "tool-delegate:alpha", "delegation_run tool should derive child session ids");
+  assert(toolRuntimeInputs[0]?.workspace === "/tmp/tool", "delegation_run tool should apply default workspace");
+  assert(toolRuntimeInputs[0]?.model === "mock:tool", "delegation_run tool should apply default model");
+  assert(readPath(toolRuntimeInputs[0]?.metadata, ["parentSessionId"]) === "parent-session", "delegation_run tool should annotate parent session");
+  assert(readPath(toolRuntimeInputs[0]?.metadata, ["parentRunId"]) === "parent-run", "delegation_run tool should annotate parent run");
+  assert(toolRuntimeInputs[1]?.message.includes("Dependency results:"), "delegation_run tool should include dependency context");
+  assert(readPath(toolRun.output, ["results", 1, "output", "assistantMessage"]) === "tool:beta", "delegation_run output should expose assistant messages");
+
+  const tooManyTasks = await delegationTool.invoke({
+    id: "delegation-tool-2",
+    name: delegationTool.name,
+    input: {
+      tasks: Array.from({ length: 5 }, (_value, index) => ({
+        id: `t${index}`,
+        title: `Task ${index}`,
+        prompt: "Run task.",
+      })),
+    },
+    sessionId: "parent-session",
+  });
+  assert(!tooManyTasks.ok && tooManyTasks.error?.includes("at most 4 tasks"), "delegation_run tool should enforce task bounds");
+
+  const invalidTask = await delegationTool.invoke({
+    id: "delegation-tool-3",
+    name: delegationTool.name,
+    input: {
+      tasks: [{ id: "bad", title: "Bad", prompt: 42 }],
+    } as unknown as DragonRuntimeDelegationToolInput,
+    sessionId: "parent-session",
+  });
+  assert(!invalidTask.ok && invalidTask.error?.includes("task prompt must be a string"), "delegation_run tool should reject malformed task input");
 
   const failingRuntimeExecutor = createRuntimeDelegatedTaskExecutor({
     runtime: {

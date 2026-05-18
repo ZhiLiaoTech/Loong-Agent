@@ -21,6 +21,7 @@
   "dependencies": {
     "@dragon/core": "workspace:*",
     "@dragon/cron": "workspace:*",
+    "@dragon/delegation": "workspace:*",
     "@dragon/gateway": "workspace:*",
     "@dragon/memory": "workspace:*",
     "@dragon/plugin-sdk": "workspace:*",

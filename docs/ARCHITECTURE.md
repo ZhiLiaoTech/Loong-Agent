@@ -143,6 +143,7 @@ Owns multi-agent orchestration primitives:
 - bounded concurrent execution
 - failure-aware dependent task skipping
 - runtime-backed worker execution through a provided `DragonAgentRuntime`
+- agent-facing `delegation_run` tool for bounded runtime delegation
 
 ### `@dragon/plugin-sdk`
 
@@ -171,6 +172,7 @@ Owns the command-line entrypoint:
   contract: explicit `allow` can run unattended, explicit `deny` is refused,
   and omitted permission asks; ask is skipped when no handler is available
 - reference read-only Git tool plugin for status, diff, and log inspection
+- bounded `delegation_run` orchestration tool wired into agent mode
 - `sandbox_exec` for routing the conservative read-only command allowlist
   through local, Docker, or SSH backends when a target is explicitly provided,
   with opt-in `versions`, `git-read`, `search-read`, and `repo-read` profiles

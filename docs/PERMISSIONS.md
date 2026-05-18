@@ -23,6 +23,12 @@ reported back to the model. Passing `--allow-write` explicitly allows
 `file_patch`, skill authoring tools, and memory candidate promotion/rejection
 without prompting.
 
+`delegation_run` is registered as an allowlisted orchestration tool in
+`dragon agent`. It only creates bounded child turns through the current
+`DragonAgentRuntime`; those delegated turns still use the same tool registry,
+permission engine, workspace policy, and write approvals as ordinary agent
+turns.
+
 `sandbox_exec` uses the same conservative read-only command allowlist as
 `shell_exec`, but can route execution through local, Docker, or SSH backends.
 It remains an `ask` tool by default. Docker execution avoids shell expansion by

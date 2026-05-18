@@ -16,7 +16,8 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@dragon/core": "workspace:*"
+    "@dragon/core": "workspace:*",
+    "@dragon/tools": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

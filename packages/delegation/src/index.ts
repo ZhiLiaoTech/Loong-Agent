@@ -1,4 +1,5 @@
 import type { DragonAgentRuntime, DragonMessage, DragonThinkingLevel, DragonTurnInput, DragonTurnResult } from "@dragon/core";
+import type { ToolDefinition, ToolJsonSchema } from "@dragon/tools";
 
 export interface DragonDelegatedTask {
   id: string;
@@ -65,9 +66,64 @@ export interface DragonRuntimeDelegationExecutorOptions {
   throwOnRuntimeError?: boolean;
 }
 
+export interface DragonRuntimeDelegationToolInput {
+  tasks: DragonDelegatedTask[];
+  maxConcurrency?: number;
+  sessionPrefix?: string;
+  workspace?: string;
+  model?: string;
+  includeDependencyResults?: boolean;
+  throwOnRuntimeError?: boolean;
+}
+
+export interface DragonRuntimeDelegationToolOptions {
+  runtime: DragonAgentRuntime | (() => DragonAgentRuntime | undefined);
+  defaultSessionPrefix?: string;
+  source?: DragonTurnInput["source"];
+  defaultWorkspace?: string;
+  defaultModel?: string;
+  maxTasks?: number;
+  maxConcurrency?: number;
+}
+
+export type DragonRuntimeDelegationToolOutput = DragonDelegationRunResult<DragonRuntimeDelegatedTaskOutput>;
+
 const MAX_TASKS = 100;
 const MAX_CONCURRENCY = 16;
 const MAX_DEPENDENCY_OUTPUT_CHARS = 4000;
+const DEFAULT_TOOL_MAX_TASKS = 8;
+const ABSOLUTE_TOOL_MAX_TASKS = 32;
+const DEFAULT_TOOL_MAX_CONCURRENCY = 3;
+
+const runtimeDelegationToolSchema: ToolJsonSchema = {
+  type: "object",
+  properties: {
+    tasks: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          title: { type: "string" },
+          prompt: { type: "string" },
+          role: { type: "string" },
+          dependsOn: { type: "array", items: { type: "string" } },
+          metadata: { type: "object" },
+        },
+        required: ["id", "title", "prompt"],
+        additionalProperties: false,
+      },
+    },
+    maxConcurrency: { type: "number" },
+    sessionPrefix: { type: "string" },
+    workspace: { type: "string" },
+    model: { type: "string" },
+    includeDependencyResults: { type: "boolean" },
+    throwOnRuntimeError: { type: "boolean" },
+  },
+  required: ["tasks"],
+  additionalProperties: false,
+};
 
 export function createDelegationPlan(tasks: readonly DragonDelegatedTask[]): DragonDelegationPlan {
   if (tasks.length === 0) {
@@ -208,6 +264,71 @@ export function createRuntimeDelegatedTaskExecutor(
   };
 }
 
+export function createRuntimeDelegationTool(
+  options: DragonRuntimeDelegationToolOptions,
+): ToolDefinition<DragonRuntimeDelegationToolInput, DragonRuntimeDelegationToolOutput> {
+  const maxTasks = clampToolMaxTasks(options.maxTasks);
+  const defaultConcurrency = clampConcurrency(options.maxConcurrency ?? DEFAULT_TOOL_MAX_CONCURRENCY);
+  return {
+    name: "delegation_run",
+    description: "Run a bounded Dragon delegated task plan through the current runtime.",
+    inputSchema: runtimeDelegationToolSchema,
+    capabilities: ["execute"],
+    permission: "allow",
+    async invoke(invocation) {
+      try {
+        const input = parseRuntimeDelegationToolInput(invocation.input);
+        if (input.tasks.length > maxTasks) {
+          throw new Error(`delegation_run can run at most ${maxTasks} tasks.`);
+        }
+        const runtime = resolveRuntime(options.runtime);
+        if (runtime === undefined) {
+          throw new Error("delegation_run runtime is not ready.");
+        }
+        const plan = createDelegationPlan(input.tasks);
+        const sessionPrefix = normalizeText(
+          input.sessionPrefix ?? options.defaultSessionPrefix ?? `${invocation.sessionId}:delegate`,
+          "runtime delegation sessionPrefix",
+          200,
+        );
+        const workspace = input.workspace ?? options.defaultWorkspace ?? invocation.workspace;
+        const model = input.model ?? options.defaultModel;
+        const metadata = {
+          parentSessionId: invocation.sessionId,
+          parentToolCallId: invocation.id,
+          parentToolName: invocation.name,
+          ...(typeof invocation.metadata?.runId === "string" ? { parentRunId: invocation.metadata.runId } : {}),
+        };
+        const executor = createRuntimeDelegatedTaskExecutor({
+          runtime,
+          sessionId: task => `${sessionPrefix}:${task.id}`,
+          source: options.source ?? "api",
+          ...(workspace !== undefined ? { workspace } : {}),
+          ...(model !== undefined ? { model } : {}),
+          metadata,
+          ...(input.includeDependencyResults !== undefined ? { includeDependencyResults: input.includeDependencyResults } : {}),
+          ...(input.throwOnRuntimeError !== undefined ? { throwOnRuntimeError: input.throwOnRuntimeError } : {}),
+        });
+        const result = await runDelegationPlan(plan, executor, {
+          maxConcurrency: input.maxConcurrency ?? defaultConcurrency,
+        });
+        return {
+          id: invocation.id,
+          ok: result.status === "ok",
+          output: result,
+          ...(result.status !== "ok" ? { error: `Delegation run ended with status ${result.status}.` } : {}),
+        };
+      } catch (error) {
+        return {
+          id: invocation.id,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  };
+}
+
 function normalizeTask(task: DragonDelegatedTask): DragonDelegatedTask {
   const id = normalizeIdentifier(task.id, "task id");
   const title = normalizeText(task.title, "task title", 200);
@@ -226,6 +347,91 @@ function normalizeTask(task: DragonDelegatedTask): DragonDelegatedTask {
     normalized.metadata = { ...task.metadata };
   }
   return Object.freeze(normalized);
+}
+
+function parseRuntimeDelegationToolInput(value: unknown): DragonRuntimeDelegationToolInput {
+  if (!isRecord(value)) {
+    throw new Error("delegation_run input must be an object.");
+  }
+  if (!Array.isArray(value.tasks)) {
+    throw new Error("delegation_run tasks must be an array.");
+  }
+  const input: DragonRuntimeDelegationToolInput = {
+    tasks: value.tasks.map(readDelegatedTaskInput),
+  };
+  if (value.maxConcurrency !== undefined) {
+    if (typeof value.maxConcurrency !== "number" || !Number.isFinite(value.maxConcurrency)) {
+      throw new Error("delegation_run maxConcurrency must be a number.");
+    }
+    input.maxConcurrency = value.maxConcurrency;
+  }
+  if (value.sessionPrefix !== undefined) {
+    input.sessionPrefix = normalizeText(readString(value.sessionPrefix, "delegation_run sessionPrefix"), "runtime delegation sessionPrefix", 200);
+  }
+  if (value.workspace !== undefined) {
+    input.workspace = normalizeText(readString(value.workspace, "delegation_run workspace"), "runtime delegation workspace", 1000);
+  }
+  if (value.model !== undefined) {
+    input.model = normalizeText(readString(value.model, "delegation_run model"), "runtime delegation model", 200);
+  }
+  if (value.includeDependencyResults !== undefined) {
+    if (typeof value.includeDependencyResults !== "boolean") {
+      throw new Error("delegation_run includeDependencyResults must be a boolean.");
+    }
+    input.includeDependencyResults = value.includeDependencyResults;
+  }
+  if (value.throwOnRuntimeError !== undefined) {
+    if (typeof value.throwOnRuntimeError !== "boolean") {
+      throw new Error("delegation_run throwOnRuntimeError must be a boolean.");
+    }
+    input.throwOnRuntimeError = value.throwOnRuntimeError;
+  }
+  return input;
+}
+
+function readDelegatedTaskInput(value: unknown): DragonDelegatedTask {
+  if (!isRecord(value)) {
+    throw new Error("delegation_run task entries must be objects.");
+  }
+  const task: DragonDelegatedTask = {
+    id: readString(value.id, "delegation_run task id"),
+    title: readString(value.title, "delegation_run task title"),
+    prompt: readString(value.prompt, "delegation_run task prompt"),
+  };
+  if (value.role !== undefined) {
+    task.role = readString(value.role, "delegation_run task role");
+  }
+  if (value.dependsOn !== undefined) {
+    if (!Array.isArray(value.dependsOn)) {
+      throw new Error("delegation_run task dependsOn must be an array.");
+    }
+    task.dependsOn = value.dependsOn.map(item => readString(item, "delegation_run task dependency"));
+  }
+  if (value.metadata !== undefined) {
+    if (!isRecord(value.metadata)) {
+      throw new Error("delegation_run task metadata must be an object.");
+    }
+    task.metadata = { ...value.metadata };
+  }
+  return task;
+}
+
+function readString(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string.`);
+  }
+  return value;
+}
+
+function resolveRuntime(runtime: DragonRuntimeDelegationToolOptions["runtime"]): DragonAgentRuntime | undefined {
+  return typeof runtime === "function" ? runtime() : runtime;
+}
+
+function clampToolMaxTasks(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return DEFAULT_TOOL_MAX_TASKS;
+  }
+  return Math.min(ABSOLUTE_TOOL_MAX_TASKS, Math.max(1, Math.floor(value)));
 }
 
 function createDelegatedTurnInput<TOutput>(

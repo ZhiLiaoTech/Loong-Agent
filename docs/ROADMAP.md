@@ -15,8 +15,9 @@ Goal: establish the TypeScript workspace and design boundaries.
   translation/streaming. It also covers CLI skill slash commands, trajectory
   persistence/RPC, Gateway webhook channel delivery, channel adapters, sandbox
   command planning/execution, sandbox policy profiles, cron schedule/delivery
-  targets, cron file stores/runners, browser snapshotting, delegation planning/running,
-  runtime-backed delegation, and model provider plugin loading/routing.
+  targets, cron file stores/runners, browser snapshotting, delegation
+  planning/running, runtime-backed delegation, the `delegation_run` agent tool,
+  and model provider plugin loading/routing.
 
 ## Phase 1: Minimal Coding Agent
 
@@ -154,4 +155,6 @@ Goal: make Dragon available wherever the user works.
 - Add multi-agent delegation. Initial `@dragon/delegation` package implements
   task plan validation, dependency-aware concurrent execution, failure-aware
   skipping, cycle rejection, and runtime-backed worker execution through a
-  provided `DragonAgentRuntime`.
+  provided `DragonAgentRuntime`. The bounded `delegation_run` tool is wired
+  into `dragon agent` so the model can run independent or dependency-ordered
+  subtasks through the same runtime and permission engine.

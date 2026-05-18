@@ -24,7 +24,7 @@ in TypeScript where they fit the framework.
 - `@dragon/cron`: cron schedule parsing, file-backed jobs, runner, and Gateway
   webhook delivery targets.
 - `@dragon/delegation`: multi-agent task planning, dependency-aware runner,
-  and Dragon runtime executor.
+  Dragon runtime executor, and agent-facing `delegation_run` tool.
 - `@dragon/plugin-sdk`: public plugin API.
 - `@dragon/plugin-openai-compatible`: reference OpenAI-compatible provider plugin.
 - `@dragon/plugin-openrouter-compatible`: reference OpenRouter provider plugin.
@@ -89,7 +89,8 @@ jobs to this webhook surface with `channel: "cron"`.
 `@dragon/delegation` provides dependency-aware delegated task plans and a
 bounded concurrent runner. Its runtime executor can run delegated tasks through
 any `DragonAgentRuntime`, preserving dependency summaries for downstream
-tasks.
+tasks. In `dragon agent`, the bounded `delegation_run` tool exposes that runner
+to the model for independent or dependency-ordered subtasks.
 OpenAI-compatible and Anthropic-compatible providers can emit true text deltas
 into those streams through Dragon `assistant_delta` events.
 The dashboard keeps the surface minimal: run composer, runs/events, plugins,
@@ -113,10 +114,12 @@ CLI turns can also provide retryable model fallback candidates with
 buffers fallback attempts so failed streamed output is not shown before the
 successful model response.
 
-Agent mode exposes `skill_create`, `skill_improve`, memory candidate promotion,
-and memory candidate rejection as write tools for reviewable updates.
-`--allow-write` allows those tools alongside `file_patch`; otherwise they
-require interactive approval.
+Agent mode exposes `delegation_run` as an allowlisted orchestration tool.
+Delegated turns run through the same runtime, tools, and permission engine as
+ordinary agent turns. Agent mode also exposes `skill_create`, `skill_improve`,
+memory candidate promotion, and memory candidate rejection as write tools for
+reviewable updates. `--allow-write` allows those tools alongside `file_patch`;
+otherwise they require interactive approval.
 
 `providers.list` returns configured provider ids, display names, default models,
 and tool-calling capability. `plugins.list` returns plugin name/version, tool
@@ -173,5 +176,5 @@ tool-call loops, sandbox command planning/execution and policy profiles, cron
 schedule/delivery targets, browser snapshotting with form extraction,
 basic browser form submission,
 cron file stores/runners, delegation planning/running, runtime-backed
-delegation, model provider plugin loading/routing, and provider
-translation/streaming.
+delegation, the `delegation_run` agent tool, model provider plugin
+loading/routing, and provider translation/streaming.

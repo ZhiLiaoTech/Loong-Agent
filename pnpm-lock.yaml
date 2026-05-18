@@ -32,6 +32,9 @@ importers:
       '@dragon/cron':
         specifier: workspace:*
         version: link:../cron
+      '@dragon/delegation':
+        specifier: workspace:*
+        version: link:../delegation
       '@dragon/gateway':
         specifier: workspace:*
         version: link:../gateway
@@ -79,6 +82,9 @@ importers:
       '@dragon/core':
         specifier: workspace:*
         version: link:../core
+      '@dragon/tools':
+        specifier: workspace:*
+        version: link:../tools
     devDependencies:
       typescript:
         specifier: ^5.9.3

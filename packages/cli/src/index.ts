@@ -13,6 +13,7 @@ import {
   type DragonPermissionRequest,
 } from "@dragon/core";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
+import { createRuntimeDelegationTool } from "@dragon/delegation";
 import { createHttpGateway, type GatewayConfig, type GatewayPluginSummary, type GatewayProviderSummary } from "@dragon/gateway";
 import {
   createFileMemoryStore,
@@ -339,9 +340,10 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
       ?? (options.mode === "agent" && !options.noSession
         ? createFileTrajectoryStore({ rootDir: path.join(options.memoryDir, "trajectories") })
         : undefined);
+    let runtime: DragonAgentRuntime | undefined;
     const tools = options.mode === "agent" && memoryStore
       ? [
-          ...createAgentTools(options.skillRoots, memoryStore, options.memoryDir, trajectoryStore),
+          ...createAgentTools(options.skillRoots, memoryStore, options.memoryDir, trajectoryStore, () => runtime),
           ...pluginTools,
         ]
       : [];
@@ -368,6 +370,7 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
             { toolName: "memory_candidates_list", decision: "allow" as const, reason: "CLI agent read-only memory candidate review tool." },
             { toolName: "trajectory_list", decision: "allow" as const, reason: "CLI agent read-only trajectory listing tool." },
             { toolName: "trajectory_get", decision: "allow" as const, reason: "CLI agent read-only trajectory loading tool." },
+            { toolName: "delegation_run", decision: "allow" as const, reason: "CLI agent bounded delegation execution tool." },
             ...pluginToolPermissionRules(pluginTools),
             ...(options.allowWrite
               ? [
@@ -400,6 +403,7 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
               "Use memory_search to recall durable local context. Use memory_remember only when the user asks to keep a stable fact or project note.",
               "Explicit remember requests may also be captured as reviewable memory candidates before promotion to durable memory.",
               "Use trajectory_list and trajectory_get to inspect recent Dragon run records when debugging prior behavior.",
+              "Use delegation_run for bounded multi-task delegation when a task can be split into independent or dependency-ordered subtasks.",
               loadedPluginLine,
               "Only use shell_exec for conservative read-only commands.",
               "Use sandbox_exec for conservative read-only commands in local, Docker, or SSH sandboxes when the user provides the target; keep the default inspect profile unless broader git-read, search-read, or repo-read access is explicitly useful.",
@@ -421,8 +425,10 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
       ? { ...runtimeOptions, defaultModel: defaultProvider.defaultModel }
       : runtimeOptions;
 
+    runtime = createDragonRuntime(runtimeConfig);
+
     return {
-      runtime: createDragonRuntime(runtimeConfig),
+      runtime,
       plugins,
       providers,
       tools,
@@ -1690,6 +1696,7 @@ function createAgentTools(
   memoryStore: ReturnType<typeof createFileMemoryStore>,
   memoryDir: string,
   trajectoryStore: TrajectoryStore | undefined,
+  runtime: (() => DragonAgentRuntime | undefined) | undefined,
 ): ToolDefinition[] {
   const tools: ToolDefinition[] = [
     createFileReadTool(),
@@ -1702,6 +1709,9 @@ function createAgentTools(
     ...createMemoryTools(memoryStore),
     ...createMemoryCandidateTools({ rootDir: memoryDir, store: memoryStore }),
   ];
+  if (runtime !== undefined) {
+    tools.push(createRuntimeDelegationTool({ runtime, source: "api", maxTasks: 8, maxConcurrency: 3 }));
+  }
   if (trajectoryStore) {
     tools.push(...createTrajectoryTools(trajectoryStore));
   }
