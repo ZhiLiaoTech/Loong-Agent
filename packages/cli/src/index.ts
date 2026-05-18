@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, statSync } from "node:fs";
-import { readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import {
@@ -14,7 +14,16 @@ import {
 } from "@dragon/core";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
 import { createRuntimeDelegationTool } from "@dragon/delegation";
-import { createHttpGateway, type GatewayConfig, type GatewayPluginSummary, type GatewayProviderSummary } from "@dragon/gateway";
+import {
+  createHttpGateway,
+  type GatewayConfig,
+  type GatewayModelConfig,
+  type GatewayModelConfigSaveParams,
+  type GatewayModelConfigStore,
+  type GatewayModelProviderConfig,
+  type GatewayPluginSummary,
+  type GatewayProviderSummary,
+} from "@dragon/gateway";
 import {
   createFileMemoryStore,
   createFileSessionStore,
@@ -34,7 +43,9 @@ import {
 } from "@dragon/memory";
 import { loadDragonPlugin, type DragonPluginMemoryBackend, type LoadedDragonPlugin } from "@dragon/plugin-sdk";
 import {
+  createAnthropicProvider,
   createAnthropicProviderFromEnv,
+  createOpenAICompatibleProvider,
   createOpenAICompatibleProviderFromEnv,
   createProviderRegistry,
   type ModelProvider,
@@ -121,11 +132,25 @@ function isHelpArgs(args: string[]): boolean {
     : args.every(arg => arg === "--help" || arg === "-h");
 }
 
-function createBuiltinProvidersFromEnv(): { providers: ModelProvider[]; defaultProviderId?: string } {
-  const providers = [
+async function createBuiltinProviders(): Promise<{ providers: ModelProvider[]; defaultProviderId?: string }> {
+  const modelConfigPath = configuredModelConfigPath();
+  const modelConfig = await loadPersistedModelConfig(modelConfigPath);
+  const configuredProviders = createProvidersFromModelConfig(modelConfig.providers);
+  const configuredProviderIds = new Set(configuredProviders.map(provider => provider.id));
+  const disabledProviderIds = new Set(
+    modelConfig.providers
+      .filter(provider => provider.enabled === false)
+      .map(provider => provider.id),
+  );
+  const envProviders = [
     createOpenAICompatibleProviderFromEnv(),
     createAnthropicProviderFromEnv(),
-  ].filter((provider): provider is ModelProvider => provider !== undefined);
+  ].filter((provider): provider is ModelProvider =>
+    provider !== undefined
+    && !configuredProviderIds.has(provider.id)
+    && !disabledProviderIds.has(provider.id)
+  );
+  const providers = [...configuredProviders, ...envProviders];
   return {
     providers,
     ...(providers[0] ? { defaultProviderId: providers[0].id } : {}),
@@ -140,7 +165,7 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
     return;
   }
 
-  const builtinProviders = createBuiltinProvidersFromEnv();
+  const builtinProviders = await createBuiltinProviders();
   const permissionHandler = mode === "agent" ? createCliPermissionHandler() : undefined;
   const runtimeBundle = await createRuntime({
     mode,
@@ -201,7 +226,8 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
 
 async function runGateway(args: string[]): Promise<void> {
   const parsed = parseGatewayArgs(args);
-  const builtinProviders = createBuiltinProvidersFromEnv();
+  const modelConfigPath = configuredModelConfigPath();
+  const builtinProviders = await createBuiltinProviders();
   const trajectoryStore = createFileTrajectoryStore({ rootDir: path.join(parsed.memoryDir, "trajectories") });
   const cronStore = createFileCronJobStore({ filePath: parsed.cronJobsFile });
   const cronRunner = createCronRunner({
@@ -231,6 +257,7 @@ async function runGateway(args: string[]): Promise<void> {
     trajectoryStore,
     pluginSummaries: summarizeLoadedPlugins(runtimeBundle.plugins),
     providerSummaries: summarizeProviders(runtimeBundle.providers),
+    modelConfigStore: createModelConfigStore(modelConfigPath),
     tools: runtimeBundle.tools,
     ...(runtimeBundle.permissionEngine ? { permissionEngine: runtimeBundle.permissionEngine } : {}),
   });
@@ -759,6 +786,269 @@ function parseIntervalMs(value: string): number {
     throw new Error(`Invalid interval-ms: ${value}`);
   }
   return intervalMs;
+}
+
+function configuredModelConfigPath(): string {
+  const configured = process.env.DRAGON_MODEL_CONFIG?.trim();
+  return path.resolve(configured || path.join(process.cwd(), ".dragon", "config", "providers.json"));
+}
+
+function createModelConfigStore(filePath: string): GatewayModelConfigStore {
+  return {
+    async load() {
+      return toSafeModelConfig(await loadPersistedModelConfig(filePath), filePath);
+    },
+    async save(config: GatewayModelConfigSaveParams) {
+      return await savePersistedModelConfig(filePath, config);
+    },
+  };
+}
+
+async function loadPersistedModelConfig(filePath: string): Promise<{ providers: GatewayModelProviderConfig[] }> {
+  let text: string;
+  try {
+    text = await readFile(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { providers: [] };
+    }
+    throw error;
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Invalid model config JSON at ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return normalizePersistedModelConfig(json, filePath);
+}
+
+async function savePersistedModelConfig(
+  filePath: string,
+  config: GatewayModelConfigSaveParams,
+): Promise<GatewayModelConfig> {
+  const existing = await loadPersistedModelConfig(filePath);
+  const existingById = new Map(existing.providers.map(provider => [provider.id, provider]));
+  const providers = config.providers.map((provider, index) =>
+    normalizeModelProviderForSave(provider, index, existingById.get(provider.id))
+  );
+  assertUniqueModelConfigProviderIds(providers);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify({ providers }, null, 2)}\n`, "utf8");
+  return toSafeModelConfig({ providers }, filePath);
+}
+
+function normalizePersistedModelConfig(value: unknown, source: string): { providers: GatewayModelProviderConfig[] } {
+  if (!isRecord(value)) {
+    throw new Error(`Model config at ${source} must be a JSON object.`);
+  }
+  const providers = value.providers ?? [];
+  if (!Array.isArray(providers)) {
+    throw new Error(`Model config at ${source} must contain a providers array.`);
+  }
+  return {
+    providers: providers.map((provider, index) => normalizePersistedModelProvider(provider, index, source)),
+  };
+}
+
+function normalizePersistedModelProvider(value: unknown, index: number, source: string): GatewayModelProviderConfig {
+  if (!isRecord(value)) {
+    throw new Error(`Model config provider ${index + 1} in ${source} must be an object.`);
+  }
+  const id = readConfigString(value, "id", 120, `Model config provider ${index + 1}`);
+  const type = readModelProviderType(value.type, `Model config provider ${id}`);
+  const provider: GatewayModelProviderConfig = { id, type };
+  assignOptionalConfigString(provider, value, "displayName", 160, `Model config provider ${id}`);
+  assignOptionalConfigString(provider, value, "apiKey", 4000, `Model config provider ${id}`);
+  assignOptionalConfigString(provider, value, "baseUrl", 1000, `Model config provider ${id}`);
+  assignOptionalConfigString(provider, value, "defaultModel", 200, `Model config provider ${id}`);
+  assignOptionalConfigBoolean(provider, value, "supportsToolCalling", `Model config provider ${id}`);
+  assignOptionalConfigBoolean(provider, value, "enabled", `Model config provider ${id}`);
+  return provider;
+}
+
+function normalizeModelProviderForSave(
+  value: GatewayModelProviderConfig,
+  index: number,
+  existing: GatewayModelProviderConfig | undefined,
+): GatewayModelProviderConfig {
+  const id = normalizeConfigString(value.id, "id", 120, `Model config provider ${index + 1}`);
+  const type = readModelProviderType(value.type, `Model config provider ${id}`);
+  const provider: GatewayModelProviderConfig = { id, type };
+  copyOptionalString(provider, "displayName", value.displayName, 160, `Model config provider ${id}`);
+  copyOptionalString(provider, "baseUrl", value.baseUrl, 1000, `Model config provider ${id}`);
+  copyOptionalString(provider, "defaultModel", value.defaultModel, 200, `Model config provider ${id}`);
+  if (typeof value.supportsToolCalling === "boolean") {
+    provider.supportsToolCalling = value.supportsToolCalling;
+  }
+  if (typeof value.enabled === "boolean") {
+    provider.enabled = value.enabled;
+  }
+  const incomingApiKey = typeof value.apiKey === "string" ? value.apiKey.trim() : "";
+  if (incomingApiKey && incomingApiKey !== DEFAULT_REDACTION) {
+    provider.apiKey = normalizeConfigString(incomingApiKey, "apiKey", 4000, `Model config provider ${id}`);
+  } else if (existing?.apiKey) {
+    provider.apiKey = existing.apiKey;
+  }
+  return provider;
+}
+
+function createProvidersFromModelConfig(configs: readonly GatewayModelProviderConfig[]): ModelProvider[] {
+  return configs
+    .filter(config => config.enabled !== false)
+    .map(createProviderFromModelConfig)
+    .filter((provider): provider is ModelProvider => provider !== undefined);
+}
+
+function createProviderFromModelConfig(config: GatewayModelProviderConfig): ModelProvider | undefined {
+  const apiKey = config.apiKey?.trim();
+  if (!apiKey || apiKey === DEFAULT_REDACTION) {
+    return undefined;
+  }
+  if (config.type === "openai-compatible") {
+    const options: Parameters<typeof createOpenAICompatibleProvider>[0] = {
+      id: config.id,
+      apiKey,
+    };
+    if (config.displayName !== undefined) {
+      options.displayName = config.displayName;
+    }
+    if (config.baseUrl !== undefined) {
+      options.baseUrl = config.baseUrl;
+    }
+    if (config.defaultModel !== undefined) {
+      options.defaultModel = config.defaultModel;
+    }
+    if (config.supportsToolCalling !== undefined) {
+      options.supportsToolCalling = config.supportsToolCalling;
+    }
+    return createOpenAICompatibleProvider(options);
+  }
+  const options: Parameters<typeof createAnthropicProvider>[0] = {
+    id: config.id,
+    apiKey,
+  };
+  if (config.displayName !== undefined) {
+    options.displayName = config.displayName;
+  }
+  if (config.baseUrl !== undefined) {
+    options.baseUrl = config.baseUrl;
+  }
+  if (config.defaultModel !== undefined) {
+    options.defaultModel = config.defaultModel;
+  }
+  if (config.supportsToolCalling !== undefined) {
+    options.supportsToolCalling = config.supportsToolCalling;
+  }
+  return createAnthropicProvider(options);
+}
+
+function toSafeModelConfig(config: { providers: readonly GatewayModelProviderConfig[] }, filePath: string): GatewayModelConfig {
+  return {
+    providers: config.providers.map(provider => {
+      const safe: GatewayModelProviderConfig = {
+        id: provider.id,
+        type: provider.type,
+        apiKeyConfigured: Boolean(provider.apiKey),
+      };
+      if (provider.displayName !== undefined) {
+        safe.displayName = provider.displayName;
+      }
+      if (provider.baseUrl !== undefined) {
+        safe.baseUrl = provider.baseUrl;
+      }
+      if (provider.defaultModel !== undefined) {
+        safe.defaultModel = provider.defaultModel;
+      }
+      if (provider.supportsToolCalling !== undefined) {
+        safe.supportsToolCalling = provider.supportsToolCalling;
+      }
+      if (provider.enabled !== undefined) {
+        safe.enabled = provider.enabled;
+      }
+      return safe;
+    }),
+    appliesOn: "restart",
+    configPath: filePath,
+  };
+}
+
+function assertUniqueModelConfigProviderIds(providers: readonly GatewayModelProviderConfig[]): void {
+  const seen = new Set<string>();
+  for (const provider of providers) {
+    if (seen.has(provider.id)) {
+      throw new Error(`Model provider "${provider.id}" is configured more than once.`);
+    }
+    seen.add(provider.id);
+  }
+}
+
+function readConfigString(value: Record<string, unknown>, key: string, maxChars: number, source: string): string {
+  return normalizeConfigString(value[key], key, maxChars, source);
+}
+
+function assignOptionalConfigString(
+  target: GatewayModelProviderConfig,
+  source: Record<string, unknown>,
+  key: "displayName" | "apiKey" | "baseUrl" | "defaultModel",
+  maxChars: number,
+  label: string,
+): void {
+  const value = source[key];
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return;
+  }
+  target[key] = normalizeConfigString(value, key, maxChars, label);
+}
+
+function assignOptionalConfigBoolean(
+  target: GatewayModelProviderConfig,
+  source: Record<string, unknown>,
+  key: "supportsToolCalling" | "enabled",
+  label: string,
+): void {
+  const value = source[key];
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "boolean") {
+    throw new Error(`${label} ${key} must be a boolean.`);
+  }
+  target[key] = value;
+}
+
+function copyOptionalString(
+  target: GatewayModelProviderConfig,
+  key: "displayName" | "baseUrl" | "defaultModel",
+  value: string | undefined,
+  maxChars: number,
+  label: string,
+): void {
+  if (value === undefined || !value.trim()) {
+    return;
+  }
+  target[key] = normalizeConfigString(value, key, maxChars, label);
+}
+
+function normalizeConfigString(value: unknown, key: string, maxChars: number, source: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${source} ${key} must be a non-empty string.`);
+  }
+  const trimmed = value.trim();
+  if (trimmed.length > maxChars) {
+    throw new Error(`${source} ${key} must be ${maxChars} characters or fewer.`);
+  }
+  return trimmed;
+}
+
+function readModelProviderType(value: unknown, source: string): GatewayModelProviderConfig["type"] {
+  if (value === "openai-compatible" || value === "anthropic") {
+    return value;
+  }
+  throw new Error(`${source} type must be openai-compatible or anthropic.`);
 }
 
 function gatewayUrlFromConfig(config: GatewayConfig): string {
@@ -1653,6 +1943,7 @@ Provider:
   Optional: DRAGON_ANTHROPIC_BASE_URL, DRAGON_ANTHROPIC_MODEL, DRAGON_ANTHROPIC_PROVIDER_ID.
   Provider plugins can also be loaded from .dragon/plugins, DRAGON_PLUGIN_ROOTS, or --plugin-root <path>.
   Model refs with a registered provider prefix, such as openai:gpt-4o or anthropic:claude-sonnet-4-5, route explicitly to that provider.
+  Dashboard model provider config is stored in .dragon/config/providers.json by default; override with DRAGON_MODEL_CONFIG.
   Optional: DRAGON_MODEL, --model <ref>, DRAGON_MODEL_FALLBACKS, --model-fallback <ref>.
 
 Permissions:

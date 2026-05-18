@@ -58,7 +58,7 @@ export function getDashboardHtml(): string {
       font-size: 14px;
       font-weight: 620;
     }
-    button, input, textarea {
+    button, input, textarea, select {
       font: inherit;
       letter-spacing: 0;
     }
@@ -95,7 +95,7 @@ export function getDashboardHtml(): string {
       cursor: not-allowed;
       opacity: .55;
     }
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 4px;
@@ -206,6 +206,28 @@ export function getDashboardHtml(): string {
       gap: 12px;
       align-items: end;
       margin-bottom: 14px;
+    }
+    .model-grid {
+      display: grid;
+      grid-template-columns: 150px 150px minmax(150px, 1fr) minmax(180px, 1fr);
+      gap: 12px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+    .check-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .check-row label {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0;
+      color: var(--text);
+      font-size: 13px;
     }
     .message-field {
       margin-top: 12px;
@@ -366,6 +388,7 @@ export function getDashboardHtml(): string {
       header,
       .composer-grid,
       .cron-grid,
+      .model-grid,
       .overview {
         display: block;
       }
@@ -375,6 +398,7 @@ export function getDashboardHtml(): string {
       }
       .composer-grid > * + *,
       .cron-grid > * + *,
+      .model-grid > * + *,
       .metric + .metric {
         margin-top: 12px;
       }
@@ -452,6 +476,7 @@ export function getDashboardHtml(): string {
         <button class="tab" data-tab="runs" aria-selected="true">Runs <span id="runCount" class="count">0</span></button>
         <button class="tab" data-tab="events" aria-selected="false">Events <span id="eventCount" class="count">0</span></button>
         <button class="tab" data-tab="providers" aria-selected="false">Providers <span id="providerCount" class="count">0</span></button>
+        <button class="tab" data-tab="models" aria-selected="false">Models <span id="modelConfigCount" class="count">0</span></button>
         <button class="tab" data-tab="plugins" aria-selected="false">Plugins <span id="pluginCount" class="count">0</span></button>
         <button class="tab" data-tab="tools" aria-selected="false">Tools <span id="toolCount" class="count">0</span></button>
         <button class="tab" data-tab="memory" aria-selected="false">Memory <span id="memoryCount" class="count">0</span></button>
@@ -510,6 +535,68 @@ export function getDashboardHtml(): string {
           </table>
         </div>
         <div id="providersEmpty" class="empty">No providers loaded.</div>
+      </section>
+
+      <section id="modelsPanel" class="panel" data-panel="models">
+        <div class="panel-head">
+          <h2>Models</h2>
+          <div class="right-actions">
+            <button id="refreshModelConfigBtn" class="secondary">Refresh</button>
+            <button id="saveModelConfigBtn">Save</button>
+          </div>
+        </div>
+        <div class="model-grid">
+          <div>
+            <label for="modelProviderType">Type</label>
+            <select id="modelProviderType">
+              <option value="openai-compatible">OpenAI Compatible</option>
+              <option value="anthropic">Anthropic</option>
+            </select>
+          </div>
+          <div>
+            <label for="modelProviderId">Provider ID</label>
+            <input id="modelProviderId" autocomplete="off" placeholder="openai">
+          </div>
+          <div>
+            <label for="modelProviderName">Display Name</label>
+            <input id="modelProviderName" autocomplete="off" placeholder="OpenAI">
+          </div>
+          <div>
+            <label for="modelProviderKey">API Key</label>
+            <input id="modelProviderKey" type="password" autocomplete="off" placeholder="leave blank to keep">
+          </div>
+          <div>
+            <label for="modelProviderBaseUrl">Base URL</label>
+            <input id="modelProviderBaseUrl" autocomplete="off" placeholder="https://api.openai.com/v1">
+          </div>
+          <div>
+            <label for="modelProviderDefaultModel">Default Model</label>
+            <input id="modelProviderDefaultModel" autocomplete="off" placeholder="gpt-4.1-mini">
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button id="upsertModelProviderBtn">Add / Update</button>
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button id="clearModelProviderBtn" class="secondary">Clear</button>
+          </div>
+        </div>
+        <div class="check-row">
+          <label><input id="modelProviderEnabled" type="checkbox" checked> Enabled</label>
+          <label><input id="modelProviderTools" type="checkbox" checked> Tool Calling</label>
+          <span id="modelConfigPath" class="subtle"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Provider</th><th>Type</th><th>Default Model</th><th>API Key</th><th></th></tr>
+            </thead>
+            <tbody id="modelConfigBody"></tbody>
+          </table>
+        </div>
+        <div id="modelConfigEmpty" class="empty">No model providers configured.</div>
+        <pre id="modelConfigResult" style="display:none;"></pre>
       </section>
 
       <section id="toolsPanel" class="panel" data-panel="tools">
@@ -621,6 +708,8 @@ export function getDashboardHtml(): string {
       runs: [],
       trajectories: [],
       providers: [],
+      modelConfig: { providers: [], appliesOn: "restart" },
+      editingModelProviderId: "",
       plugins: [],
       tools: [],
       memoryCandidates: [],
@@ -641,6 +730,7 @@ export function getDashboardHtml(): string {
       refreshTools();
       refreshMemoryCandidates();
       refreshCronJobs();
+      refreshModelConfig();
       connectEvents();
     });
 
@@ -652,6 +742,10 @@ export function getDashboardHtml(): string {
     $("refreshRunsBtn").addEventListener("click", refreshRuns);
     $("refreshTrajectoryBtn").addEventListener("click", refreshTrajectories);
     $("refreshProvidersBtn").addEventListener("click", refreshProviders);
+    $("refreshModelConfigBtn").addEventListener("click", refreshModelConfig);
+    $("saveModelConfigBtn").addEventListener("click", saveModelConfig);
+    $("upsertModelProviderBtn").addEventListener("click", upsertModelProviderConfig);
+    $("clearModelProviderBtn").addEventListener("click", clearModelProviderForm);
     $("refreshPluginsBtn").addEventListener("click", refreshPlugins);
     $("refreshToolsBtn").addEventListener("click", refreshTools);
     $("refreshMemoryBtn").addEventListener("click", refreshMemoryCandidates);
@@ -671,6 +765,7 @@ export function getDashboardHtml(): string {
       });
       if (state.activeTab === "trajectory") refreshTrajectories();
       if (state.activeTab === "providers") refreshProviders();
+      if (state.activeTab === "models") refreshModelConfig();
       if (state.activeTab === "plugins") refreshPlugins();
       if (state.activeTab === "tools") refreshTools();
       if (state.activeTab === "memory") refreshMemoryCandidates();
@@ -802,6 +897,23 @@ export function getDashboardHtml(): string {
       }
     }
 
+    async function refreshModelConfig() {
+      try {
+        const payload = await rpc("model.config.get");
+        state.modelConfig = {
+          providers: payload.providers || [],
+          appliesOn: payload.appliesOn || "restart",
+          configPath: payload.configPath || "",
+        };
+        renderModelConfig();
+      } catch (error) {
+        state.modelConfig = { providers: [], appliesOn: "restart" };
+        renderModelConfig();
+        $("modelConfigResult").style.display = "block";
+        $("modelConfigResult").textContent = error.message || String(error);
+      }
+    }
+
     async function refreshTools() {
       try {
         const payload = await rpc("tools.catalog");
@@ -835,6 +947,96 @@ export function getDashboardHtml(): string {
         state.cronJobs = [];
         renderCronJobs();
       }
+    }
+
+    async function saveModelConfig() {
+      $("modelConfigResult").style.display = "block";
+      $("modelConfigResult").textContent = "saving...";
+      try {
+        const payload = await rpc("model.config.save", {
+          providers: state.modelConfig.providers || [],
+        });
+        state.modelConfig = {
+          providers: payload.providers || [],
+          appliesOn: payload.appliesOn || "restart",
+          configPath: payload.configPath || "",
+        };
+        renderModelConfig();
+        $("modelConfigResult").textContent = "saved; restart required";
+        await refreshProviders();
+      } catch (error) {
+        $("modelConfigResult").textContent = error.message || String(error);
+      }
+    }
+
+    function upsertModelProviderConfig() {
+      const id = $("modelProviderId").value.trim();
+      if (!id) return;
+      const provider = {
+        id,
+        type: $("modelProviderType").value,
+        enabled: $("modelProviderEnabled").checked,
+        supportsToolCalling: $("modelProviderTools").checked,
+      };
+      const displayName = $("modelProviderName").value.trim();
+      const apiKey = $("modelProviderKey").value.trim();
+      const baseUrl = $("modelProviderBaseUrl").value.trim();
+      const defaultModel = $("modelProviderDefaultModel").value.trim();
+      if (displayName) provider.displayName = displayName;
+      if (apiKey) provider.apiKey = apiKey;
+      if (baseUrl) provider.baseUrl = baseUrl;
+      if (defaultModel) provider.defaultModel = defaultModel;
+
+      const existing = (state.modelConfig.providers || []).find(item => item.id === id || item.id === state.editingModelProviderId);
+      if (!provider.apiKey && existing?.apiKeyConfigured && existing.id === id) {
+        provider.apiKeyConfigured = true;
+      }
+      const next = (state.modelConfig.providers || [])
+        .filter(item => item.id !== id && item.id !== state.editingModelProviderId);
+      next.push(provider);
+      state.modelConfig = {
+        ...state.modelConfig,
+        providers: next.sort((left, right) => String(left.id).localeCompare(String(right.id))),
+      };
+      clearModelProviderForm();
+      renderModelConfig();
+    }
+
+    function clearModelProviderForm() {
+      state.editingModelProviderId = "";
+      $("modelProviderType").value = "openai-compatible";
+      $("modelProviderId").value = "";
+      $("modelProviderName").value = "";
+      $("modelProviderKey").value = "";
+      $("modelProviderBaseUrl").value = "";
+      $("modelProviderDefaultModel").value = "";
+      $("modelProviderEnabled").checked = true;
+      $("modelProviderTools").checked = true;
+    }
+
+    function editModelProviderConfig(id) {
+      const provider = (state.modelConfig.providers || []).find(item => item.id === id);
+      if (!provider) return;
+      state.editingModelProviderId = provider.id || "";
+      $("modelProviderType").value = provider.type || "openai-compatible";
+      $("modelProviderId").value = provider.id || "";
+      $("modelProviderName").value = provider.displayName || "";
+      $("modelProviderKey").value = "";
+      $("modelProviderBaseUrl").value = provider.baseUrl || "";
+      $("modelProviderDefaultModel").value = provider.defaultModel || "";
+      $("modelProviderEnabled").checked = provider.enabled !== false;
+      $("modelProviderTools").checked = provider.supportsToolCalling !== false;
+    }
+
+    function removeModelProviderConfig(id) {
+      state.modelConfig = {
+        ...state.modelConfig,
+        providers: (state.modelConfig.providers || []).filter(item => item.id !== id),
+      };
+      if (state.editingModelProviderId === id) {
+        clearModelProviderForm();
+      }
+      renderModelConfig();
     }
 
     async function saveCronJob() {
@@ -1084,6 +1286,38 @@ export function getDashboardHtml(): string {
         .map(value => "<option value='" + escapeHtml(value) + "'></option>").join("");
     }
 
+    function renderModelConfig() {
+      const providers = state.modelConfig.providers || [];
+      $("modelConfigCount").textContent = String(providers.length);
+      $("modelConfigEmpty").style.display = providers.length ? "none" : "block";
+      $("modelConfigPath").textContent = state.modelConfig.configPath || "";
+      $("modelConfigBody").innerHTML = providers.map(provider => {
+        const meta = [
+          provider.enabled === false ? "disabled" : "enabled",
+          provider.displayName || "",
+          provider.baseUrl || "",
+        ].filter(Boolean).join("\\n");
+        const model = provider.defaultModel || "";
+        const apiKey = provider.apiKeyConfigured || provider.apiKey ? "configured" : "missing";
+        return "<tr>" +
+          "<td><strong>" + escapeHtml(provider.id || "") + "</strong>" + (meta ? "<pre>" + escapeHtml(meta) + "</pre>" : "") + "</td>" +
+          "<td>" + escapeHtml(provider.type || "") + "</td>" +
+          "<td>" + escapeHtml(model) + "</td>" +
+          "<td>" + escapeHtml(apiKey) + "</td>" +
+          "<td><div class='right-actions'>" +
+            "<button class='secondary' data-edit-model-provider='" + escapeHtml(provider.id || "") + "'>Edit</button>" +
+            "<button class='danger' data-remove-model-provider='" + escapeHtml(provider.id || "") + "'>Remove</button>" +
+          "</div></td>" +
+          "</tr>";
+      }).join("");
+      document.querySelectorAll("[data-edit-model-provider]").forEach(button => {
+        button.addEventListener("click", () => editModelProviderConfig(button.getAttribute("data-edit-model-provider")));
+      });
+      document.querySelectorAll("[data-remove-model-provider]").forEach(button => {
+        button.addEventListener("click", () => removeModelProviderConfig(button.getAttribute("data-remove-model-provider")));
+      });
+    }
+
     function renderTools() {
       $("toolCount").textContent = String(state.tools.length);
       $("toolsEmpty").style.display = state.tools.length ? "none" : "block";
@@ -1308,6 +1542,7 @@ export function getDashboardHtml(): string {
     refreshRuns();
     refreshTrajectories();
     refreshProviders();
+    refreshModelConfig();
     refreshPlugins();
     refreshTools();
     refreshMemoryCandidates();

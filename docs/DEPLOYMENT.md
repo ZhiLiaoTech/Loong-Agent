@@ -43,6 +43,12 @@ http://127.0.0.1:8787
 Runtime endpoints such as `/health`, `/rpc`, `/events`, and `/ws` require the
 shared secret when `DRAGON_GATEWAY_SECRET` is configured.
 
+The dashboard Models tab writes provider config to
+`DRAGON_MODEL_CONFIG` when set. In the Docker Compose profile this defaults to
+`/data/config/providers.json`, so model provider settings survive container
+restarts through the `dragon-data` volume. Saved provider changes apply after
+the Gateway process restarts.
+
 ## Production Notes
 
 This is a deployment-test profile, not a hardened production chart. Before

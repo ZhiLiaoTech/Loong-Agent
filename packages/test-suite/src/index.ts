@@ -46,6 +46,7 @@ async function main(): Promise<void> {
     ["cli skills slash command", testCliSkillsSlashCommand],
     ["cli cron once", testCliCronOnce],
     ["cli model provider plugin", testCliModelProviderPlugin],
+    ["cli model provider config", testCliModelProviderConfig],
     ["openrouter provider plugin", testOpenRouterProviderPlugin],
     ["gateway direct tool RPC", testGatewayDirectToolRpc],
     ["gateway websocket RPC and events", testGatewayWebSocket],
@@ -216,6 +217,68 @@ async function testCliModelProviderPlugin(): Promise<void> {
   }
 }
 
+async function testCliModelProviderConfig(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-cli-model-config-"));
+  let captured: {
+    authorization: string | undefined;
+    body: Record<string, unknown> | undefined;
+  } = {
+    authorization: undefined,
+    body: undefined,
+  };
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    request.on("end", () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+      captured = {
+        authorization: readHeader(request.headers.authorization),
+        body,
+      };
+      if (body.stream === true) {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(toSse([
+          { id: "configured-response", choices: [{ delta: { content: "configured-ok" } }] },
+          "[DONE]",
+        ]));
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        id: "configured-response",
+        choices: [{ message: { content: "configured-ok" } }],
+      }));
+    });
+  });
+  const port = await listenOnLoopback(server);
+  const configFile = path.join(root, "providers.json");
+
+  try {
+    await writeFile(configFile, JSON.stringify({
+      providers: [{
+        id: "configured",
+        type: "openai-compatible",
+        displayName: "Configured Provider",
+        apiKey: "config-key",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+        defaultModel: "configured-model",
+        supportsToolCalling: false,
+        enabled: true,
+      }],
+    }), "utf8");
+    const result = await runCli(
+      ["chat", "--no-session", "--model", "configured:configured-model", "hello"],
+      { DRAGON_MODEL_CONFIG: configFile },
+    );
+    assert(result.stdout.trim() === "configured-ok", "configured model provider should answer CLI chat");
+    assert(captured.authorization === "Bearer config-key", "configured provider should use the persisted API key");
+    assert(captured.body?.model === "configured-model", "configured provider should strip its explicit prefix");
+  } finally {
+    await closeServer(server);
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
 async function testOpenRouterProviderPlugin(): Promise<void> {
   let captured: {
     url: string | undefined;
@@ -301,6 +364,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
       { toolName: "git_diff", decision: "deny", reason: "test deny" },
     ],
   });
+  let savedModelConfig: unknown;
   const gateway = createHttpGateway({
     runtime: createNoopRuntime(),
     providerSummaries: [{
@@ -315,6 +379,32 @@ async function testGatewayDirectToolRpc(): Promise<void> {
         default: true,
       }],
     }],
+    modelConfigStore: {
+      async load() {
+        return {
+          appliesOn: "restart",
+          configPath: "/tmp/dragon/providers.json",
+          providers: [{
+            id: "openai",
+            type: "openai-compatible",
+            displayName: "OpenAI",
+            apiKey: "raw-secret",
+            apiKeyConfigured: true,
+            defaultModel: "gpt-test",
+            supportsToolCalling: true,
+            enabled: true,
+          }],
+        };
+      },
+      async save(config) {
+        savedModelConfig = config;
+        return {
+          appliesOn: "restart",
+          configPath: "/tmp/dragon/providers.json",
+          providers: config.providers,
+        };
+      },
+    },
     tools,
     permissionEngine,
   });
@@ -342,10 +432,34 @@ async function testGatewayDirectToolRpc(): Promise<void> {
     assert(readPath(providers.json, ["payload", "providers", 0, "models", 0, "id"]) === "gpt-test", "provider model catalog should be returned");
     assert(readPath(providers.json, ["payload", "providers", 0, "models", 0, "default"]) === true, "provider default model flag should be returned");
 
+    const modelConfig = await rpc(address.url, "model.config.get");
+    assert(modelConfig.status === 200 && modelConfig.json.ok === true, "model.config.get should succeed");
+    assert(readPath(modelConfig.json, ["payload", "providers", 0, "id"]) === "openai", "model config provider id should be returned");
+    assert(readPath(modelConfig.json, ["payload", "providers", 0, "apiKeyConfigured"]) === true, "model config should expose secret presence");
+    assert(!JSON.stringify(modelConfig.json).includes("raw-secret"), "model config must not return raw API keys");
+
+    const saved = await rpc(address.url, "model.config.save", {
+      providers: [{
+        id: "custom",
+        type: "openai-compatible",
+        apiKey: "new-secret",
+        baseUrl: "http://127.0.0.1:9999/v1",
+        defaultModel: "custom-model",
+        supportsToolCalling: false,
+        enabled: true,
+      }],
+    });
+    assert(saved.status === 200 && saved.json.ok === true, "model.config.save should succeed");
+    assert(readPath(saved.json, ["payload", "providers", 0, "apiKeyConfigured"]) === true, "saved model config should expose secret presence");
+    assert(!JSON.stringify(saved.json).includes("new-secret"), "saved model config must not return raw API keys");
+    assert(readPath(savedModelConfig, ["providers", 0, "apiKey"]) === "new-secret", "model config store should receive submitted API key");
+
     const health = await rpc(address.url, "health");
     assert(readPath(health.json, ["payload", "providerCount"]) === 1, "health should include provider count");
     const connect = await rpc(address.url, "connect");
     assert(readArray(connect.json.payload, "capabilities").includes("providers.list"), "connect should advertise providers.list");
+    assert(readArray(connect.json.payload, "capabilities").includes("model.config.get"), "connect should advertise model.config.get");
+    assert(readArray(connect.json.payload, "capabilities").includes("model.config.save"), "connect should advertise model.config.save");
 
     const ok = await rpc(address.url, "tool.invoke", {
       toolName: "git_status",
@@ -802,9 +916,13 @@ async function testDashboardMemoryReviewSmoke(): Promise<void> {
     assert(response.status === 200, `Expected dashboard status 200, got ${response.status}`);
     assert(html.includes('data-tab="memory"'), "dashboard should include the Memory tab");
     assert(html.includes('data-tab="providers"'), "dashboard should include the Providers tab");
+    assert(html.includes('data-tab="models"'), "dashboard should include the Models tab");
     assert(html.includes('data-tab="cron"'), "dashboard should include the Cron tab");
     assert(html.includes("providers.list"), "dashboard should call providers.list RPC");
+    assert(html.includes("model.config.get"), "dashboard should call model config get RPC");
+    assert(html.includes("model.config.save"), "dashboard should call model config save RPC");
     assert(html.includes('id="model"'), "dashboard should expose a model input");
+    assert(html.includes('id="modelProviderKey"'), "dashboard should expose a model API key input");
     assert(html.includes("modelSuggestions"), "dashboard should expose model suggestions");
     assert(html.includes("memory.candidates.list"), "dashboard should call memory candidate list RPC");
     assert(html.includes("memory.candidate.promote"), "dashboard should call memory candidate promote RPC");
@@ -2388,6 +2506,7 @@ async function runCli(args: string[], envOverrides: Record<string, string> = {})
       DRAGON_OPENROUTER_API_KEY: "",
       OPENROUTER_API_KEY: "",
       DRAGON_MODEL: "",
+      DRAGON_MODEL_CONFIG: path.join(os.tmpdir(), `dragon-test-empty-model-config-${process.pid}.json`),
       DRAGON_PLUGIN_ROOTS: "",
       DRAGON_SKILL_ROOTS: "",
       ...envOverrides,

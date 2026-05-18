@@ -250,8 +250,8 @@ surfaces:
 - `GET /ws` for WebSocket RPC and live events
 - `POST /channels/webhook` for authenticated JSON chat-channel delivery into
   the same agent lane, event stream, and trajectory pipeline
-- `POST /rpc` with `health`, `connect`, `agent`, run, provider, plugin, tool,
-  memory review, and trajectory request types
+- `POST /rpc` with `health`, `connect`, `agent`, run, provider, model config,
+  plugin, tool, memory review, and trajectory request types
 - per-session agent lane serialization
 - run-scoped event collection returned with the `agent` response
 - live SSE/WebSocket event stream filters by `sessionId` or `runId`
@@ -261,11 +261,14 @@ surfaces:
 - run status, cancellation, and recent run listing
 - loaded plugin summary listing for dashboard and operators
 - `connect` capabilities include `events.websocket`, `providers.list`,
-  `plugins.list`, `tools.catalog`, `tool.invoke`, and `channels.webhook` when
-  the surfaces are available
+  `model.config.get`, `model.config.save`, `plugins.list`, `tools.catalog`,
+  `tool.invoke`, and `channels.webhook` when the surfaces are available
 - `GET /health` includes `providerCount` and `pluginCount`
 - `providers.list` returns configured provider ids, display names, default
   models, and whether the provider advertises tool calling
+- `model.config.get` and `model.config.save` expose dashboard-editable provider
+  configuration without returning raw API keys. The built-in CLI store applies
+  saved provider changes on the next process start.
 - `plugins.list` returns plugin name, version, description, tool summaries, and
   provider/memory backend/hook summaries; it intentionally does not expose
   plugin filesystem paths

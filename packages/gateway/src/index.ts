@@ -136,6 +136,35 @@ export interface GatewayModelSummary {
   default?: boolean;
 }
 
+export type GatewayModelProviderType = "openai-compatible" | "anthropic";
+
+export interface GatewayModelProviderConfig {
+  id: string;
+  type: GatewayModelProviderType;
+  displayName?: string;
+  apiKey?: string;
+  apiKeyConfigured?: boolean;
+  baseUrl?: string;
+  defaultModel?: string;
+  supportsToolCalling?: boolean;
+  enabled?: boolean;
+}
+
+export interface GatewayModelConfig {
+  providers: readonly GatewayModelProviderConfig[];
+  appliesOn: "restart";
+  configPath?: string;
+}
+
+export interface GatewayModelConfigSaveParams {
+  providers: readonly GatewayModelProviderConfig[];
+}
+
+export interface GatewayModelConfigStore {
+  load(): Promise<GatewayModelConfig>;
+  save(config: GatewayModelConfigSaveParams): Promise<GatewayModelConfig>;
+}
+
 export interface GatewayPluginMemoryBackendSummary {
   id: string;
   displayName: string;
@@ -206,6 +235,8 @@ export type GatewayRequest =
   | { type: "run.cancel"; id: string; params: { runId: string; reason?: string } }
   | { type: "runs.list"; id: string; params?: { sessionId?: string; limit?: number } }
   | { type: "providers.list"; id: string }
+  | { type: "model.config.get"; id: string }
+  | { type: "model.config.save"; id: string; params: GatewayModelConfigSaveParams }
   | { type: "plugins.list"; id: string }
   | { type: "tools.catalog"; id: string; params?: { includeSchemas?: boolean } }
   | { type: "tool.invoke"; id: string; params: GatewayToolInvokeParams }
@@ -248,6 +279,7 @@ export interface HttpDragonGatewayOptions {
   trajectoryStore?: GatewayTrajectoryStore;
   pluginSummaries?: readonly GatewayPluginSummary[];
   providerSummaries?: readonly GatewayProviderSummary[];
+  modelConfigStore?: GatewayModelConfigStore;
   tools?: readonly ToolDefinition[];
   toolRegistry?: ToolRegistry;
   permissionEngine?: ToolPermissionEngine;
@@ -308,6 +340,7 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #trajectoryStore: GatewayTrajectoryStore | undefined;
   readonly #plugins: readonly GatewayPluginSummary[];
   readonly #providers: readonly GatewayProviderSummary[];
+  readonly #modelConfigStore: GatewayModelConfigStore | undefined;
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
   readonly #directToolNames: ReadonlySet<string>;
@@ -332,6 +365,7 @@ export class HttpDragonGateway implements DragonGateway {
     this.#trajectoryStore = options.trajectoryStore;
     this.#plugins = normalizePluginSummaries(options.pluginSummaries ?? []);
     this.#providers = normalizeProviderSummaries(options.providerSummaries ?? []);
+    this.#modelConfigStore = options.modelConfigStore;
     this.#toolRegistry = options.toolRegistry ?? createToolRegistry([...(options.tools ?? [])]);
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
@@ -631,6 +665,7 @@ export class HttpDragonGateway implements DragonGateway {
               "run.cancel",
               "runs.list",
               "providers.list",
+              ...(this.#modelConfigStore ? ["model.config.get", "model.config.save"] : []),
               "plugins.list",
               "tools.catalog",
               "tool.invoke",
@@ -655,6 +690,12 @@ export class HttpDragonGateway implements DragonGateway {
       }
       if (request.type === "providers.list") {
         return { type: "response", id: request.id, ok: true, payload: this.#listProviders() };
+      }
+      if (request.type === "model.config.get") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#loadModelConfig() };
+      }
+      if (request.type === "model.config.save") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#saveModelConfig(request.params) };
       }
       if (request.type === "plugins.list") {
         return { type: "response", id: request.id, ok: true, payload: this.#listPlugins() };
@@ -1104,6 +1145,20 @@ export class HttpDragonGateway implements DragonGateway {
     };
   }
 
+  async #loadModelConfig(): Promise<GatewayModelConfig> {
+    if (!this.#modelConfigStore) {
+      throw new GatewayHttpError(404, "Model configuration store is not available.");
+    }
+    return sanitizeModelConfig(await this.#modelConfigStore.load());
+  }
+
+  async #saveModelConfig(params: GatewayModelConfigSaveParams): Promise<GatewayModelConfig> {
+    if (!this.#modelConfigStore) {
+      throw new GatewayHttpError(404, "Model configuration store is not available.");
+    }
+    return sanitizeModelConfig(await this.#modelConfigStore.save(params));
+  }
+
   #listPlugins(): { plugins: readonly GatewayPluginSummary[] } {
     return {
       plugins: this.#plugins.map(plugin => {
@@ -1333,6 +1388,16 @@ function parseGatewayRequest(value: unknown): GatewayRequest {
   if (value.type === "providers.list") {
     return { type: "providers.list", id: value.id };
   }
+  if (value.type === "model.config.get") {
+    return { type: "model.config.get", id: value.id };
+  }
+  if (value.type === "model.config.save") {
+    return {
+      type: "model.config.save",
+      id: value.id,
+      params: parseModelConfigSaveParams(value.params),
+    };
+  }
   if (value.type === "plugins.list") {
     return { type: "plugins.list", id: value.id };
   }
@@ -1456,6 +1521,53 @@ function parseToolsCatalogParams(value: unknown): { includeSchemas?: boolean } |
   return {
     ...(typeof value.includeSchemas === "boolean" ? { includeSchemas: value.includeSchemas } : {}),
   };
+}
+
+function parseModelConfigSaveParams(value: unknown): GatewayModelConfigSaveParams {
+  if (!isRecord(value) || !Array.isArray(value.providers)) {
+    badRequest("model.config.save requires params.providers.");
+  }
+  return {
+    providers: value.providers.map((provider, index) => parseModelProviderConfig(provider, index)),
+  };
+}
+
+function parseModelProviderConfig(value: unknown, index: number): GatewayModelProviderConfig {
+  if (!isRecord(value)) {
+    badRequest(`model.config.save provider ${index + 1} must be an object.`);
+  }
+  if (typeof value.id !== "string" || !value.id.trim()) {
+    badRequest(`model.config.save provider ${index + 1} requires id.`);
+  }
+  if (!isGatewayModelProviderType(value.type)) {
+    badRequest(`model.config.save provider ${index + 1} type is invalid.`);
+  }
+  const provider: GatewayModelProviderConfig = {
+    id: normalizeShortText(value.id, "provider id", 120),
+    type: value.type,
+  };
+  if (typeof value.displayName === "string" && value.displayName.trim()) {
+    provider.displayName = normalizeShortText(value.displayName, "displayName", 160);
+  }
+  if (typeof value.apiKey === "string" && value.apiKey.trim()) {
+    provider.apiKey = normalizeBoundedText(value.apiKey, "apiKey", 4000);
+  }
+  if (typeof value.apiKeyConfigured === "boolean") {
+    provider.apiKeyConfigured = value.apiKeyConfigured;
+  }
+  if (typeof value.baseUrl === "string" && value.baseUrl.trim()) {
+    provider.baseUrl = normalizeShortText(value.baseUrl, "baseUrl", 1000);
+  }
+  if (typeof value.defaultModel === "string" && value.defaultModel.trim()) {
+    provider.defaultModel = normalizeShortText(value.defaultModel, "defaultModel", 200);
+  }
+  if (typeof value.supportsToolCalling === "boolean") {
+    provider.supportsToolCalling = value.supportsToolCalling;
+  }
+  if (typeof value.enabled === "boolean") {
+    provider.enabled = value.enabled;
+  }
+  return provider;
 }
 
 function parseToolInvokeParams(value: unknown): GatewayToolInvokeParams {
@@ -2123,6 +2235,10 @@ function isMemoryScope(value: unknown): value is NonNullable<GatewayMemoryCandid
   return ["user", "project", "session", "skill"].includes(String(value));
 }
 
+function isGatewayModelProviderType(value: unknown): value is GatewayModelProviderType {
+  return value === "openai-compatible" || value === "anthropic";
+}
+
 function normalizeShortText(value: string, fieldName: string, maxChars: number): string {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -2164,6 +2280,39 @@ function normalizeIsoTimestamp(value: string, fieldName: string): string {
     badRequest(`${fieldName} must be a valid ISO timestamp.`);
   }
   return parsed.toISOString();
+}
+
+function sanitizeModelConfig(config: GatewayModelConfig): GatewayModelConfig {
+  const sanitized: GatewayModelConfig = {
+    providers: config.providers.map(provider => {
+      const summary: GatewayModelProviderConfig = {
+        id: trimBounded(provider.id, 120),
+        type: provider.type,
+        apiKeyConfigured: provider.apiKeyConfigured === true || Boolean(provider.apiKey),
+      };
+      if (provider.displayName !== undefined) {
+        summary.displayName = trimBounded(provider.displayName, 160);
+      }
+      if (provider.baseUrl !== undefined) {
+        summary.baseUrl = trimBounded(provider.baseUrl, 1000);
+      }
+      if (provider.defaultModel !== undefined) {
+        summary.defaultModel = trimBounded(provider.defaultModel, 200);
+      }
+      if (provider.supportsToolCalling !== undefined) {
+        summary.supportsToolCalling = provider.supportsToolCalling;
+      }
+      if (provider.enabled !== undefined) {
+        summary.enabled = provider.enabled;
+      }
+      return summary;
+    }),
+    appliesOn: "restart",
+  };
+  if (config.configPath !== undefined) {
+    sanitized.configPath = trimBounded(config.configPath, 1000);
+  }
+  return sanitized;
 }
 
 function normalizeProviderSummaries(values: readonly GatewayProviderSummary[]): readonly GatewayProviderSummary[] {

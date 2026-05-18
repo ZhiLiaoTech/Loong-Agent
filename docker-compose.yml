@@ -12,6 +12,7 @@ services:
       DRAGON_SESSION_DIR: /data/sessions
       DRAGON_MEMORY_DIR: /data/memory
       DRAGON_CRON_JOBS: /data/cron/jobs.json
+      DRAGON_MODEL_CONFIG: /data/config/providers.json
     ports:
       - "${DRAGON_GATEWAY_PUBLISHED_PORT:-8787}:8787"
     volumes:
