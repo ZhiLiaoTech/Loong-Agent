@@ -18,6 +18,8 @@ in TypeScript where they fit the framework.
 - `@dragon/channels`: chat-channel webhook adapters and Gateway delivery
   targets.
 - `@dragon/tools`: tool registry, permissions, and built-in tool contracts.
+- `@dragon/security`: shared sensitive-key detection and secret redaction
+  helpers.
 - `@dragon/providers`: model provider routing contracts.
 - `@dragon/model-catalog`: provider-scoped model metadata and model reference
   lookup helpers.
@@ -123,6 +125,9 @@ memory candidate promotion, and memory candidate rejection as write tools for
 reviewable updates. `--allow-write` allows those tools alongside `file_patch`;
 otherwise they require interactive approval.
 
+Security-sensitive diagnostics use shared Dragon redaction helpers for provider
+errors, permission summaries, and CLI metadata output.
+
 `providers.list` returns configured provider ids, display names, default models,
 provider-scoped model catalog entries, and tool-calling capability.
 `plugins.list` returns plugin name/version, tool summaries, provider summaries,
@@ -180,4 +185,5 @@ schedule/delivery targets, browser snapshotting with form extraction,
 basic browser form submission,
 cron file stores/runners, delegation planning/running, runtime-backed
 delegation, the `delegation_run` agent tool, model catalog behavior, model
-provider plugin loading/routing, and provider translation/streaming.
+provider plugin loading/routing, shared security redaction, and provider
+translation/streaming.

@@ -25,6 +25,8 @@ Channels        Pairing      Observability           Trajectory
 - Protocol-first. Gateway, tools, plugins, and providers use typed contracts.
 - Auditable memory. Durable knowledge is visible as files or queryable records.
 - Permission by design. Tool execution is mediated by a dedicated policy layer.
+- Secret-safe diagnostics. Logs, provider errors, and permission summaries
+  share a common redaction policy.
 - Incremental reuse. OpenClaw modules are migrated into Dragon boundaries one at
   a time, with attribution preserved.
 
@@ -82,6 +84,16 @@ Owns tool definitions and execution contracts:
 - sandbox policy profiles for default inspection, version checks, Git reads,
   search reads, and combined repository reads; future built-ins include richer
   browser automation, web, and MCP
+
+### `@dragon/security`
+
+Owns shared security utilities:
+
+- sensitive key classification for token, secret, password, credential, and
+  authorization-shaped fields
+- secret redaction for provider response bodies, URLs, query strings, bearer
+  tokens, and JSON-like diagnostics
+- small reusable helpers for CLI, provider, and runtime permission summaries
 
 ### `@dragon/providers`
 

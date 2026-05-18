@@ -33,6 +33,7 @@ import {
 } from "@dragon/memory";
 import { catalogEntriesFromProviders, createModelCatalog } from "@dragon/model-catalog";
 import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@dragon/providers";
+import { isSensitiveKey, redactSecretsInText } from "@dragon/security";
 import { createBrowserFormSubmitTool, createBrowserSnapshotTool, createSandboxExecTool, createToolPermissionEngine, planSandboxExecCommand, type ToolDefinition } from "@dragon/tools";
 
 const TEST_TIMEOUT_MS = 5000;
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
     ["dashboard memory review smoke", testDashboardMemoryReviewSmoke],
     ["memory candidate review tools", testMemoryCandidateTools],
     ["model catalog", testModelCatalog],
+    ["security redaction", testSecurityRedaction],
     ["trajectory persistence and gateway RPC", testTrajectoryPersistenceAndGatewayRpc],
     ["sandbox exec tool", testSandboxExecTool],
     ["cron schedule and gateway delivery", testCronScheduleAndGatewayDelivery],
@@ -944,6 +946,26 @@ async function testModelCatalog(): Promise<void> {
   const first = entries[0];
   assert(first !== undefined, "model catalog test fixture should include entries");
   assertThrows(() => createModelCatalog([first, first]), "duplicate model registration should fail");
+}
+
+async function testSecurityRedaction(): Promise<void> {
+  assert(isSensitiveKey("apiKey"), "security should classify API key fields as sensitive");
+  assert(isSensitiveKey("key"), "security should classify standalone key fields as sensitive");
+  assert(!isSensitiveKey("monkey"), "security should not classify words that merely contain key");
+  assert(isSensitiveKey("authorization"), "security should classify authorization fields as sensitive");
+  const redacted = redactSecretsInText([
+    "{\"api_key\":\"sk-abc123456789\",\"password\":\"plain\"}",
+    "authorization=Bearer secret-token",
+    "https://user:pass@example.com/path?token=value&ok=1",
+    "bearer sk-live-secret-token",
+  ].join("\n"), { compactWhitespace: true });
+  assert(redacted.includes("\"api_key\":\"[REDACTED]\""), "security should redact JSON-shaped secrets");
+  assert(redacted.includes("password\":\"[REDACTED]\""), "security should redact password fields");
+  assert(redacted.includes("authorization=[REDACTED]"), "security should redact assignment-shaped secrets");
+  assert(redacted.includes("https://[REDACTED]@example.com"), "security should redact URL credentials");
+  assert(redacted.includes("token=[REDACTED]"), "security should redact query tokens");
+  assert(!redacted.includes("secret-token") && !redacted.includes("plain"), "security redaction should remove secret values");
+  assert(redactSecretsInText("abcdef", { maxLength: 3 }) === "abc...", "security redaction should enforce max length");
 }
 
 async function testTrajectoryPersistenceAndGatewayRpc(): Promise<void> {

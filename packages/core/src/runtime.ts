@@ -8,6 +8,7 @@ import type {
   ProviderResolution,
 } from "@dragon/providers";
 import { ProviderError, createProviderRegistry } from "@dragon/providers";
+import { isSensitiveKey } from "@dragon/security";
 import type {
   ToolDefinition,
   ToolInvocation,
@@ -922,10 +923,6 @@ function summarizeString(value: string): Record<string, unknown> {
     bytes: Buffer.byteLength(value, "utf8"),
     sha256: createHash("sha256").update(value, "utf8").digest("hex").slice(0, 16),
   };
-}
-
-function isSensitiveKey(key: string): boolean {
-  return /token|secret|api[_-]?key|authorization|password|credential/i.test(key);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

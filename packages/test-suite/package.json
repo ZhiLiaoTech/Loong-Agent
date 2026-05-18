@@ -18,6 +18,7 @@
     "@dragon/memory": "workspace:*",
     "@dragon/model-catalog": "workspace:*",
     "@dragon/providers": "workspace:*",
+    "@dragon/security": "workspace:*",
     "@dragon/tools": "workspace:*"
   },
   "devDependencies": {

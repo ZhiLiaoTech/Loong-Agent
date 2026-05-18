@@ -26,6 +26,7 @@
     "@dragon/memory": "workspace:*",
     "@dragon/plugin-sdk": "workspace:*",
     "@dragon/providers": "workspace:*",
+    "@dragon/security": "workspace:*",
     "@dragon/skills": "workspace:*",
     "@dragon/tools": "workspace:*"
   },

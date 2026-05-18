@@ -47,6 +47,9 @@ importers:
       '@dragon/providers':
         specifier: workspace:*
         version: link:../providers
+      '@dragon/security':
+        specifier: workspace:*
+        version: link:../security
       '@dragon/skills':
         specifier: workspace:*
         version: link:../skills
@@ -63,6 +66,9 @@ importers:
       '@dragon/providers':
         specifier: workspace:*
         version: link:../providers
+      '@dragon/security':
+        specifier: workspace:*
+        version: link:../security
       '@dragon/tools':
         specifier: workspace:*
         version: link:../tools
@@ -207,6 +213,15 @@ importers:
       '@dragon/model-catalog':
         specifier: workspace:*
         version: link:../model-catalog
+      '@dragon/security':
+        specifier: workspace:*
+        version: link:../security
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/security:
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -248,6 +263,9 @@ importers:
       '@dragon/providers':
         specifier: workspace:*
         version: link:../providers
+      '@dragon/security':
+        specifier: workspace:*
+        version: link:../security
       '@dragon/tools':
         specifier: workspace:*
         version: link:../tools

@@ -17,7 +17,8 @@ Goal: establish the TypeScript workspace and design boundaries.
   command planning/execution, sandbox policy profiles, cron schedule/delivery
   targets, cron file stores/runners, browser snapshotting, delegation
   planning/running, runtime-backed delegation, the `delegation_run` agent tool,
-  model catalog behavior, and model provider plugin loading/routing.
+  model catalog behavior, shared security redaction, and model provider plugin
+  loading/routing.
 
 ## Phase 1: Minimal Coding Agent
 
@@ -35,6 +36,9 @@ Goal: make Dragon useful from the CLI.
 - Implement shell execution tool.
 - Implement patch editing tool.
 - Implement basic permission prompts.
+- Add shared security redaction. Initial `@dragon/security` package is
+  implemented and reused by provider diagnostics, runtime permission summaries,
+  and CLI metadata output.
 - Implement `dragon chat`.
 - Implement `dragon agent`.
 

@@ -37,9 +37,9 @@ import {
   createAnthropicProviderFromEnv,
   createOpenAICompatibleProviderFromEnv,
   createProviderRegistry,
-  sanitizeProviderBody,
   type ModelProvider,
 } from "@dragon/providers";
+import { DEFAULT_REDACTION, isSensitiveKey, redactSecretsInText } from "@dragon/security";
 import { createFileSkillRuntime, createSkillTools, type LoadedSkill, type SkillSummary } from "@dragon/skills";
 import {
   createFilePatchTool,
@@ -1590,8 +1590,8 @@ function summarizePermissionInput(request: DragonPermissionRequest): string {
 
 function stringifyPreview(value: unknown): string {
   const json = JSON.stringify(value, (key, item) => {
-    if (/token|secret|api[_-]?key|authorization/i.test(key)) {
-      return "[redacted]";
+    if (isSensitiveKey(key)) {
+      return DEFAULT_REDACTION;
     }
     return previewText(item);
   });
@@ -1631,8 +1631,8 @@ function formatMetadata(metadata: Record<string, unknown>): string {
 
 function formatMetadataValue(key: string, value: unknown): string {
   const text = String(value);
-  if (/body|token|secret|key|authorization/i.test(key)) {
-    return sanitizeProviderBody(text);
+  if (isSensitiveKey(key) || /body/i.test(key)) {
+    return redactSecretsInText(text, { compactWhitespace: true });
   }
   return text;
 }
