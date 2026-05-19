@@ -1,0 +1,111 @@
+.topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.left,
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.menuBtn {
+  display: none;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--text);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.dotOk {
+  background: var(--ok);
+}
+
+.dotWarn {
+  background: var(--warn);
+}
+
+.dotChecking {
+  background: var(--muted);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% { opacity: 0.4; }
+}
+
+.secondaryBtn {
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--text);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.secondaryBtn:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.secretWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 200px;
+}
+
+.secretLabel {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.secretInput {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.secretInput:focus-visible {
+  border-color: var(--accent);
+}
+
+@media (max-width: 980px) {
+  .menuBtn {
+    display: inline-flex;
+  }
+}

@@ -1,6 +1,7 @@
 import { normalizeProviderModelEntries, type DragonProviderModelCatalogEntry } from "@dragon/model-catalog";
 import { ProviderError, sanitizeProviderBody } from "./errors.js";
 import { readServerSentEvents } from "./sse.js";
+import { readThinkingLevel } from "./thinking.js";
 import type {
   ModelMessage,
   ModelProvider,
@@ -307,11 +308,13 @@ function toUsage(usage: NonNullable<ChatCompletionResponse["usage"]>): NonNullab
 }
 
 function toChatCompletionBody(request: ModelRequest): Record<string, unknown> {
+  const thinking = readThinkingLevel(request.metadata);
   return {
     model: request.model,
     messages: request.messages.map(toChatMessage),
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     ...(request.tools !== undefined ? { tools: request.tools } : {}),
+    ...(thinking !== undefined ? { reasoning_effort: thinking } : {}),
   };
 }
 

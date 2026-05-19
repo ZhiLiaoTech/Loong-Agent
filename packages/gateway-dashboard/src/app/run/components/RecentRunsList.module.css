@@ -1,0 +1,87 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.refresh {
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 180px;
+  overflow: auto;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 72px 56px 1fr;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: var(--text-xs);
+}
+
+.state {
+  font-weight: var(--font-weight-medium);
+  text-transform: lowercase;
+}
+
+.state-completed,
+.state-done {
+  color: var(--ok);
+}
+
+.state-running,
+.state-active {
+  color: #3b82f6;
+}
+
+.state-failed,
+.state-error {
+  color: var(--danger);
+}
+
+.id {
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}

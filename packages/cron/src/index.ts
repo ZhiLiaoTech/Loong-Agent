@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { postGatewayWebhook } from "@dragon/channels";
 
 export interface DragonCronSchedule {
   expression: string;
@@ -145,28 +146,12 @@ export function createGatewayWebhookCronTarget(options: GatewayWebhookCronTarget
   return {
     async deliver(job, occurrence) {
       const deliveredAt = occurrence.deliveredAt ?? new Date().toISOString();
-      const response = await fetchImpl(`${gatewayUrl}/channels/webhook`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(options.sharedSecret !== undefined ? { authorization: `Bearer ${options.sharedSecret}` } : {}),
-        },
-        body: JSON.stringify(toGatewayWebhookCronPayload(job, { ...occurrence, deliveredAt })),
+      return await postGatewayWebhook({
+        gatewayUrl,
+        ...(options.sharedSecret !== undefined ? { sharedSecret: options.sharedSecret } : {}),
+        body: toGatewayWebhookCronPayload(job, { ...occurrence, deliveredAt }),
+        fetchImpl,
       });
-      const payload = await readResponsePayload(response);
-      if (!response.ok) {
-        return {
-          ok: false,
-          status: response.status,
-          error: readResponseError(payload) ?? `Gateway webhook delivery failed with HTTP ${response.status}.`,
-          ...(payload !== undefined ? { payload } : {}),
-        };
-      }
-      return {
-        ok: true,
-        status: response.status,
-        ...(payload !== undefined ? { payload } : {}),
-      };
     },
   };
 }

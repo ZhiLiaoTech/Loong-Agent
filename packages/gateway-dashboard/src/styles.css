@@ -1,0 +1,12 @@
+@import "./styles-legacy.css";
+@import "./theme.css";
+
+button {
+  border-radius: 8px;
+}
+
+input,
+textarea,
+select {
+  border-radius: 8px;
+}

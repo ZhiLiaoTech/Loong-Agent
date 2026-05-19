@@ -41,6 +41,50 @@ export function redactSensitiveJsonValue(key: string, value: unknown, replacemen
   return isSensitiveKey(key) ? replacement : value;
 }
 
+export interface WalkAndRedactJsonOptions {
+  replacement?: string;
+  maxDepth?: number;
+}
+
+export function walkAndRedactJson(value: unknown, options: WalkAndRedactJsonOptions = {}): unknown {
+  const replacement = options.replacement ?? DEFAULT_REDACTION;
+  const maxDepth = normalizeMaxDepth(options.maxDepth ?? 32);
+  return walkValue(value, undefined, 0, maxDepth, replacement);
+}
+
+function walkValue(
+  value: unknown,
+  key: string | undefined,
+  depth: number,
+  maxDepth: number,
+  replacement: string,
+): unknown {
+  if (depth > maxDepth) {
+    return replacement;
+  }
+  if (key !== undefined && isSensitiveKey(key)) {
+    return replacement;
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => walkValue(item, undefined, depth + 1, maxDepth, replacement));
+  }
+  const output: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of Object.entries(value)) {
+    output[entryKey] = walkValue(entryValue, entryKey, depth + 1, maxDepth, replacement);
+  }
+  return output;
+}
+
+function normalizeMaxDepth(value: number): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    return 32;
+  }
+  return Math.min(value, 64);
+}
+
 function normalizeMaxLength(value: number): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     return DEFAULT_MAX_TEXT_LENGTH;

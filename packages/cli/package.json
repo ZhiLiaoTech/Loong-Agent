@@ -24,6 +24,7 @@
     "@dragon/delegation": "workspace:*",
     "@dragon/gateway": "workspace:*",
     "@dragon/memory": "workspace:*",
+    "@dragon/model-catalog": "workspace:*",
     "@dragon/plugin-sdk": "workspace:*",
     "@dragon/providers": "workspace:*",
     "@dragon/security": "workspace:*",

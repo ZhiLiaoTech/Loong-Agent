@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
-import { getDashboardHtml } from "./dashboard.js";
+import { getDashboardHtml, readDashboardAsset } from "./dashboard.js";
 import type {
   DragonAgentRuntime,
   DragonEvent,
@@ -44,6 +44,10 @@ export interface GatewayAgentParams {
   workspace?: string;
   model?: string;
   thinking?: DragonThinkingLevel;
+  profileId?: string;
+  systemPrompt?: string;
+  toolsEnabled?: boolean;
+  memoryEnabled?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -447,6 +451,11 @@ export class HttpDragonGateway implements DragonGateway {
     this.#runtimeUnsubscribe = this.#runtime.subscribe(event => {
       this.#broadcastRuntimeEvent(event);
     });
+    if (normalized.authMode === "none") {
+      console.error(
+        `[${this.#name}] WARNING: Gateway auth is disabled. Set sharedSecret (or authMode: "shared-secret") before exposing this server beyond localhost.`,
+      );
+    }
   }
 
   async stop(): Promise<void> {
@@ -477,8 +486,12 @@ export class HttpDragonGateway implements DragonGateway {
     return this.#address;
   }
 
+  async #resolveAgentParams(params: GatewayAgentParams): Promise<GatewayAgentParams> {
+    return await resolveAgentParamsWithProfile(params, this.#agentConfigStore);
+  }
+
   async #handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    applyCors(response);
+    applyCors(request, response);
     if (request.method === "OPTIONS") {
       response.writeHead(204);
       response.end();
@@ -488,6 +501,20 @@ export class HttpDragonGateway implements DragonGateway {
     const url = new URL(request.url ?? "/", "http://dragon.local");
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
       writeHtml(response, 200, getDashboardHtml());
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/assets/")) {
+      const asset = readDashboardAsset(url.pathname.slice(1));
+      if (asset) {
+        response.writeHead(200, {
+          "Content-Type": asset.contentType,
+          "Cache-Control": "public, max-age=3600",
+        });
+        response.end(asset.body);
+        return;
+      }
+      writeJson(response, 404, { ok: false, error: "Not found." });
       return;
     }
 
@@ -786,7 +813,8 @@ export class HttpDragonGateway implements DragonGateway {
   }
 
   async #runAgent(params: GatewayAgentParams): Promise<{ result: unknown; events: DragonEvent[] }> {
-    const input = toTurnInput(params);
+    const resolvedParams = await this.#resolveAgentParams(params);
+    const input = toTurnInput(resolvedParams);
     return await this.#runInLane(input.sessionId, async () => {
       const events: DragonEvent[] = [];
       const controller = new AbortController();
@@ -1953,6 +1981,24 @@ function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
     }
     params.thinking = value.thinking;
   }
+  if (typeof value.profileId === "string" && value.profileId.trim()) {
+    params.profileId = normalizeShortText(value.profileId, "profileId", 200);
+  }
+  if (typeof value.systemPrompt === "string" && value.systemPrompt.trim()) {
+    params.systemPrompt = normalizeBoundedText(value.systemPrompt, "systemPrompt", 16_000);
+  }
+  if (value.toolsEnabled !== undefined) {
+    if (typeof value.toolsEnabled !== "boolean") {
+      badRequest("Gateway agent toolsEnabled must be a boolean.");
+    }
+    params.toolsEnabled = value.toolsEnabled;
+  }
+  if (value.memoryEnabled !== undefined) {
+    if (typeof value.memoryEnabled !== "boolean") {
+      badRequest("Gateway agent memoryEnabled must be a boolean.");
+    }
+    params.memoryEnabled = value.memoryEnabled;
+  }
   if (value.metadata !== undefined) {
     if (!isRecord(value.metadata)) {
       badRequest("Gateway agent metadata must be an object.");
@@ -2074,6 +2120,31 @@ function badRequest(message: string): never {
   throw new GatewayHttpError(400, message);
 }
 
+async function resolveAgentParamsWithProfile(
+  params: GatewayAgentParams,
+  store: GatewayAgentConfigStore | undefined,
+): Promise<GatewayAgentParams> {
+  const profileId = params.profileId
+    ?? (typeof params.metadata?.profileId === "string" ? params.metadata.profileId : undefined);
+  if (!profileId || !store) {
+    return params;
+  }
+  const config = await store.load();
+  const profile = config.profiles.find(entry => entry.id === profileId);
+  if (!profile) {
+    return params;
+  }
+  return {
+    ...params,
+    ...(params.model === undefined && profile.defaultModel !== undefined ? { model: profile.defaultModel } : {}),
+    ...(params.workspace === undefined && profile.workspace !== undefined ? { workspace: profile.workspace } : {}),
+    ...(params.thinking === undefined && profile.thinking !== undefined ? { thinking: profile.thinking } : {}),
+    ...(params.systemPrompt === undefined && profile.systemPrompt !== undefined ? { systemPrompt: profile.systemPrompt } : {}),
+    ...(params.toolsEnabled === undefined && profile.toolsEnabled !== undefined ? { toolsEnabled: profile.toolsEnabled } : {}),
+    ...(params.memoryEnabled === undefined && profile.memoryEnabled !== undefined ? { memoryEnabled: profile.memoryEnabled } : {}),
+  };
+}
+
 function toTurnInput(params: GatewayAgentParams): DragonTurnInput {
   const input: DragonTurnInput = {
     sessionId: params.sessionId,
@@ -2088,6 +2159,15 @@ function toTurnInput(params: GatewayAgentParams): DragonTurnInput {
   }
   if (params.thinking !== undefined) {
     input.thinking = params.thinking;
+  }
+  if (params.systemPrompt !== undefined) {
+    input.systemPrompt = params.systemPrompt;
+  }
+  if (params.toolsEnabled !== undefined) {
+    input.toolsEnabled = params.toolsEnabled;
+  }
+  if (params.memoryEnabled !== undefined) {
+    input.memoryEnabled = params.memoryEnabled;
   }
   if (params.metadata !== undefined) {
     input.metadata = params.metadata;
@@ -2327,8 +2407,12 @@ function createWebSocketFrame(opcode: number, payload: Buffer): Buffer {
   return Buffer.concat([header, payload]);
 }
 
-function applyCors(response: ServerResponse): void {
-  response.setHeader("access-control-allow-origin", "http://localhost");
+function applyCors(request: IncomingMessage, response: ServerResponse): void {
+  const host = request.headers.host?.split(":")[0]?.toLowerCase();
+  const origin = host === "127.0.0.1"
+    ? "http://127.0.0.1"
+    : "http://localhost";
+  response.setHeader("access-control-allow-origin", origin);
   response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
   response.setHeader("access-control-allow-headers", "content-type,authorization,x-dragon-secret");
 }

@@ -16,7 +16,7 @@ import type {
   ToolPermissionResult,
   ToolRegistry,
 } from "@dragon/tools";
-import { createToolPermissionEngine, createToolRegistry } from "@dragon/tools";
+import { createToolPermissionEngine, createToolRegistry, normalizeToolName } from "@dragon/tools";
 import type {
   DragonAgentRuntime,
   DragonContextItem,
@@ -54,6 +54,8 @@ export interface DragonRuntimeOptions {
   systemPrompt?: string;
   maxToolIterations?: number;
   maxContextChars?: number;
+  /** When true (default), unresolved ask decisions deny instead of returning ask. */
+  denyAskWithoutHandler?: boolean;
 }
 
 interface ModelAttemptFailure {
@@ -81,6 +83,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   readonly #maxToolIterations: number;
   readonly #maxContextChars: number;
   readonly #lifecycleHookTimeoutMs: number;
+  readonly #denyAskWithoutHandler: boolean;
   readonly #maxToolResultChars = 64_000;
   readonly #listeners = new Set<(event: DragonEvent) => void>();
   readonly #eventCollectors = new Map<string, DragonEvent[]>();
@@ -100,6 +103,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#maxToolIterations = options.maxToolIterations ?? 4;
     this.#maxContextChars = options.maxContextChars ?? 12_000;
     this.#lifecycleHookTimeoutMs = 500;
+    this.#denyAskWithoutHandler = options.denyAskWithoutHandler ?? true;
   }
 
   subscribe(listener: (event: DragonEvent) => void): () => void {
@@ -134,8 +138,11 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       const history = input.history ?? await this.#loadSessionMessages(input.sessionId);
       const contextItems = await this.#buildContextItems(input, history, runId, createdAt);
 
+      const effectiveSystemPrompt = input.systemPrompt?.trim()
+        ? `${this.#systemPrompt}\n\n${input.systemPrompt.trim()}`
+        : this.#systemPrompt;
       const modelMessages: ModelMessage[] = [
-        { role: "system", content: composeSystemPrompt(this.#systemPrompt, contextItems, this.#maxContextChars) },
+        { role: "system", content: composeSystemPrompt(effectiveSystemPrompt, contextItems, this.#maxContextChars) },
         ...toModelHistory(history),
         { role: "user", content: input.message },
       ];
@@ -159,13 +166,37 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
           toolCalls: providerResponse.toolCalls,
         });
 
-        for (const toolCall of providerResponse.toolCalls) {
-          const toolResult = await this.#runToolCall(toolCall, input, runId);
-          modelMessages.push({
-            role: "tool",
-            content: toolResult.content,
-            toolCallId: toolCall.id,
-          });
+        const toolCalls = providerResponse.toolCalls;
+        if (input.toolsEnabled === false) {
+          for (const toolCall of toolCalls) {
+            modelMessages.push({
+              role: "tool",
+              content: JSON.stringify({
+                ok: false,
+                error: "Tool calling is disabled for this turn.",
+                toolCallId: toolCall.id,
+              }),
+              toolCallId: toolCall.id,
+            });
+          }
+        } else if (canRunToolCallsInParallel(toolCalls, this.#toolRegistry)) {
+          const toolResults = await Promise.all(toolCalls.map(toolCall => this.#runToolCall(toolCall, input, runId)));
+          for (const [index, toolResult] of toolResults.entries()) {
+            modelMessages.push({
+              role: "tool",
+              content: toolResult.content,
+              toolCallId: toolCalls[index]!.id,
+            });
+          }
+        } else {
+          for (const toolCall of toolCalls) {
+            const toolResult = await this.#runToolCall(toolCall, input, runId);
+            modelMessages.push({
+              role: "tool",
+              content: toolResult.content,
+              toolCallId: toolCall.id,
+            });
+          }
         }
 
         completion = await this.#completeModelWithFallback(modelRefs, modelMessages, input, runId);
@@ -277,6 +308,9 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   ): Promise<DragonContextItem[]> {
     const items: DragonContextItem[] = [];
     for (const provider of this.#contextProviders) {
+      if (input.memoryEnabled === false && isMemoryContextProvider(provider.name)) {
+        continue;
+      }
       this.#emit({
         type: "context",
         runId,
@@ -396,16 +430,20 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       streamedText = true;
       this.#emit({ type: "assistant_delta", runId, text: delta });
     };
+    const toolsEnabled = input.toolsEnabled !== false;
     const response = await provider.complete({
       model,
       messages,
-      ...(provider.supportsToolCalling ? { tools: this.#toolRegistry.list().map(toModelTool) } : {}),
+      ...(toolsEnabled && provider.supportsToolCalling
+        ? { tools: this.#toolRegistry.list().map(toModelTool) }
+        : {}),
       ...(input.signal !== undefined ? { signal: input.signal } : {}),
       ...(streamDeltas ? { onTextDelta } : {}),
       metadata: {
         runId,
         sessionId: input.sessionId,
         source: input.source,
+        ...(input.thinking !== undefined ? { thinking: input.thinking } : {}),
       },
     });
     if (streamedText) {
@@ -518,6 +556,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       metadata: {
         runId,
         source: input.source,
+        ...(input.metadata ?? {}),
       },
     };
     if (input.workspace !== undefined) {
@@ -600,6 +639,12 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     });
 
     if (!this.#permissionHandler) {
+      if (this.#denyAskWithoutHandler) {
+        return {
+          decision: "deny",
+          reason: "Permission ask requires an interactive handler; running without one denies the request.",
+        };
+      }
       return permission;
     }
 
@@ -1110,9 +1155,7 @@ function toModelAttemptFailure(resolution: ProviderResolution, error: unknown): 
 }
 
 function isFallbackEligible(error: unknown): boolean {
-  return error instanceof ProviderError
-    ? error.retryable === true
-    : true;
+  return error instanceof ProviderError && error.retryable === true;
 }
 
 function toModelHistory(history: DragonMessage[]): ModelMessage[] {
@@ -1183,6 +1226,38 @@ function safeStringifyToolResult(value: unknown, maxChars: number): string {
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+const MEMORY_CONTEXT_PROVIDER_NAMES = new Set([
+  "memory_recall",
+  "markdown_memory",
+  "session_compaction",
+]);
+
+function isMemoryContextProvider(name: string): boolean {
+  return MEMORY_CONTEXT_PROVIDER_NAMES.has(name);
+}
+
+function isParallelSafeTool(tool: ToolDefinition): boolean {
+  const capabilities = tool.capabilities ?? [];
+  if (capabilities.some(capability => capability !== "read")) {
+    return false;
+  }
+  return tool.permission === "allow";
+}
+
+function canRunToolCallsInParallel(toolCalls: ModelToolCall[], registry: ToolRegistry): boolean {
+  if (toolCalls.length <= 1) {
+    return false;
+  }
+  return toolCalls.every(toolCall => {
+    const toolName = toolCall.function?.name?.trim();
+    if (!toolName) {
+      return false;
+    }
+    const tool = registry.get(normalizeToolName(toolName));
+    return tool !== undefined && isParallelSafeTool(tool);
+  });
 }
 
 function composeSystemPrompt(

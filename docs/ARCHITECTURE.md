@@ -290,6 +290,10 @@ When shared-secret auth is enabled, the dashboard HTML shell remains reachable
 so a browser can load it and submit the secret through request headers. Runtime
 data endpoints (`/health`, `/events`, `/ws`, `/rpc`) remain protected.
 
+For implementation-level technical design and per-package code review, see
+[TECHNICAL_ARCHITECTURE.md](./TECHNICAL_ARCHITECTURE.md) and
+[modules/README.md](./modules/README.md).
+
 ## First Implementation Target
 
 The first useful milestone is:

@@ -108,6 +108,9 @@ function matchesRule(rule: ToolPermissionRule, context: ToolPermissionContext): 
   if (rule.when !== undefined && !rule.when(context)) {
     return false;
   }
+  if (rule.toolName === undefined && rule.capability === undefined && rule.when === undefined) {
+    return true;
+  }
   return rule.toolName !== undefined || rule.capability !== undefined || rule.when !== undefined;
 }
 

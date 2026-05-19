@@ -1503,8 +1503,8 @@ async function testBrowserSnapshotTool(): Promise<void> {
   });
   const port = await listenOnLoopback(server);
   try {
-    const tool = createBrowserSnapshotTool();
-    const submitTool = createBrowserFormSubmitTool();
+    const tool = createBrowserSnapshotTool({ allowPrivateHosts: true });
+    const submitTool = createBrowserFormSubmitTool({ allowPrivateHosts: true });
     const result = await tool.invoke({
       id: "browser-1",
       name: tool.name,

@@ -1,0 +1,18 @@
+:root,
+[data-theme="light"] {
+  --bg: #f7f7f4;
+  --surface: #ffffff;
+  --side: #efefe8;
+  --text: #181816;
+  --muted: #70706a;
+  --line: #e4e4df;
+  --soft: #f4f4f0;
+  --accent: #0f4c4a;
+  --accent-hover: #0c3e3c;
+  --accent-soft: #e6f3f2;
+  --on-accent: #ffffff;
+  --ok: #1d6d3d;
+  --warn: #8b6400;
+  --danger: #8d2424;
+  --focus-ring: 0 0 0 3px rgba(15, 76, 74, 0.25);
+}

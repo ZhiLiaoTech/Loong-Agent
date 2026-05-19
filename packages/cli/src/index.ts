@@ -46,6 +46,7 @@ import {
   type TrajectoryStore,
 } from "@dragon/memory";
 import { loadDragonPlugin, type DragonPluginMemoryBackend, type LoadedDragonPlugin } from "@dragon/plugin-sdk";
+import { catalogEntriesFromProviders, createModelCatalog } from "@dragon/model-catalog";
 import {
   createAnthropicProvider,
   createAnthropicProviderFromEnv,
@@ -352,10 +353,11 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
       ...pluginProviders,
     ];
     assertUniqueProviderIds(providers);
-    const registry = createProviderRegistry(
-      providers,
-      options.defaultProviderId ? { defaultProviderId: options.defaultProviderId } : {},
-    );
+    const modelCatalog = createModelCatalog(catalogEntriesFromProviders(providers));
+    const registry = createProviderRegistry(providers, {
+      ...(options.defaultProviderId ? { defaultProviderId: options.defaultProviderId } : {}),
+      modelCatalog,
+    });
     const sessionStore = options.noSession
       ? undefined
       : createFileSessionStore({ rootDir: options.sessionDir });
@@ -447,6 +449,7 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
               "Summarize findings clearly and mention any tool errors.",
             ].filter(Boolean).join("\n"),
             ...(options.permissionHandler ? { permissionHandler: options.permissionHandler } : {}),
+            denyAskWithoutHandler: true,
           }
         : {}),
     };

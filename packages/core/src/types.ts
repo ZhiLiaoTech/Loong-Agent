@@ -11,6 +11,12 @@ export interface DragonTurnInput {
   model?: string;
   modelFallbacks?: string[];
   thinking?: DragonThinkingLevel;
+  /** When false, model tool calling is disabled for this turn. */
+  toolsEnabled?: boolean;
+  /** When false, memory-related context providers are skipped. */
+  memoryEnabled?: boolean;
+  /** Appended to the runtime system prompt for this turn. */
+  systemPrompt?: string;
   signal?: AbortSignal;
   metadata?: Record<string, unknown>;
 }

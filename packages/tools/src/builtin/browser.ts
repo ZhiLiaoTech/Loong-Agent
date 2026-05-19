@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { TextDecoder } from "node:util";
 import type { ToolDefinition, ToolInvocation, ToolJsonSchema, ToolResult } from "../types.js";
 
@@ -53,6 +54,8 @@ export interface BrowserSnapshotOutput {
 
 export interface BrowserSnapshotToolOptions {
   fetchImpl?: typeof fetch;
+  /** When false (default), private/link-local addresses are rejected. */
+  allowPrivateHosts?: boolean;
 }
 
 export interface BrowserFormSubmitOutput {
@@ -124,6 +127,7 @@ export function createBrowserSnapshotTool(
   options: BrowserSnapshotToolOptions = {},
 ): ToolDefinition<BrowserSnapshotInput, BrowserSnapshotOutput> {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const allowPrivateHosts = options.allowPrivateHosts ?? false;
   return {
     name: "browser_snapshot",
     description: "Fetch an HTTP(S) page and return a bounded text, link, and form snapshot for lightweight browser-style inspection.",
@@ -132,8 +136,8 @@ export function createBrowserSnapshotTool(
     permission: "ask",
     async invoke(invocation) {
       return safelyInvoke(invocation, async () => {
-        const input = parseBrowserSnapshotInput(invocation.input);
-        return await fetchBrowserSnapshot(fetchImpl, input);
+        const input = parseBrowserSnapshotInput(invocation.input, allowPrivateHosts);
+        return await fetchBrowserSnapshot(fetchImpl, input, { allowPrivateHosts });
       });
     },
   };
@@ -143,6 +147,7 @@ export function createBrowserFormSubmitTool(
   options: BrowserSnapshotToolOptions = {},
 ): ToolDefinition<BrowserFormSubmitInput, BrowserFormSubmitOutput> {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const allowPrivateHosts = options.allowPrivateHosts ?? false;
   return {
     name: "browser_form_submit",
     description: "Submit a basic HTTP(S) HTML form using GET or URL-encoded POST and return the resulting bounded page snapshot.",
@@ -151,16 +156,21 @@ export function createBrowserFormSubmitTool(
     permission: "ask",
     async invoke(invocation) {
       return safelyInvoke(invocation, async () => {
-        const input = parseBrowserFormSubmitInput(invocation.input);
-        return await submitBrowserForm(fetchImpl, input);
+        const input = parseBrowserFormSubmitInput(invocation.input, allowPrivateHosts);
+        return await submitBrowserForm(fetchImpl, input, { allowPrivateHosts });
       });
     },
   };
 }
 
+interface BrowserFetchOptions {
+  allowPrivateHosts: boolean;
+}
+
 async function fetchBrowserSnapshot(
   fetchImpl: typeof fetch,
   input: Required<BrowserSnapshotInput>,
+  browserOptions: BrowserFetchOptions,
 ): Promise<BrowserSnapshotOutput> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
@@ -201,6 +211,7 @@ async function fetchBrowserSnapshot(
 async function submitBrowserForm(
   fetchImpl: typeof fetch,
   input: Required<Pick<BrowserSnapshotInput, "url" | "timeoutMs" | "maxBytes">> & Pick<BrowserFormSubmitInput, "formIndex" | "formId" | "formName" | "fields" | "allowCrossOrigin">,
+  browserOptions: BrowserFetchOptions,
 ): Promise<BrowserFormSubmitOutput> {
   const page = await fetchHtmlPage(fetchImpl, input);
   const forms = extractFormsWithSecrets(page.html, page.finalUrl);
@@ -211,6 +222,7 @@ async function submitBrowserForm(
     timeoutMs: input.timeoutMs,
     maxBytes: input.maxBytes,
     allowCrossOrigin: input.allowCrossOrigin === true,
+    browserOptions,
   });
   return {
     submitted: {
@@ -255,7 +267,7 @@ async function submitSelectedForm(
   fetchImpl: typeof fetch,
   form: BrowserSnapshotForm,
   fields: URLSearchParams,
-  options: { pageUrl: string; timeoutMs: number; maxBytes: number; allowCrossOrigin: boolean },
+  options: { pageUrl: string; timeoutMs: number; maxBytes: number; allowCrossOrigin: boolean; browserOptions: BrowserFetchOptions },
 ): Promise<BrowserSnapshotOutput> {
   if (form.method === "dialog") {
     throw new Error("browser_form_submit does not support dialog forms.");
@@ -279,7 +291,11 @@ async function submitSelectedForm(
     for (const [key, value] of fields) {
       action.searchParams.set(key, value);
     }
-    return await fetchBrowserSnapshot(fetchImpl, { url: action.toString(), timeoutMs: options.timeoutMs, maxBytes: options.maxBytes });
+    return await fetchBrowserSnapshot(
+      fetchImpl,
+      { url: action.toString(), timeoutMs: options.timeoutMs, maxBytes: options.maxBytes },
+      options.browserOptions,
+    );
   }
   init.method = "POST";
   init.headers = {
@@ -656,12 +672,12 @@ function hasAttribute(attrs: string, name: string): boolean {
   return pattern.test(attrs);
 }
 
-function parseBrowserSnapshotInput(input: unknown): Required<BrowserSnapshotInput> {
+function parseBrowserSnapshotInput(input: unknown, allowPrivateHosts = false): Required<BrowserSnapshotInput> {
   if (!isRecord(input) || typeof input.url !== "string" || !input.url.trim()) {
     throw new Error("browser_snapshot requires a non-empty url.");
   }
   return {
-    url: normalizeBrowserUrl(input.url),
+    url: normalizeBrowserUrl(input.url, allowPrivateHosts),
     timeoutMs: typeof input.timeoutMs === "number"
       ? Math.min(MAX_TIMEOUT_MS, Math.max(100, Math.floor(input.timeoutMs)))
       : DEFAULT_TIMEOUT_MS,
@@ -673,12 +689,13 @@ function parseBrowserSnapshotInput(input: unknown): Required<BrowserSnapshotInpu
 
 function parseBrowserFormSubmitInput(
   input: unknown,
+  allowPrivateHosts = false,
 ): Required<Pick<BrowserSnapshotInput, "url" | "timeoutMs" | "maxBytes">> & Pick<BrowserFormSubmitInput, "formIndex" | "formId" | "formName" | "fields" | "allowCrossOrigin"> {
   if (!isRecord(input) || typeof input.url !== "string" || !input.url.trim()) {
     throw new Error("browser_form_submit requires a non-empty url.");
   }
   const parsed: Required<Pick<BrowserSnapshotInput, "url" | "timeoutMs" | "maxBytes">> & Pick<BrowserFormSubmitInput, "formIndex" | "formId" | "formName" | "fields" | "allowCrossOrigin"> = {
-    url: normalizeBrowserUrl(input.url),
+    url: normalizeBrowserUrl(input.url, allowPrivateHosts),
     timeoutMs: typeof input.timeoutMs === "number"
       ? Math.min(MAX_TIMEOUT_MS, Math.max(100, Math.floor(input.timeoutMs)))
       : DEFAULT_TIMEOUT_MS,
@@ -721,7 +738,7 @@ function readSubmitFields(value: Record<string, unknown>): Record<string, string
   return fields;
 }
 
-function normalizeBrowserUrl(value: string): string {
+function normalizeBrowserUrl(value: string, allowPrivateHosts = false): string {
   const trimmed = value.trim();
   const url = new URL(trimmed);
   if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -730,7 +747,63 @@ function normalizeBrowserUrl(value: string): string {
   if (url.username || url.password) {
     throw new Error("browser_snapshot URL must not include credentials.");
   }
+  if (!allowPrivateHosts) {
+    assertPublicBrowserHost(url.hostname);
+  }
   return url.toString();
+}
+
+function assertPublicBrowserHost(hostname: string): void {
+  const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host) {
+    throw new Error("browser tools require a hostname.");
+  }
+  if (host === "localhost" || host.endsWith(".localhost")) {
+    throw new Error("browser tools cannot access localhost.");
+  }
+  const ipVersion = isIP(host);
+  if (ipVersion === 4 && isBlockedIpv4(host)) {
+    throw new Error("browser tools cannot access private or link-local IPv4 addresses.");
+  }
+  if (ipVersion === 6 && isBlockedIpv6(host)) {
+    throw new Error("browser tools cannot access private or link-local IPv6 addresses.");
+  }
+}
+
+function isBlockedIpv4(host: string): boolean {
+  const parts = host.split(".").map(part => Number(part));
+  if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false;
+  }
+  const a = parts[0]!;
+  const b = parts[1]!;
+  if (a === 0 || a === 127 || a === 10) {
+    return true;
+  }
+  if (a === 169 && b === 254) {
+    return true;
+  }
+  if (a === 172 && b >= 16 && b <= 31) {
+    return true;
+  }
+  if (a === 192 && b === 168) {
+    return true;
+  }
+  return false;
+}
+
+function isBlockedIpv6(host: string): boolean {
+  const normalized = host.toLowerCase();
+  if (normalized === "::1") {
+    return true;
+  }
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) {
+    return true;
+  }
+  if (normalized.startsWith("fe80:")) {
+    return true;
+  }
+  return false;
 }
 
 function decodeHtmlEntities(value: string): string {

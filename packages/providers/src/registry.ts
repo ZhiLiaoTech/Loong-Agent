@@ -1,15 +1,18 @@
-import { normalizeProviderModelEntries } from "@dragon/model-catalog";
+import { normalizeProviderModelEntries, type DragonModelCatalog } from "@dragon/model-catalog";
 import type { ModelProvider, ProviderRegistry, ProviderResolution } from "./types.js";
 
 export interface ProviderRegistryOptions {
   defaultProviderId?: string;
+  modelCatalog?: DragonModelCatalog;
 }
 
 export class DefaultProviderRegistry implements ProviderRegistry {
   readonly #providers = new Map<string, ModelProvider>();
+  readonly #modelCatalog: DragonModelCatalog | undefined;
   #defaultProviderId: string | undefined;
 
   constructor(providers: ModelProvider[] = [], options: ProviderRegistryOptions = {}) {
+    this.#modelCatalog = options.modelCatalog;
     for (const provider of providers) {
       this.register(provider);
     }
@@ -60,14 +63,16 @@ export class DefaultProviderRegistry implements ProviderRegistry {
         return explicit;
       }
 
-      for (const provider of this.#providers.values()) {
-        if (provider.canHandleModel?.(requestedModel)) {
-          return {
-            provider,
-            model: provider.normalizeModel?.(requestedModel) ?? requestedModel,
-            requestedModel,
-          };
+      const matches = this.#resolveBareModelMatches(requestedModel);
+      if (matches.length === 1) {
+        return matches[0];
+      }
+      if (matches.length > 1) {
+        const catalogMatch = this.#resolveCatalogMatch(requestedModel);
+        if (catalogMatch !== undefined) {
+          return catalogMatch;
         }
+        return matches[0];
       }
     }
 
@@ -93,6 +98,36 @@ export class DefaultProviderRegistry implements ProviderRegistry {
 
   list(): ModelProvider[] {
     return [...this.#providers.values()];
+  }
+
+  #resolveBareModelMatches(requestedModel: string): ProviderResolution[] {
+    const matches: ProviderResolution[] = [];
+    for (const provider of this.#providers.values()) {
+      if (provider.canHandleModel?.(requestedModel)) {
+        matches.push({
+          provider,
+          model: provider.normalizeModel?.(requestedModel) ?? requestedModel,
+          requestedModel,
+        });
+      }
+    }
+    return matches;
+  }
+
+  #resolveCatalogMatch(requestedModel: string): ProviderResolution | undefined {
+    const entry = this.#modelCatalog?.resolve(requestedModel);
+    if (!entry) {
+      return undefined;
+    }
+    const provider = this.#providers.get(entry.providerId);
+    if (!provider) {
+      return undefined;
+    }
+    return {
+      provider,
+      model: provider.normalizeModel?.(entry.id) ?? entry.id,
+      requestedModel,
+    };
   }
 
   #resolveExplicitProvider(modelRef: string): ProviderResolution | "invalid" | undefined {

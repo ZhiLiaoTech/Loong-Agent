@@ -1,0 +1,117 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.refresh {
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.workspaceField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.workspaceField input {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.tableWrap {
+  overflow: auto;
+  max-height: 360px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th,
+.table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.description {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.access {
+  margin: 0;
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+}
+
+.secondary {
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.result {
+  margin: var(--space-3) 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: var(--text-xs);
+  background: var(--soft);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}

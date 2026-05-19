@@ -137,43 +137,68 @@ export function parseSlackWebhook(payload: unknown): DragonChannelMessage | unde
   };
 }
 
+export interface PostGatewayWebhookOptions {
+  gatewayUrl: string;
+  sharedSecret?: string;
+  body: unknown;
+  fetchImpl?: typeof fetch;
+}
+
+export interface PostGatewayWebhookResult {
+  ok: boolean;
+  status: number;
+  error?: string;
+  payload?: unknown;
+}
+
+export async function postGatewayWebhook(options: PostGatewayWebhookOptions): Promise<PostGatewayWebhookResult> {
+  const gatewayUrl = normalizeGatewayUrl(options.gatewayUrl);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let response: Response;
+  try {
+    response = await fetchImpl(`${gatewayUrl}/channels/webhook`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(options.sharedSecret !== undefined ? { authorization: `Bearer ${options.sharedSecret}` } : {}),
+      },
+      body: JSON.stringify(options.body),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const payload = await readResponsePayload(response);
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      error: readResponseError(payload) ?? `Gateway webhook delivery failed with HTTP ${response.status}.`,
+      ...(payload !== undefined ? { payload } : {}),
+    };
+  }
+  return {
+    ok: true,
+    status: response.status,
+    ...(payload !== undefined ? { payload } : {}),
+  };
+}
+
 export function createGatewayWebhookChannelTarget(options: GatewayWebhookChannelTargetOptions): DragonChannelDeliveryTarget {
   const gatewayUrl = normalizeGatewayUrl(options.gatewayUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
   return {
     async deliver(message, deliveryOptions = {}) {
       const payload = toGatewayWebhookPayload(message, mergeGatewayOptions(options.defaults, deliveryOptions));
-      let response: Response;
-      try {
-        response = await fetchImpl(`${gatewayUrl}/channels/webhook`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            ...(options.sharedSecret !== undefined ? { authorization: `Bearer ${options.sharedSecret}` } : {}),
-          },
-          body: JSON.stringify(payload),
-        });
-      } catch (error) {
-        return {
-          ok: false,
-          status: 0,
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
-      const responsePayload = await readResponsePayload(response);
-      if (!response.ok) {
-        return {
-          ok: false,
-          status: response.status,
-          error: readResponseError(responsePayload) ?? `Gateway webhook delivery failed with HTTP ${response.status}.`,
-          ...(responsePayload !== undefined ? { payload: responsePayload } : {}),
-        };
-      }
-      return {
-        ok: true,
-        status: response.status,
-        ...(responsePayload !== undefined ? { payload: responsePayload } : {}),
-      };
+      return await postGatewayWebhook({
+        gatewayUrl,
+        ...(options.sharedSecret !== undefined ? { sharedSecret: options.sharedSecret } : {}),
+        body: payload,
+        fetchImpl,
+      });
     },
   };
 }

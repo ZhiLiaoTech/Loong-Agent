@@ -39,6 +39,9 @@ in TypeScript where they fit the framework.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [docs/REUSE_PLAN.md](docs/REUSE_PLAN.md) for the implementation plan.
+See [docs/TECHNICAL_ARCHITECTURE.md](docs/TECHNICAL_ARCHITECTURE.md) and
+[docs/modules/README.md](docs/modules/README.md) for the overall technical design
+and per-module technical specifications with code review notes.
 See [docs/PLUGINS.md](docs/PLUGINS.md) for the plugin authoring and loading
 notes.
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for local Gateway smoke testing

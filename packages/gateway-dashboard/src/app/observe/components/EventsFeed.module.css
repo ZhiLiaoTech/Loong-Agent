@@ -1,0 +1,113 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.status {
+  font-size: var(--text-xs);
+  text-transform: lowercase;
+  color: var(--muted);
+}
+
+.status-live {
+  color: var(--ok);
+}
+
+.status-connecting {
+  color: #3b82f6;
+}
+
+.status-error {
+  color: var(--danger);
+}
+
+.refresh {
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  flex: 1;
+  max-height: 420px;
+}
+
+.item {
+  border-left: 3px solid var(--line);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.type-lifecycle { border-left-color: #3b82f6; }
+.type-assistant_delta { border-left-color: var(--ok); }
+.type-tool { border-left-color: #8b5cf6; }
+.type-permission { border-left-color: #f59e0b; }
+.type-error { border-left-color: var(--danger); }
+
+.line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.time {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.meta {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.detail {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--text-xs);
+  background: var(--soft);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}

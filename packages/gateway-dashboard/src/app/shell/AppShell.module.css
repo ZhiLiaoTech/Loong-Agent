@@ -1,0 +1,93 @@
+.shell {
+  --sidebar-width: 212px;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--text);
+  position: relative;
+}
+
+.sidebarSlot {
+  min-height: 100vh;
+}
+
+.mainColumn {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.content {
+  flex: 1;
+  padding: var(--space-5) var(--space-6) var(--space-7);
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .content > * {
+    animation: pageEnter var(--transition-page) both;
+  }
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.backdrop {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shell:not(.navOpen) .sidebarSlot {
+    display: none;
+  }
+
+  .shell.navOpen .sidebarSlot {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: min(280px, 86vw);
+    box-shadow: var(--shadow-md);
+    animation: slideIn var(--transition-normal) ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateX(-12px);
+      opacity: 0;
+    }
+
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: rgba(15, 23, 42, 0.35);
+    cursor: pointer;
+  }
+}

@@ -68,6 +68,7 @@ export async function loadDragonPlugin(
 ): Promise<LoadedDragonPlugin> {
   const rootDir = await resolvePluginRoot(pluginRoot);
   const manifest = await readPluginManifest(rootDir, options.manifestFile ?? DEFAULT_MANIFEST_FILE);
+  assertDragonVersionCompatible(manifest.dragonVersion);
   const entryPath = await resolvePluginEntry(rootDir, manifest.entry);
   const moduleUrl = pathToFileURL(entryPath).href;
   const plugin = normalizePluginModule(await import(moduleUrl), manifest);
@@ -177,6 +178,21 @@ async function readPluginManifest(rootDir: string, manifestFile: string): Promis
   }
   const value = JSON.parse(stripBom(await readFile(manifestPath, "utf8")));
   return validateManifest(value);
+}
+
+const HOST_DRAGON_VERSION = "0.0.0";
+
+function assertDragonVersionCompatible(required?: string): void {
+  if (!required) {
+    return;
+  }
+  const hostMajor = HOST_DRAGON_VERSION.split(".", 1)[0];
+  const requiredMajor = required.split(".", 1)[0];
+  if (!hostMajor || !requiredMajor || hostMajor !== requiredMajor) {
+    throw new Error(
+      `Plugin requires Dragon ${required}, but the host is Dragon ${HOST_DRAGON_VERSION}.`,
+    );
+  }
 }
 
 function validateManifest(value: unknown): DragonPluginManifest {

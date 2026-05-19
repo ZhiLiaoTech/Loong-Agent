@@ -883,7 +883,26 @@ export class FileMemoryStore implements MemoryStore {
     await assertCanAppendFile(this.#filePath, Buffer.byteLength(`${serialized}\n`, "utf8"), this.#maxFileBytes, "Memory file");
     await mkdir(this.#rootDir, { recursive: true });
     await appendFile(this.#filePath, `${serialized}\n`, "utf8");
+    await this.#pruneRecordsIfNeeded();
     return memoryRecord;
+  }
+
+  async #pruneRecordsIfNeeded(): Promise<void> {
+    let content: string;
+    try {
+      content = await readFile(this.#filePath, "utf8");
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        return;
+      }
+      throw error;
+    }
+    const lines = content.split(/\r?\n/).filter(line => line.trim());
+    if (lines.length <= this.#maxRecords) {
+      return;
+    }
+    const kept = lines.slice(-this.#maxRecords);
+    await writeFile(this.#filePath, `${kept.join("\n")}\n`, "utf8");
   }
 
   async get(id: string): Promise<MemoryRecord | undefined> {

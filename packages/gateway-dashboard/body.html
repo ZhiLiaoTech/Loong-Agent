@@ -1,0 +1,379 @@
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>Dragon</h1>
+        <p>Gateway</p>
+      </div>
+      <nav class="nav" aria-label="Dashboard views">
+        <button class="nav-item" data-tab="run" aria-selected="true">Run <span id="runCount" class="count">0</span></button>
+        <button class="nav-item" data-tab="models" aria-selected="false">Models <span id="modelConfigCount" class="count">0</span></button>
+        <button class="nav-item" data-tab="agents" aria-selected="false">Agents <span id="agentProfileCount" class="count">0</span></button>
+        <button class="nav-item" data-tab="observe" aria-selected="false">Observe <span id="eventCount" class="count">0</span></button>
+        <button class="nav-item" data-tab="system" aria-selected="false">System</button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="topbar-title">
+          <div class="status"><span id="healthDot" class="dot"></span><span id="healthText">checking</span></div>
+          <span class="subtle" id="eventStatus">connecting</span>
+        </div>
+        <div class="secret-wrap">
+          <label for="secret">Shared Secret</label>
+          <input id="secret" type="password" autocomplete="off" placeholder="optional">
+        </div>
+      </div>
+
+      <div class="content">
+        <section id="runPanel" class="active" data-panel="run">
+          <div class="grid-2">
+            <div class="section">
+              <div class="section-head">
+                <h2>Run</h2>
+                <button id="sendBtn">Send</button>
+              </div>
+              <div class="composer">
+                <div class="grid-4">
+                  <div>
+                    <label for="runProfile">Profile</label>
+                    <select id="runProfile"></select>
+                  </div>
+                  <div>
+                    <label for="sessionId">Session</label>
+                    <input id="sessionId" value="dashboard" autocomplete="off">
+                  </div>
+                  <div>
+                    <label for="model">Model</label>
+                    <input id="model" list="modelSuggestions" autocomplete="off" placeholder="optional">
+                    <datalist id="modelSuggestions"></datalist>
+                  </div>
+                  <div>
+                    <label for="thinking">Thinking</label>
+                    <select id="thinking">
+                      <option value="">Default</option>
+                      <option value="none">None</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label for="workspace">Workspace</label>
+                  <input id="workspace" autocomplete="off" placeholder="optional">
+                </div>
+                <div class="message-field">
+                  <label for="message">Message</label>
+                  <textarea id="message"></textarea>
+                </div>
+                <pre id="runOutput" class="result-box"></pre>
+              </div>
+            </div>
+            <div class="section">
+              <div class="overview">
+                <div class="metric"><span>Runs</span><strong id="metricRuns">0</strong></div>
+                <div class="metric"><span>Active</span><strong id="metricActive">0</strong></div>
+                <div class="metric"><span>Providers</span><strong id="metricProviders">0</strong></div>
+                <div class="metric"><span>Plugins</span><strong id="metricPlugins">0</strong></div>
+                <div class="metric"><span>Tools</span><strong id="metricTools">0</strong></div>
+              </div>
+              <div class="section" style="margin-top:18px;">
+                <div class="section-head">
+                  <h2>Recent Runs</h2>
+                  <button id="refreshRunsBtn" class="secondary">Refresh</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>State</th><th>Run</th><th>Preview</th><th></th></tr></thead>
+                    <tbody id="runsBody"></tbody>
+                  </table>
+                </div>
+                <div id="runsEmpty" class="empty">No runs yet.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="modelsPanel" data-panel="models">
+          <div class="section">
+            <div class="section-head">
+              <h2>Models</h2>
+              <div class="right-actions">
+                <button id="refreshModelConfigBtn" class="secondary">Refresh</button>
+                <button id="saveModelConfigBtn">Save</button>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <div class="grid-3">
+                  <div>
+                    <label for="modelProviderType">Type</label>
+                    <select id="modelProviderType">
+                      <option value="openai-compatible">OpenAI Compatible</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="modelProviderId">Provider ID</label>
+                    <input id="modelProviderId" autocomplete="off" placeholder="openai">
+                  </div>
+                  <div>
+                    <label for="modelProviderName">Display Name</label>
+                    <input id="modelProviderName" autocomplete="off" placeholder="OpenAI">
+                  </div>
+                  <div>
+                    <label for="modelProviderKey">API Key</label>
+                    <input id="modelProviderKey" type="password" autocomplete="off" placeholder="leave blank to keep">
+                  </div>
+                  <div>
+                    <label for="modelProviderBaseUrl">Base URL</label>
+                    <input id="modelProviderBaseUrl" autocomplete="off" placeholder="https://api.openai.com/v1">
+                  </div>
+                  <div>
+                    <label for="modelProviderDefaultModel">Default Model</label>
+                    <input id="modelProviderDefaultModel" autocomplete="off" placeholder="gpt-4.1-mini">
+                  </div>
+                </div>
+                <div class="check-row" style="margin-top:12px;">
+                  <label><input id="modelProviderEnabled" type="checkbox" checked> Enabled</label>
+                  <label><input id="modelProviderTools" type="checkbox" checked> Tool Calling</label>
+                  <button id="upsertModelProviderBtn">Add / Update</button>
+                  <button id="clearModelProviderBtn" class="secondary">Clear</button>
+                </div>
+                <pre id="modelConfigResult" class="result-box"></pre>
+              </div>
+              <div>
+                <div class="section-head">
+                  <h2>Configured</h2>
+                  <span id="modelConfigPath" class="subtle"></span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>Provider</th><th>Type</th><th>Model</th><th>Key</th><th></th></tr></thead>
+                    <tbody id="modelConfigBody"></tbody>
+                  </table>
+                </div>
+                <div id="modelConfigEmpty" class="empty">No model providers configured.</div>
+              </div>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-head">
+              <h2>Loaded Providers</h2>
+              <button id="refreshProvidersBtn" class="secondary">Refresh</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Provider</th><th>Default Model</th><th>Models</th><th>Tools</th></tr></thead>
+                <tbody id="providersBody"></tbody>
+              </table>
+            </div>
+            <div id="providersEmpty" class="empty">No providers loaded.</div>
+          </div>
+        </section>
+
+        <section id="agentsPanel" data-panel="agents">
+          <div class="section">
+            <div class="section-head">
+              <h2>Agents</h2>
+              <div class="right-actions">
+                <button id="refreshAgentConfigBtn" class="secondary">Refresh</button>
+                <button id="saveAgentConfigBtn">Save</button>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <div class="grid-3">
+                  <div>
+                    <label for="agentProfileId">Profile ID</label>
+                    <input id="agentProfileId" autocomplete="off" placeholder="default">
+                  </div>
+                  <div>
+                    <label for="agentProfileName">Name</label>
+                    <input id="agentProfileName" autocomplete="off" placeholder="Default Agent">
+                  </div>
+                  <div>
+                    <label for="agentProfileModel">Default Model</label>
+                    <input id="agentProfileModel" list="modelSuggestions" autocomplete="off" placeholder="optional">
+                  </div>
+                  <div>
+                    <label for="agentProfileWorkspace">Workspace</label>
+                    <input id="agentProfileWorkspace" autocomplete="off" placeholder="optional">
+                  </div>
+                  <div>
+                    <label for="agentProfileThinking">Thinking</label>
+                    <select id="agentProfileThinking">
+                      <option value="">Default</option>
+                      <option value="none">None</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="agentProfileDefault">Default</label>
+                    <input id="agentProfileDefault" type="checkbox">
+                  </div>
+                </div>
+                <div style="margin-top:12px;">
+                  <label for="agentProfileDescription">Description</label>
+                  <input id="agentProfileDescription" autocomplete="off" placeholder="optional">
+                </div>
+                <div style="margin-top:12px;">
+                  <label for="agentProfilePrompt">Instructions</label>
+                  <textarea id="agentProfilePrompt"></textarea>
+                </div>
+                <div class="check-row" style="margin-top:12px;">
+                  <label><input id="agentProfileMemory" type="checkbox" checked> Memory</label>
+                  <label><input id="agentProfileTools" type="checkbox" checked> Tools</label>
+                  <button id="upsertAgentProfileBtn">Add / Update</button>
+                  <button id="clearAgentProfileBtn" class="secondary">Clear</button>
+                </div>
+                <pre id="agentConfigResult" class="result-box"></pre>
+              </div>
+              <div>
+                <div class="section-head">
+                  <h2>Profiles</h2>
+                  <span id="agentConfigPath" class="subtle"></span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>Profile</th><th>Model</th><th>Workspace</th><th></th></tr></thead>
+                    <tbody id="agentProfilesBody"></tbody>
+                  </table>
+                </div>
+                <div id="agentProfilesEmpty" class="empty">No agent profiles configured.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="observePanel" data-panel="observe">
+          <div class="section">
+            <div class="section-head">
+              <h2>Runs</h2>
+              <button id="refreshRunsObserveBtn" class="secondary">Refresh</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>State</th><th>Run</th><th>Preview</th><th></th></tr></thead>
+                <tbody id="runsObserveBody"></tbody>
+              </table>
+            </div>
+            <div id="runsObserveEmpty" class="empty">No runs yet.</div>
+          </div>
+          <div class="grid-2">
+            <div class="section">
+              <div class="section-head">
+                <h2>Events</h2>
+                <button id="reconnectBtn" class="secondary">Reconnect</button>
+              </div>
+              <div id="events" class="events"></div>
+            </div>
+            <div class="section">
+              <div class="section-head">
+                <h2>Memory</h2>
+                <button id="refreshMemoryBtn" class="secondary">Refresh</button>
+              </div>
+              <div id="memoryCandidates"></div>
+              <div id="memoryEmpty" class="empty">No pending memory candidates.</div>
+              <pre id="memoryResult" class="result-box"></pre>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-head">
+              <h2>Trajectory</h2>
+              <button id="refreshTrajectoryBtn" class="secondary">Refresh</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Status</th><th>Run</th><th>Prompt</th><th></th></tr></thead>
+                <tbody id="trajectoryBody"></tbody>
+              </table>
+            </div>
+            <div id="trajectoryEmpty" class="empty">No trajectory for this session.</div>
+            <pre id="trajectoryDetail" class="result-box"></pre>
+          </div>
+        </section>
+
+        <section id="systemPanel" data-panel="system">
+          <div class="grid-2">
+            <div class="section">
+              <div class="section-head">
+                <h2>Gateway</h2>
+                <button id="refreshHealthBtn" class="secondary">Refresh</button>
+              </div>
+              <div class="kv" id="healthDetails"></div>
+            </div>
+            <div class="section">
+              <div class="section-head">
+                <h2>Cron</h2>
+                <div class="right-actions">
+                  <button id="tickCronBtn" class="secondary">Tick</button>
+                  <button id="refreshCronBtn" class="secondary">Refresh</button>
+                </div>
+              </div>
+              <div class="grid-3">
+                <div>
+                  <label for="cronId">Job</label>
+                  <input id="cronId" autocomplete="off" placeholder="daily-review">
+                </div>
+                <div>
+                  <label for="cronSchedule">Schedule</label>
+                  <input id="cronSchedule" autocomplete="off" placeholder="0 9 * * *">
+                </div>
+                <div>
+                  <label for="cronSession">Session</label>
+                  <input id="cronSession" autocomplete="off" value="cron">
+                </div>
+              </div>
+              <div style="margin-top:12px;">
+                <label for="cronMessage">Message</label>
+                <input id="cronMessage" autocomplete="off" placeholder="Run scheduled task">
+              </div>
+              <div class="check-row" style="margin-top:12px;">
+                <label><input id="cronEnabled" type="checkbox" checked> Enabled</label>
+                <button id="saveCronBtn">Save Job</button>
+              </div>
+              <div class="table-wrap" style="margin-top:12px;">
+                <table>
+                  <thead><tr><th>Job</th><th>Schedule</th><th>Next</th><th></th></tr></thead>
+                  <tbody id="cronBody"></tbody>
+                </table>
+              </div>
+              <div id="cronEmpty" class="empty">No cron jobs configured.</div>
+              <pre id="cronResult" class="result-box"></pre>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="section">
+              <div class="section-head">
+                <h2>Plugins</h2>
+                <button id="refreshPluginsBtn" class="secondary">Refresh</button>
+              </div>
+              <div id="plugins"></div>
+              <div id="pluginsEmpty" class="empty">No plugins loaded.</div>
+            </div>
+            <div class="section">
+              <div class="section-head">
+                <h2>Tools</h2>
+                <button id="refreshToolsBtn" class="secondary">Refresh</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Tool</th><th>Access</th><th></th></tr></thead>
+                  <tbody id="toolsBody"></tbody>
+                </table>
+              </div>
+              <div id="toolsEmpty" class="empty">No tools available.</div>
+              <pre id="toolResult" class="result-box"></pre>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+  

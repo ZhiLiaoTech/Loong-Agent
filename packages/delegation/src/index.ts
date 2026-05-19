@@ -92,6 +92,7 @@ const MAX_TASKS = 100;
 const MAX_CONCURRENCY = 16;
 const MAX_DEPENDENCY_OUTPUT_CHARS = 4000;
 const DEFAULT_TOOL_MAX_TASKS = 8;
+const MAX_DELEGATION_DEPTH = 2;
 const ABSOLUTE_TOOL_MAX_TASKS = 32;
 const DEFAULT_TOOL_MAX_CONCURRENCY = 3;
 
@@ -285,6 +286,10 @@ export function createRuntimeDelegationTool(
         if (runtime === undefined) {
           throw new Error("delegation_run runtime is not ready.");
         }
+        const parentDepth = readDelegationDepth(invocation.metadata);
+        if (parentDepth >= MAX_DELEGATION_DEPTH) {
+          throw new Error(`delegation_run cannot nest deeper than ${MAX_DELEGATION_DEPTH} levels.`);
+        }
         const plan = createDelegationPlan(input.tasks);
         const sessionPrefix = normalizeText(
           input.sessionPrefix ?? options.defaultSessionPrefix ?? `${invocation.sessionId}:delegate`,
@@ -294,10 +299,12 @@ export function createRuntimeDelegationTool(
         const workspace = input.workspace ?? options.defaultWorkspace ?? invocation.workspace;
         const model = input.model ?? options.defaultModel;
         const metadata = {
+          ...(isRecord(invocation.metadata) ? invocation.metadata : {}),
           parentSessionId: invocation.sessionId,
           parentToolCallId: invocation.id,
           parentToolName: invocation.name,
           ...(typeof invocation.metadata?.runId === "string" ? { parentRunId: invocation.metadata.runId } : {}),
+          delegationDepth: parentDepth + 1,
         };
         const executor = createRuntimeDelegatedTaskExecutor({
           runtime,
@@ -421,6 +428,14 @@ function readString(value: unknown, label: string): string {
     throw new Error(`${label} must be a string.`);
   }
   return value;
+}
+
+function readDelegationDepth(metadata: Record<string, unknown> | undefined): number {
+  const depth = metadata?.delegationDepth;
+  if (typeof depth !== "number" || !Number.isFinite(depth) || depth < 0) {
+    return 0;
+  }
+  return Math.floor(depth);
 }
 
 function resolveRuntime(runtime: DragonRuntimeDelegationToolOptions["runtime"]): DragonAgentRuntime | undefined {

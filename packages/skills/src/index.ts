@@ -32,6 +32,8 @@ export interface SkillRuntime {
 
 export interface FileSkillRuntimeOptions {
   roots: string[];
+  /** Writable skill root. Defaults to the first entry in `roots`. */
+  writableRoot?: string;
   maxSkills?: number;
   maxDepth?: number;
   maxVisitedEntries?: number;
@@ -423,6 +425,7 @@ function summarizeText(value: string, maxChars: number): string {
 
 export class FileSkillRuntime implements SkillRuntime {
   readonly #roots: string[];
+  readonly #writableRootPath: string;
   readonly #maxSkills: number;
   readonly #maxDepth: number;
   readonly #maxVisitedEntries: number;
@@ -436,6 +439,10 @@ export class FileSkillRuntime implements SkillRuntime {
       throw new Error("FileSkillRuntime requires at least one root.");
     }
     this.#roots = options.roots.map(root => path.resolve(root));
+    this.#writableRootPath = path.resolve(options.writableRoot ?? this.#roots[0]!);
+    if (!this.#roots.some(root => root === this.#writableRootPath)) {
+      throw new Error("FileSkillRuntime writableRoot must be one of the configured roots.");
+    }
     this.#maxSkills = clampPositiveInteger(options.maxSkills, DEFAULT_MAX_SKILLS, 500);
     this.#maxDepth = clampPositiveInteger(options.maxDepth, DEFAULT_MAX_DEPTH, 12);
     this.#maxVisitedEntries = clampPositiveInteger(
@@ -498,7 +505,7 @@ export class FileSkillRuntime implements SkillRuntime {
 
   async create(skill: Omit<LoadedSkill, "path">): Promise<SkillSummary> {
     try {
-      const root = await this.#writableRoot();
+      const root = await this.#resolveWritableRoot();
       const draft = normalizeSkillDraft(skill, this.#maxSkillBytes, this.#maxReferences, this.#maxReferenceBytes);
       const existing = await this.#index().catch(() => []);
       if (existing.some(entry => entry.summary.name === draft.name)) {
@@ -579,8 +586,8 @@ export class FileSkillRuntime implements SkillRuntime {
     return sortSkills(entries);
   }
 
-  async #writableRoot(): Promise<string> {
-    const root = this.#roots[0];
+  async #resolveWritableRoot(): Promise<string> {
+    const root = this.#writableRootPath;
     if (root === undefined) {
       throw new SkillRuntimeError("FileSkillRuntime requires at least one root.");
     }
