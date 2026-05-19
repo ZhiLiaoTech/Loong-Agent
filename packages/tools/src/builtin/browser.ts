@@ -175,14 +175,13 @@ async function fetchBrowserSnapshot(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
   try {
-    const response = await fetchImpl(input.url, {
-      redirect: "follow",
+    const response = await safeBrowserFetch(fetchImpl, input.url, {
       signal: controller.signal,
       headers: {
         accept: "text/html, text/plain;q=0.9, */*;q=0.1",
         "user-agent": "Dragon/0.0 browser_snapshot",
       },
-    });
+    }, browserOptions.allowPrivateHosts);
     const contentType = response.headers.get("content-type") ?? undefined;
     const body = await readBoundedText(response, input.maxBytes);
     const finalUrl = response.url || input.url;
@@ -213,7 +212,7 @@ async function submitBrowserForm(
   input: Required<Pick<BrowserSnapshotInput, "url" | "timeoutMs" | "maxBytes">> & Pick<BrowserFormSubmitInput, "formIndex" | "formId" | "formName" | "fields" | "allowCrossOrigin">,
   browserOptions: BrowserFetchOptions,
 ): Promise<BrowserFormSubmitOutput> {
-  const page = await fetchHtmlPage(fetchImpl, input);
+  const page = await fetchHtmlPage(fetchImpl, input, browserOptions);
   const forms = extractFormsWithSecrets(page.html, page.finalUrl);
   const selected = selectForm(forms, input);
   const formData = buildSubmissionFields(selected.form, input.fields ?? {});
@@ -240,18 +239,18 @@ async function submitBrowserForm(
 async function fetchHtmlPage(
   fetchImpl: typeof fetch,
   input: Required<Pick<BrowserSnapshotInput, "url" | "timeoutMs" | "maxBytes">>,
+  browserOptions: BrowserFetchOptions,
 ): Promise<{ html: string; finalUrl: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
   try {
-    const response = await fetchImpl(input.url, {
-      redirect: "follow",
+    const response = await safeBrowserFetch(fetchImpl, input.url, {
       signal: controller.signal,
       headers: {
         accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
         "user-agent": "Dragon/0.0 browser_form_submit",
       },
-    });
+    }, browserOptions.allowPrivateHosts);
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.toLowerCase().includes("html")) {
       throw new Error("browser_form_submit requires an HTML page.");
@@ -281,7 +280,6 @@ async function submitSelectedForm(
     throw new Error(`browser_form_submit only supports application/x-www-form-urlencoded forms, got ${form.enctype}.`);
   }
   const init: RequestInit = {
-    redirect: "follow",
     headers: {
       accept: "text/html, text/plain;q=0.9, */*;q=0.1",
       "user-agent": "Dragon/0.0 browser_form_submit",
@@ -306,7 +304,7 @@ async function submitSelectedForm(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
-    const response = await fetchImpl(action.toString(), { ...init, signal: controller.signal });
+    const response = await safeBrowserFetch(fetchImpl, action.toString(), { ...init, signal: controller.signal }, options.browserOptions.allowPrivateHosts);
     const contentType = response.headers.get("content-type") ?? undefined;
     const body = await readBoundedText(response, options.maxBytes);
     const finalUrl = response.url || action.toString();
@@ -425,12 +423,16 @@ function extractLinks(html: string, baseUrl: string): BrowserSnapshotLink[] {
   while ((match = pattern.exec(html)) !== null && links.length < MAX_LINKS + 1) {
     const attrs = match[1] ?? "";
     const href = readAttribute(attrs, "href");
-    if (!href || href.startsWith("#") || /^javascript:/i.test(href)) {
+    if (!href || href.startsWith("#") || /^(?:javascript|data|vbscript|file|gopher|ftp):/i.test(href)) {
       continue;
     }
     let resolved: string;
     try {
-      resolved = new URL(href, baseUrl).toString();
+      const candidate = new URL(href, baseUrl);
+      if (candidate.protocol !== "http:" && candidate.protocol !== "https:" && candidate.protocol !== "mailto:" && candidate.protocol !== "tel:") {
+        continue;
+      }
+      resolved = candidate.toString();
     } catch {
       continue;
     }
@@ -741,16 +743,62 @@ function readSubmitFields(value: Record<string, unknown>): Record<string, string
 function normalizeBrowserUrl(value: string, allowPrivateHosts = false): string {
   const trimmed = value.trim();
   const url = new URL(trimmed);
+  assertSafeBrowserTarget(url, allowPrivateHosts);
+  return url.toString();
+}
+
+function assertSafeBrowserTarget(url: URL, allowPrivateHosts: boolean): void {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("browser_snapshot only supports HTTP(S) URLs.");
+    throw new Error(`browser tools only support HTTP(S), got ${url.protocol}`);
   }
   if (url.username || url.password) {
-    throw new Error("browser_snapshot URL must not include credentials.");
+    throw new Error("browser tools URL must not include credentials.");
   }
   if (!allowPrivateHosts) {
     assertPublicBrowserHost(url.hostname);
   }
-  return url.toString();
+}
+
+const MAX_BROWSER_REDIRECTS = 5;
+
+// Manual redirect follower so we can (a) cap the number of hops and
+// (b) re-validate every intermediate URL against the same host policy as
+// the initial target. Standard fetch's redirect: "follow" silently chases
+// up to 20 hops without revalidation, which is an SSRF vector for an
+// agent-invoked tool.
+async function safeBrowserFetch(
+  fetchImpl: typeof fetch,
+  startUrl: string,
+  init: RequestInit,
+  allowPrivateHosts: boolean,
+): Promise<Response> {
+  let currentUrl = new URL(startUrl);
+  assertSafeBrowserTarget(currentUrl, allowPrivateHosts);
+  let lastResponse: Response | undefined;
+  for (let hop = 0; hop <= MAX_BROWSER_REDIRECTS; hop += 1) {
+    const response = await fetchImpl(currentUrl.toString(), { ...init, redirect: "manual" });
+    if (response.status < 300 || response.status >= 400) {
+      return response;
+    }
+    const location = response.headers.get("location");
+    if (!location) {
+      return response;
+    }
+    if (hop === MAX_BROWSER_REDIRECTS) {
+      throw new Error(`browser fetch exceeded ${MAX_BROWSER_REDIRECTS} redirects.`);
+    }
+    let nextUrl: URL;
+    try {
+      nextUrl = new URL(location, currentUrl);
+    } catch {
+      throw new Error(`browser fetch received an invalid redirect Location: ${location}`);
+    }
+    assertSafeBrowserTarget(nextUrl, allowPrivateHosts);
+    try { await response.body?.cancel(); } catch { /* ignore */ }
+    currentUrl = nextUrl;
+    lastResponse = response;
+  }
+  return lastResponse ?? await fetchImpl(currentUrl.toString(), { ...init, redirect: "manual" });
 }
 
 function assertPublicBrowserHost(hostname: string): void {

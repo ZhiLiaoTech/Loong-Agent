@@ -13,12 +13,37 @@ export interface ModelToolCall {
   function?: ModelToolCallFunction;
 }
 
+export interface ModelTextContentPart {
+  type: "text";
+  text: string;
+}
+
+export interface ModelImageContentPart {
+  type: "image";
+  mimeType: string;
+  /** base64-encoded image bytes (no `data:` prefix) */
+  dataBase64: string;
+}
+
+export type ModelContentPart = ModelTextContentPart | ModelImageContentPart;
+
 export interface ModelMessage {
   role: ModelMessageRole;
-  content?: string;
+  /**
+   * For text-only messages this stays a string (back-compat). For multimodal
+   * user/assistant messages (image input, etc.) callers pass an array of
+   * content parts. Provider adapters translate to their wire format.
+   */
+  content?: string | ModelContentPart[];
   name?: string;
   toolCallId?: string;
   toolCalls?: ModelToolCall[];
+  /**
+   * Thinking-mode chain-of-thought tokens emitted by reasoning models
+   * (DeepSeek V4 Pro, OpenAI o1, etc.). Some providers require this to be
+   * echoed back on the next turn — providers that don't, ignore it.
+   */
+  reasoningContent?: string;
 }
 
 export interface ModelRequest {
@@ -36,6 +61,12 @@ export interface ModelResponse {
   text?: string;
   toolCalls?: ModelToolCall[];
   streamedText?: boolean;
+  /**
+   * Chain-of-thought tokens emitted by reasoning models. The runtime preserves
+   * this on the assistant message so providers that require it on follow-up
+   * turns (DeepSeek V4 Pro thinking mode) get it echoed back.
+   */
+  reasoningContent?: string;
   usage?: {
     inputTokens?: number;
     outputTokens?: number;

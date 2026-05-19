@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useDragonEvents } from "../events/EventsContext.js";
 import { ChatTranscript } from "./components/ChatTranscript.js";
-import { Composer } from "./components/Composer.js";
+import { Composer, type ComposerAttachment } from "./components/Composer.js";
 import { ProfilePreview } from "./components/ProfilePreview.js";
 import { RecentRunsList } from "./components/RecentRunsList.js";
 import { RunInspector } from "./components/RunInspector.js";
@@ -47,8 +47,8 @@ export function RunWorkspace() {
   );
 
   const handleSend = useCallback(
-    (message: string) => {
-      void chat.sendMessage(message).then(() => {
+    (message: string, attachments: ComposerAttachment[]) => {
+      void chat.sendMessage(message, attachments).then(() => {
         void catalog.refreshRuns();
       });
     },
@@ -84,6 +84,7 @@ export function RunWorkspace() {
           <RunInspector
             activeRunId={chat.activeRunId}
             lastResult={chat.lastResult}
+            lastTier={chat.lastTier}
             cancelError={chat.cancelError}
             showRaw={chat.showRaw}
             onToggleRaw={() => chat.setShowRaw(value => !value)}

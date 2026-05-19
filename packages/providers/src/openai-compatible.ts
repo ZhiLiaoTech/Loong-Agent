@@ -27,6 +27,7 @@ interface ChatCompletionResponse {
   choices?: Array<{
     message?: {
       content?: string | null;
+      reasoning_content?: string | null;
       tool_calls?: ModelToolCall[];
     };
   }>;
@@ -41,6 +42,7 @@ interface ChatCompletionStreamChunk {
   choices?: Array<{
     delta?: {
       content?: string | null;
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         index?: number;
         id?: string;
@@ -169,6 +171,7 @@ async function parseProviderResponse(response: Response, providerId: string): Pr
   }
 
   const text = choice?.message?.content ?? undefined;
+  const reasoning = choice?.message?.reasoning_content ?? undefined;
   const toolCalls = choice?.message?.tool_calls;
   if ((text === undefined || text.length === 0) && (!toolCalls || toolCalls.length === 0)) {
     throw new ProviderError({
@@ -183,6 +186,9 @@ async function parseProviderResponse(response: Response, providerId: string): Pr
   };
   if (text !== undefined) {
     modelResponse.text = text;
+  }
+  if (reasoning !== undefined && reasoning.length > 0) {
+    modelResponse.reasoningContent = reasoning;
   }
   if (toolCalls !== undefined) {
     modelResponse.toolCalls = toolCalls;
@@ -200,6 +206,7 @@ async function parseProviderStream(
 ): Promise<ModelResponse> {
   let responseId: string = crypto.randomUUID();
   let text = "";
+  let reasoning = "";
   let usage: ModelResponse["usage"];
   const toolCallDeltas = new Map<number, {
     id?: string;
@@ -226,6 +233,9 @@ async function parseProviderStream(
     if (delta.content) {
       text += delta.content;
       onTextDelta(delta.content);
+    }
+    if (delta.reasoning_content) {
+      reasoning += delta.reasoning_content;
     }
     for (const toolCall of delta.tool_calls ?? []) {
       const index = toolCall.index ?? toolCallDeltas.size;
@@ -273,6 +283,9 @@ async function parseProviderStream(
   };
   if (text) {
     modelResponse.text = text;
+  }
+  if (reasoning.length > 0) {
+    modelResponse.reasoningContent = reasoning;
   }
   if (toolCalls.length > 0) {
     modelResponse.toolCalls = toolCalls;
@@ -323,7 +336,7 @@ function toChatMessage(message: ModelMessage): Record<string, unknown> {
     role: message.role,
   };
   if (message.content !== undefined) {
-    chatMessage.content = message.content;
+    chatMessage.content = encodeOpenAIContent(message.content);
   }
   if (message.name !== undefined) {
     chatMessage.name = message.name;
@@ -334,7 +347,31 @@ function toChatMessage(message: ModelMessage): Record<string, unknown> {
   if (message.toolCalls !== undefined) {
     chatMessage.tool_calls = message.toolCalls;
   }
+  // DeepSeek V4 Pro (thinking mode) requires reasoning_content to be echoed
+  // back on the next turn. OpenAI ignores this field, so it's safe to pass
+  // through whenever the runtime captured it from a prior assistant turn.
+  if (message.role === "assistant" && message.reasoningContent !== undefined && message.reasoningContent.length > 0) {
+    chatMessage.reasoning_content = message.reasoningContent;
+  }
   return chatMessage;
+}
+
+// OpenAI multimodal wire format:
+//   string → unchanged
+//   ContentPart[] → [{type:"text",text}, {type:"image_url",image_url:{url:"data:<mime>;base64,<...>"}}]
+function encodeOpenAIContent(content: NonNullable<ModelMessage["content"]>): unknown {
+  if (typeof content === "string") {
+    return content;
+  }
+  return content.map(part => {
+    if (part.type === "text") {
+      return { type: "text", text: part.text };
+    }
+    return {
+      type: "image_url",
+      image_url: { url: `data:${part.mimeType};base64,${part.dataBase64}` },
+    };
+  });
 }
 
 async function parseProviderJson(response: Response, providerId: string): Promise<ChatCompletionResponse> {

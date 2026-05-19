@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { postGatewayWebhook } from "@dragon/channels";
 
@@ -100,7 +100,9 @@ export interface DragonCronRunner {
 }
 
 const CRON_FIELD_COUNT = 5;
-const MAX_NEXT_RUN_MINUTES = 366 * 24 * 60;
+// Search up to ~5 years ahead so Feb-29-only schedules can find the next leap
+// year (gap is up to 4 years). 366 days was too tight for "0 0 29 2 *".
+const MAX_NEXT_RUN_MINUTES = 5 * 366 * 24 * 60;
 const DEFAULT_CRON_RUNNER_INTERVAL_MS = 30_000;
 
 export function parseCronSchedule(expression: string): DragonCronSchedule {
@@ -137,7 +139,7 @@ export function nextCronRun(expressionOrSchedule: string | DragonCronSchedule, f
     }
     candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
   }
-  throw new Error("Cron expression has no matching run within one year.");
+  throw new Error("Cron expression has no matching run within five years.");
 }
 
 export function createGatewayWebhookCronTarget(options: GatewayWebhookCronTargetOptions): DragonCronDeliveryTarget {
@@ -189,8 +191,15 @@ export function createFileCronJobStore(options: FileCronJobStoreOptions): Dragon
   async function writeRecords(records: readonly DragonCronJobRecord[]): Promise<void> {
     await mkdir(path.dirname(filePath), { recursive: true });
     const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(tempPath, `${JSON.stringify(records, null, 2)}\n`, "utf8");
-    await rename(tempPath, filePath);
+    try {
+      await writeFile(tempPath, `${JSON.stringify(records, null, 2)}\n`, "utf8");
+      await rename(tempPath, filePath);
+    } catch (error) {
+      // Best-effort cleanup so a failed write does not leave a stray .tmp
+      // file that future scans of the cron directory have to skip.
+      try { await unlink(tempPath); } catch { /* ignore secondary failure */ }
+      throw error;
+    }
   }
 
   return {

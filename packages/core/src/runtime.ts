@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
+  ModelContentPart,
   ModelMessage,
   ModelProvider,
   ModelResponse,
@@ -8,7 +9,13 @@ import type {
   ProviderResolution,
 } from "@dragon/providers";
 import { ProviderError, createProviderRegistry } from "@dragon/providers";
-import { isSensitiveKey } from "@dragon/security";
+import { isSensitiveKey, redactSecretsInText } from "@dragon/security";
+import {
+  applyTierToInput,
+  decideTier,
+  type ModelTierConfig,
+  type TierDecision,
+} from "./tiers.js";
 import type {
   ToolDefinition,
   ToolInvocation,
@@ -19,6 +26,7 @@ import type {
 import { createToolPermissionEngine, createToolRegistry, normalizeToolName } from "@dragon/tools";
 import type {
   DragonAgentRuntime,
+  DragonAttachment,
   DragonContextItem,
   DragonContextProvider,
   DragonEvent,
@@ -56,6 +64,9 @@ export interface DragonRuntimeOptions {
   maxContextChars?: number;
   /** When true (default), unresolved ask decisions deny instead of returning ask. */
   denyAskWithoutHandler?: boolean;
+  /** Optional multi-tier routing policy. When `enabled: false` or undefined,
+   * the runtime behaves as if there were no tier classifier (legacy mode). */
+  tierConfig?: ModelTierConfig;
 }
 
 interface ModelAttemptFailure {
@@ -84,6 +95,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   readonly #maxContextChars: number;
   readonly #lifecycleHookTimeoutMs: number;
   readonly #denyAskWithoutHandler: boolean;
+  #tierConfig: ModelTierConfig | undefined;
   readonly #maxToolResultChars = 64_000;
   readonly #listeners = new Set<(event: DragonEvent) => void>();
   readonly #eventCollectors = new Map<string, DragonEvent[]>();
@@ -104,6 +116,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#maxContextChars = options.maxContextChars ?? 12_000;
     this.#lifecycleHookTimeoutMs = 500;
     this.#denyAskWithoutHandler = options.denyAskWithoutHandler ?? true;
+    this.#tierConfig = options.tierConfig;
   }
 
   subscribe(listener: (event: DragonEvent) => void): () => void {
@@ -113,15 +126,69 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     };
   }
 
+  /**
+   * Hot-swap the tier scheduling config. Takes effect on the NEXT turn — runs
+   * already in flight see the previous decision. Pass `undefined` to disable
+   * tier scheduling for subsequent turns.
+   */
+  setTierConfig(config: ModelTierConfig | undefined): void {
+    this.#tierConfig = config;
+  }
+
+  /** Returns a shallow copy of the active tier config, or undefined. */
+  getTierConfig(): ModelTierConfig | undefined {
+    if (!this.#tierConfig) return undefined;
+    return JSON.parse(JSON.stringify(this.#tierConfig)) as ModelTierConfig;
+  }
+
   async runTurn(input: DragonTurnInput): Promise<DragonTurnResult> {
     const runId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
-    const userMessage = createMessage("user", input.message, createdAt, {
+    // Validate + resolve attachments BEFORE persisting the user message so we
+    // can record a stable summary in metadata even on early failure.
+    const resolvedAttachments = await resolveAttachments(input.attachments);
+    const attachmentSummary = resolvedAttachments.length > 0
+      ? summarizeAttachments(resolvedAttachments)
+      : undefined;
+    const userMessageMetadata: Record<string, unknown> = {
       source: input.source,
       workspace: input.workspace,
-    });
+    };
+    if (attachmentSummary !== undefined) {
+      userMessageMetadata.attachments = attachmentSummary;
+    }
+    const userMessage = createMessage("user", input.message, createdAt, userMessageMetadata);
     let resultMessages: DragonMessage[] = [userMessage];
     this.#eventCollectors.set(runId, []);
+
+    // Resolve tier BEFORE the lifecycle:start event so its metadata reflects
+    // the effective model/budget. The decision uses only static signals
+    // available before context providers run (message, attachments, workspace,
+    // delegation depth in metadata). The caller's explicit model always wins;
+    // tier only fills in defaults the caller did not specify.
+    let tierDecision: TierDecision | undefined;
+    let tierAdjustedMaxContextChars: number | undefined;
+    if (this.#tierConfig?.enabled) {
+      const parentTier = typeof input.metadata?.parentTier === "string"
+        ? (input.metadata.parentTier as TierDecision["tier"])
+        : undefined;
+      const delegationDepth = typeof input.metadata?.delegationDepth === "number"
+        ? input.metadata.delegationDepth
+        : undefined;
+      tierDecision = decideTier(this.#tierConfig, input, {
+        ...(parentTier !== undefined ? { inheritedTier: parentTier } : {}),
+        ...(delegationDepth !== undefined ? { delegationDepth } : {}),
+      });
+      if (tierDecision !== undefined) {
+        const tierSpec = this.#tierConfig.tiers[tierDecision.tier];
+        const applied = applyTierToInput(input, tierDecision, tierSpec);
+        // Reassign the parameter binding so downstream tool calls, persistence,
+        // and trajectory records all see the tier-resolved settings.
+        input = applied.input;
+        tierAdjustedMaxContextChars = applied.maxContextChars;
+      }
+    }
+    const turnMaxContextChars = tierAdjustedMaxContextChars ?? this.#maxContextChars;
 
     try {
       if (input.signal?.aborted) {
@@ -132,7 +199,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         type: "lifecycle",
         phase: "start",
         runId,
-        metadata: toLifecycleMetadata(input),
+        metadata: toLifecycleMetadata(input, tierDecision, turnMaxContextChars),
       });
       await this.#notifyLifecycleHooks("start", input, runId, createdAt);
       const history = input.history ?? await this.#loadSessionMessages(input.sessionId);
@@ -141,10 +208,11 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       const effectiveSystemPrompt = input.systemPrompt?.trim()
         ? `${this.#systemPrompt}\n\n${input.systemPrompt.trim()}`
         : this.#systemPrompt;
+      const userContent = buildUserMessageContent(input.message, resolvedAttachments);
       const modelMessages: ModelMessage[] = [
-        { role: "system", content: composeSystemPrompt(effectiveSystemPrompt, contextItems, this.#maxContextChars) },
+        { role: "system", content: composeSystemPrompt(effectiveSystemPrompt, contextItems, turnMaxContextChars) },
         ...toModelHistory(history),
-        { role: "user", content: input.message },
+        { role: "user", content: userContent },
       ];
 
       const modelRefs = modelAttemptRefs(input.model, this.#defaultModel, input.modelFallbacks, this.#modelFallbacks);
@@ -160,11 +228,18 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       let toolIterations = 0;
       while (providerResponse.toolCalls?.length && toolIterations < this.#maxToolIterations) {
         toolIterations += 1;
-        modelMessages.push({
+        const assistantTurn: ModelMessage = {
           role: "assistant",
           content: providerResponse.text ?? "",
           toolCalls: providerResponse.toolCalls,
-        });
+        };
+        // Echo reasoning_content back on the next turn so DeepSeek V4 Pro
+        // (thinking mode) doesn't reject the follow-up with HTTP 400. Other
+        // providers ignore the field.
+        if (providerResponse.reasoningContent !== undefined && providerResponse.reasoningContent.length > 0) {
+          assistantTurn.reasoningContent = providerResponse.reasoningContent;
+        }
+        modelMessages.push(assistantTurn);
 
         const toolCalls = providerResponse.toolCalls;
         if (input.toolsEnabled === false) {
@@ -218,6 +293,10 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         model: resolution.model,
         requestedModel: resolution.requestedModel,
       };
+      if (tierDecision !== undefined) {
+        assistantMetadata.tier = tierDecision.tier;
+        assistantMetadata.tierSource = tierDecision.source;
+      }
       if (providerResponse.toolCalls) {
         assistantMetadata.toolCalls = providerResponse.toolCalls;
       }
@@ -420,16 +499,18 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     messages: ModelMessage[],
     input: DragonTurnInput,
     runId: string,
-    streamDeltas = true,
+    onTextDeltaSink?: (delta: string) => void,
   ): Promise<ModelResponse> {
     let streamedText = false;
-    const onTextDelta = (delta: string): void => {
-      if (!delta) {
-        return;
-      }
-      streamedText = true;
-      this.#emit({ type: "assistant_delta", runId, text: delta });
-    };
+    const onTextDelta = onTextDeltaSink
+      ? (delta: string): void => {
+          if (!delta) {
+            return;
+          }
+          streamedText = true;
+          onTextDeltaSink(delta);
+        }
+      : undefined;
     const toolsEnabled = input.toolsEnabled !== false;
     const response = await provider.complete({
       model,
@@ -438,7 +519,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         ? { tools: this.#toolRegistry.list().map(toModelTool) }
         : {}),
       ...(input.signal !== undefined ? { signal: input.signal } : {}),
-      ...(streamDeltas ? { onTextDelta } : {}),
+      ...(onTextDelta !== undefined ? { onTextDelta } : {}),
       metadata: {
         runId,
         sessionId: input.sessionId,
@@ -459,7 +540,11 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     runId: string,
   ): Promise<{ resolution: ProviderResolution; response: ModelResponse; failures: ModelAttemptFailure[] }> {
     const failures: ModelAttemptFailure[] = [];
-    const streamDeltas = modelRefs.length === 1;
+    // Single-attempt: stream deltas directly to listeners. Multi-fallback:
+    // provider still streams (so we can detect failures early), but we buffer
+    // deltas per-attempt and flush them only when an attempt actually
+    // succeeds, so users never see half-written output from a failed model.
+    const directStream = modelRefs.length === 1;
 
     for (let index = 0; index < modelRefs.length; index += 1) {
       const requestedModel = modelRefs[index];
@@ -468,12 +553,17 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         failures.push({
           ...(requestedModel !== undefined ? { requestedModel } : {}),
           message: requestedModel === undefined
-            ? "No model provider is configured. Set DRAGON_OPENAI_API_KEY or register a provider."
+            ? formatNoProviderMessage(this.#providerRegistry)
             : `No provider could resolve model "${requestedModel}".`,
           retryable: true,
         });
         continue;
       }
+
+      const buffered: string[] = [];
+      const sink = directStream
+        ? (delta: string) => this.#emit({ type: "assistant_delta", runId, text: delta })
+        : (delta: string) => buffered.push(delta);
 
       try {
         const response = await this.#completeModel(
@@ -482,10 +572,16 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
           messages,
           input,
           runId,
-          streamDeltas,
+          sink,
         );
+        if (!directStream) {
+          for (const delta of buffered) {
+            this.#emit({ type: "assistant_delta", runId, text: delta });
+          }
+        }
         return { resolution, response, failures };
       } catch (error) {
+        buffered.length = 0;
         if (input.signal?.aborted) {
           throw error;
         }
@@ -703,7 +799,11 @@ function createMessage(
   return message;
 }
 
-function toLifecycleMetadata(input: DragonTurnInput): Record<string, unknown> {
+function toLifecycleMetadata(
+  input: DragonTurnInput,
+  tierDecision?: TierDecision,
+  maxContextChars?: number,
+): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
     sessionId: input.sessionId,
     source: input.source,
@@ -716,6 +816,21 @@ function toLifecycleMetadata(input: DragonTurnInput): Record<string, unknown> {
   }
   if (input.modelFallbacks !== undefined) {
     metadata.requestedModelFallbacks = [...input.modelFallbacks];
+  }
+  if (input.attachments !== undefined && input.attachments.length > 0) {
+    metadata.attachmentCount = input.attachments.length;
+  }
+  if (tierDecision !== undefined) {
+    metadata.tier = tierDecision.tier;
+    metadata.tierSource = tierDecision.source;
+    metadata.tierScore = tierDecision.score;
+    metadata.tierReason = tierDecision.reason;
+    if (maxContextChars !== undefined) {
+      metadata.tierMaxContextChars = maxContextChars;
+    }
+    if (input.thinking !== undefined) metadata.tierThinking = input.thinking;
+    if (input.toolsEnabled !== undefined) metadata.tierToolsEnabled = input.toolsEnabled;
+    if (input.memoryEnabled !== undefined) metadata.tierMemoryEnabled = input.memoryEnabled;
   }
   return metadata;
 }
@@ -1158,6 +1273,302 @@ function isFallbackEligible(error: unknown): boolean {
   return error instanceof ProviderError && error.retryable === true;
 }
 
+const MAX_ATTACHMENT_COUNT = 10;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;        // 10 MB per attachment
+const MAX_TOTAL_ATTACHMENT_BYTES = 30 * 1024 * 1024;  // 30 MB per turn
+const MAX_INLINED_TEXT_BYTES = 256 * 1024;            // 256 KB inlined per file
+const ALLOWED_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]);
+const ALLOWED_TEXT_MIMES = new Set([
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "text/html",
+  "text/css",
+  "text/javascript",
+  "text/x-python",
+  "application/json",
+  "application/xml",
+  "application/yaml",
+]);
+const DOCUMENT_EXTRACTORS: Record<string, (buffer: Buffer, name: string) => Promise<string>> = {
+  "application/pdf": extractPdfText,
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": extractDocxText,
+  "application/msword": extractDocxText,
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": extractXlsxText,
+  "application/vnd.ms-excel": extractXlsxText,
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": extractPptxText,
+  "application/vnd.ms-powerpoint": extractPptxText,
+  "application/rtf": extractRtfText,
+  "text/rtf": extractRtfText,
+};
+
+interface ResolvedAttachment {
+  kind: "image" | "text";
+  mimeType: string;
+  name: string;
+  size: number;
+  /** Original base64 payload (for image transport) */
+  dataBase64: string;
+  /** Decoded text content (text + extracted document attachments) */
+  text?: string;
+  /** Original mime, before any text-extraction (so the prompt can mention it) */
+  originalMimeType?: string;
+}
+
+async function resolveAttachments(attachments: readonly DragonAttachment[] | undefined): Promise<ResolvedAttachment[]> {
+  if (!attachments || attachments.length === 0) {
+    return [];
+  }
+  if (attachments.length > MAX_ATTACHMENT_COUNT) {
+    throw new Error(`Too many attachments: ${attachments.length} (max ${MAX_ATTACHMENT_COUNT}).`);
+  }
+  const resolved: ResolvedAttachment[] = [];
+  let totalBytes = 0;
+  for (const [index, attachment] of attachments.entries()) {
+    if (!attachment || typeof attachment !== "object") {
+      throw new Error(`Attachment ${index + 1} must be an object.`);
+    }
+    if (attachment.kind !== "image" && attachment.kind !== "text" && attachment.kind !== "document") {
+      throw new Error(`Attachment ${index + 1} kind must be "image", "text", or "document" (got ${String(attachment.kind)}).`);
+    }
+    const mime = String(attachment.mimeType ?? "").trim().toLowerCase();
+    if (!mime) {
+      throw new Error(`Attachment ${index + 1} requires mimeType.`);
+    }
+    if (typeof attachment.data !== "string" || attachment.data.length === 0) {
+      throw new Error(`Attachment ${index + 1} requires base64 data.`);
+    }
+    if (attachment.kind === "image" && !ALLOWED_IMAGE_MIMES.has(mime)) {
+      throw new Error(`Attachment ${index + 1} mimeType "${mime}" is not allowed for kind image.`);
+    }
+    if (attachment.kind === "text" && !ALLOWED_TEXT_MIMES.has(mime)) {
+      throw new Error(`Attachment ${index + 1} mimeType "${mime}" is not allowed for kind text.`);
+    }
+    if (attachment.kind === "document" && !(mime in DOCUMENT_EXTRACTORS)) {
+      throw new Error(`Attachment ${index + 1} mimeType "${mime}" has no document extractor. Supported: ${Object.keys(DOCUMENT_EXTRACTORS).join(", ")}.`);
+    }
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(attachment.data, "base64");
+    } catch (error) {
+      throw new Error(`Attachment ${index + 1} base64 data is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (buffer.byteLength === 0) {
+      throw new Error(`Attachment ${index + 1} decoded to zero bytes.`);
+    }
+    if (buffer.byteLength > MAX_ATTACHMENT_BYTES) {
+      throw new Error(`Attachment ${index + 1} exceeds per-file cap (${buffer.byteLength} > ${MAX_ATTACHMENT_BYTES} bytes).`);
+    }
+    totalBytes += buffer.byteLength;
+    if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      throw new Error(`Attachments total exceeds turn cap (> ${MAX_TOTAL_ATTACHMENT_BYTES} bytes).`);
+    }
+    const rawName = typeof attachment.name === "string" ? attachment.name.trim() : "";
+    const safeName = rawName.length > 0 && rawName.length <= 200 ? rawName : `attachment-${index + 1}`;
+    if (attachment.kind === "text") {
+      let text: string;
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+      } catch {
+        throw new Error(`Attachment ${index + 1} (text) is not valid UTF-8.`);
+      }
+      if (buffer.byteLength > MAX_INLINED_TEXT_BYTES) {
+        const truncatedBytes = buffer.subarray(0, MAX_INLINED_TEXT_BYTES);
+        text = new TextDecoder("utf-8").decode(truncatedBytes) + `\n[file truncated: ${buffer.byteLength - MAX_INLINED_TEXT_BYTES} more bytes omitted]`;
+      }
+      resolved.push({
+        kind: "text",
+        mimeType: mime,
+        name: safeName,
+        size: buffer.byteLength,
+        dataBase64: attachment.data,
+        text,
+      });
+    } else if (attachment.kind === "document") {
+      const extractor = DOCUMENT_EXTRACTORS[mime]!;
+      let extracted: string;
+      try {
+        extracted = await extractor(buffer, safeName);
+      } catch (error) {
+        throw new Error(`Attachment ${index + 1} (${mime}) extraction failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (!extracted.trim()) {
+        extracted = `[empty document: ${safeName} (${mime}, ${buffer.byteLength} bytes) — no extractable text]`;
+      }
+      if (Buffer.byteLength(extracted, "utf8") > MAX_INLINED_TEXT_BYTES) {
+        extracted = extracted.slice(0, MAX_INLINED_TEXT_BYTES) + `\n[document truncated: extracted text exceeds ${MAX_INLINED_TEXT_BYTES} bytes]`;
+      }
+      resolved.push({
+        kind: "text",
+        mimeType: "text/plain",
+        originalMimeType: mime,
+        name: safeName,
+        size: buffer.byteLength,
+        dataBase64: attachment.data,
+        text: extracted,
+      });
+    } else {
+      resolved.push({
+        kind: "image",
+        mimeType: mime,
+        name: safeName,
+        size: buffer.byteLength,
+        dataBase64: buffer.toString("base64"),
+      });
+    }
+  }
+  return resolved;
+}
+
+function buildUserMessageContent(
+  message: string,
+  attachments: ResolvedAttachment[],
+): string | ModelContentPart[] {
+  if (attachments.length === 0) {
+    return message;
+  }
+  const hasImage = attachments.some(a => a.kind === "image");
+  const textPieces: string[] = [];
+  if (message.trim()) {
+    textPieces.push(message);
+  }
+  for (const attachment of attachments) {
+    if (attachment.kind === "text") {
+      const displayMime = attachment.originalMimeType ?? attachment.mimeType;
+      textPieces.push(
+        `--- file: ${attachment.name} (${displayMime}, ${attachment.size} bytes) ---\n${attachment.text ?? ""}\n--- end file: ${attachment.name} ---`,
+      );
+    }
+  }
+  const combinedText = textPieces.join("\n\n");
+  if (!hasImage) {
+    // No images → plain string is enough for any provider.
+    return combinedText;
+  }
+  // Multimodal: emit a text part (text + inlined file contents) followed by
+  // image parts. Vision-capable providers will receive both; text-only models
+  // will see only the text part once their adapter discards images.
+  const parts: ModelContentPart[] = [];
+  if (combinedText.trim()) {
+    parts.push({ type: "text", text: combinedText });
+  } else {
+    parts.push({ type: "text", text: "(see attached image)" });
+  }
+  for (const attachment of attachments) {
+    if (attachment.kind === "image") {
+      parts.push({
+        type: "image",
+        mimeType: attachment.mimeType,
+        dataBase64: attachment.dataBase64,
+      });
+    }
+  }
+  return parts;
+}
+
+function summarizeAttachments(attachments: ResolvedAttachment[]): Array<Record<string, unknown>> {
+  return attachments.map(a => ({
+    kind: a.kind,
+    mimeType: a.originalMimeType ?? a.mimeType,
+    name: a.name,
+    size: a.size,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Document text extractors (lazy-loaded). Each is best-effort — failures
+// surface a clear error to the caller via resolveAttachments.
+// ---------------------------------------------------------------------------
+
+async function extractPdfText(buffer: Buffer, _name: string): Promise<string> {
+  // pdfjs-dist exposes a Node-compatible build under legacy/build/pdf.mjs
+  // Use eval-based dynamic import so packages without the optional dep still type-check.
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs" as string) as {
+    getDocument(options: { data: Uint8Array }): { promise: Promise<{
+      numPages: number;
+      getPage(n: number): Promise<{ getTextContent(): Promise<{ items: Array<{ str?: string; hasEOL?: boolean }> }> }>;
+    }> };
+  };
+  // pdfjs needs Uint8Array, not Node Buffer
+  const data = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  const doc = await pdfjsLib.getDocument({ data }).promise;
+  const pages: string[] = [];
+  for (let i = 1; i <= doc.numPages; i += 1) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    const text = content.items.map(item => item.str ?? "").join(" ");
+    pages.push(`--- page ${i} ---\n${text}`);
+  }
+  return pages.join("\n\n");
+}
+
+async function extractDocxText(buffer: Buffer, _name: string): Promise<string> {
+  const mammoth = await import("mammoth" as string) as { extractRawText(input: { buffer: Buffer }): Promise<{ value: string }> };
+  const result = await mammoth.extractRawText({ buffer });
+  return result.value;
+}
+
+async function extractXlsxText(buffer: Buffer, _name: string): Promise<string> {
+  const xlsx = await import("xlsx" as string) as {
+    read(data: Buffer, opts: { type: "buffer" }): { SheetNames: string[]; Sheets: Record<string, unknown> };
+    utils: { sheet_to_csv(sheet: unknown): string };
+  };
+  const workbook = xlsx.read(buffer, { type: "buffer" });
+  const sheets: string[] = [];
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    const csv = xlsx.utils.sheet_to_csv(sheet);
+    sheets.push(`--- sheet: ${name} ---\n${csv}`);
+  }
+  return sheets.join("\n\n");
+}
+
+async function extractPptxText(buffer: Buffer, _name: string): Promise<string> {
+  const jszipMod = await import("jszip" as string) as { default: { loadAsync(data: Buffer): Promise<{ files: Record<string, { name: string; async(type: "text"): Promise<string> }> }> } };
+  const JSZip = jszipMod.default;
+  const zip = await JSZip.loadAsync(buffer);
+  const slideNames = Object.keys(zip.files)
+    .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort((a, b) => {
+      const na = Number(/slide(\d+)/.exec(a)?.[1] ?? 0);
+      const nb = Number(/slide(\d+)/.exec(b)?.[1] ?? 0);
+      return na - nb;
+    });
+  const slides: string[] = [];
+  for (const slide of slideNames) {
+    const xml = await zip.files[slide]!.async("text");
+    // Extract text runs from <a:t>...</a:t>
+    const matches = [...xml.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)].map(m => decodeXmlEntities(m[1] ?? ""));
+    slides.push(`--- ${slide.replace("ppt/slides/", "")} ---\n${matches.join(" ")}`);
+  }
+  return slides.join("\n\n");
+}
+
+async function extractRtfText(buffer: Buffer, _name: string): Promise<string> {
+  // Minimal RTF stripper — good enough for most plain RTF files.
+  const raw = buffer.toString("latin1");
+  // Strip groups, control words, and binary content
+  let out = raw
+    .replace(/\\\*\\[^ ]+\s+/g, "") // \*\control words with optional content (rough)
+    .replace(/\\[a-zA-Z]+-?\d*[ ]?/g, "")
+    .replace(/\\['\\{}]/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\\\n/g, "\n")
+    .trim();
+  return out;
+}
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code) || 0));
+}
+
 function toModelHistory(history: DragonMessage[]): ModelMessage[] {
   return history
     .filter(message => message.role === "user" || message.role === "assistant" || message.role === "tool")
@@ -1347,7 +1758,12 @@ function errorToDetails(error: unknown): ErrorDetails {
       metadata.code = error.code;
     }
     if (error.responseBody !== undefined) {
-      metadata.responseBody = error.responseBody;
+      // Defense in depth: providers sanitize at construction, but this body
+      // ends up in lifecycle events and trajectory files, so re-redact.
+      metadata.responseBody = redactSecretsInText(error.responseBody, {
+        maxLength: 1200,
+        compactWhitespace: true,
+      });
     }
     return {
       message: error.message,
@@ -1379,9 +1795,18 @@ class DragonModelFallbackError extends Error {
 
 function formatModelFallbackError(failures: ModelAttemptFailure[]): string {
   if (failures.length === 0) {
-    return "No model provider is configured. Set DRAGON_OPENAI_API_KEY or register a provider.";
+    return "No model provider is configured. Register a provider or set an API key (e.g. DRAGON_OPENAI_API_KEY, DRAGON_ANTHROPIC_API_KEY, DRAGON_OPENROUTER_API_KEY).";
   }
   return `All model fallback attempts failed: ${failures.map(formatModelFailure).join("; ")}`;
+}
+
+function formatNoProviderMessage(registry: ProviderRegistry): string {
+  const providers = registry.list();
+  if (providers.length === 0) {
+    return "No model provider is configured. Register a provider or set an API key (e.g. DRAGON_OPENAI_API_KEY, DRAGON_ANTHROPIC_API_KEY, DRAGON_OPENROUTER_API_KEY).";
+  }
+  const ids = providers.map(provider => provider.id).join(", ");
+  return `No default model provider could be selected. Configured providers: [${ids}]. Pass --model <provider:model> or set DRAGON_MODEL.`;
 }
 
 function formatModelFailure(failure: ModelAttemptFailure): string {

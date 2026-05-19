@@ -1,9 +1,12 @@
 export type {
+  ModelContentPart,
+  ModelImageContentPart,
   ModelMessage,
   ModelMessageRole,
   ModelProvider,
   ModelRequest,
   ModelResponse,
+  ModelTextContentPart,
   ModelToolCall,
   ModelToolCallFunction,
   ProviderRegistry,

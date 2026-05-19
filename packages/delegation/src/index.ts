@@ -34,6 +34,11 @@ export interface DragonDelegationRunResult<TOutput = unknown> {
 export interface DragonDelegationRunOptions {
   maxConcurrency?: number;
   signal?: AbortSignal;
+  /**
+   * Per-task timeout in milliseconds. When exceeded, the task's signal is
+   * aborted and the task is recorded as an error (not a hang).
+   */
+  taskTimeoutMs?: number;
 }
 
 export type DragonDelegatedTaskExecutor<TOutput = unknown> = (
@@ -84,6 +89,8 @@ export interface DragonRuntimeDelegationToolOptions {
   defaultModel?: string;
   maxTasks?: number;
   maxConcurrency?: number;
+  /** Per-task timeout for delegation_run. Default 5 minutes. */
+  taskTimeoutMs?: number;
 }
 
 export type DragonRuntimeDelegationToolOutput = DragonDelegationRunResult<DragonRuntimeDelegatedTaskOutput>;
@@ -93,6 +100,7 @@ const MAX_CONCURRENCY = 16;
 const MAX_DEPENDENCY_OUTPUT_CHARS = 4000;
 const DEFAULT_TOOL_MAX_TASKS = 8;
 const MAX_DELEGATION_DEPTH = 2;
+const DEFAULT_RUNTIME_TASK_TIMEOUT_MS = 5 * 60 * 1000;
 const ABSOLUTE_TOOL_MAX_TASKS = 32;
 const DEFAULT_TOOL_MAX_CONCURRENCY = 3;
 
@@ -197,11 +205,30 @@ export async function runDelegationPlan<TOutput>(
       const startedAt = new Date().toISOString();
       const promise = Promise.resolve()
         .then(async () => {
+          // Per-task abort controller wired into the parent signal AND a
+          // timeout so a stuck task cannot starve the rest of the plan.
+          const controller = new AbortController();
+          const parentAbort = (): void => controller.abort(options.signal?.reason);
+          if (options.signal !== undefined) {
+            if (options.signal.aborted) {
+              controller.abort(options.signal.reason);
+            } else {
+              options.signal.addEventListener("abort", parentAbort, { once: true });
+            }
+          }
+          let timeoutHandle: NodeJS.Timeout | undefined;
+          let timedOut = false;
+          if (typeof options.taskTimeoutMs === "number" && options.taskTimeoutMs > 0) {
+            timeoutHandle = setTimeout(() => {
+              timedOut = true;
+              controller.abort(new Error(`Delegated task "${task.id}" timed out after ${options.taskTimeoutMs}ms.`));
+            }, options.taskTimeoutMs);
+          }
           try {
             const output = await executor(Object.freeze({ ...task }), {
               plan: normalizedPlan,
               completed,
-              ...(options.signal !== undefined ? { signal: options.signal } : {}),
+              signal: controller.signal,
             });
             completed.set(task.id, {
               taskId: task.id,
@@ -211,14 +238,21 @@ export async function runDelegationPlan<TOutput>(
               completedAt: new Date().toISOString(),
             });
           } catch (error) {
+            const message = timedOut
+              ? `Delegated task "${task.id}" timed out after ${options.taskTimeoutMs}ms.`
+              : error instanceof Error ? error.message : String(error);
             completed.set(task.id, {
               taskId: task.id,
               status: "error",
-              error: error instanceof Error ? error.message : String(error),
+              error: message,
               startedAt,
               completedAt: new Date().toISOString(),
             });
           } finally {
+            if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+            if (options.signal !== undefined) {
+              options.signal.removeEventListener("abort", parentAbort);
+            }
             running.delete(task.id);
           }
         });
@@ -318,6 +352,7 @@ export function createRuntimeDelegationTool(
         });
         const result = await runDelegationPlan(plan, executor, {
           maxConcurrency: input.maxConcurrency ?? defaultConcurrency,
+          taskTimeoutMs: options.taskTimeoutMs ?? DEFAULT_RUNTIME_TASK_TIMEOUT_MS,
         });
         return {
           id: invocation.id,
@@ -559,27 +594,36 @@ function indentLines(value: string): string {
 
 function assertAcyclic(tasks: readonly DragonDelegatedTask[]): void {
   const byId = new Map(tasks.map(task => [task.id, task]));
-  const visiting = new Set<string>();
   const visited = new Set<string>();
 
-  const visit = (taskId: string): void => {
-    if (visited.has(taskId)) {
-      return;
+  // Iterative depth-first search with an explicit stack so deep dependency
+  // chains (up to MAX_TASKS=100) cannot blow the JS call stack on small
+  // worker pools or under stack-limited runtimes.
+  type Frame = { taskId: string; depIndex: number };
+  for (const start of tasks) {
+    if (visited.has(start.id)) continue;
+    const inPath = new Set<string>();
+    const stack: Frame[] = [{ taskId: start.id, depIndex: 0 }];
+    inPath.add(start.id);
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1]!;
+      const task = byId.get(frame.taskId);
+      const dependencies = task?.dependsOn ?? [];
+      if (frame.depIndex >= dependencies.length) {
+        inPath.delete(frame.taskId);
+        visited.add(frame.taskId);
+        stack.pop();
+        continue;
+      }
+      const depId = dependencies[frame.depIndex]!;
+      frame.depIndex += 1;
+      if (visited.has(depId)) continue;
+      if (inPath.has(depId)) {
+        throw new Error(`Delegation plan contains a dependency cycle at "${depId}".`);
+      }
+      inPath.add(depId);
+      stack.push({ taskId: depId, depIndex: 0 });
     }
-    if (visiting.has(taskId)) {
-      throw new Error(`Delegation plan contains a dependency cycle at "${taskId}".`);
-    }
-    visiting.add(taskId);
-    const task = byId.get(taskId);
-    for (const dependency of task?.dependsOn ?? []) {
-      visit(dependency);
-    }
-    visiting.delete(taskId);
-    visited.add(taskId);
-  };
-
-  for (const task of tasks) {
-    visit(task.id);
   }
 }
 

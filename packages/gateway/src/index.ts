@@ -11,7 +11,7 @@ import type {
   DragonTurnInput,
   DragonTurnResult,
 } from "@dragon/core";
-import type { DragonCronJob, DragonCronJobStore, DragonCronRunner } from "@dragon/cron";
+import { parseCronSchedule, type DragonCronJob, type DragonCronJobStore, type DragonCronRunner } from "@dragon/cron";
 import type { DragonModelCapabilities, DragonModelStatus } from "@dragon/model-catalog";
 import {
   createToolPermissionEngine,
@@ -37,6 +37,15 @@ export interface GatewayAddress {
   url: string;
 }
 
+export interface GatewayAgentAttachment {
+  kind: "image" | "text" | "document";
+  mimeType: string;
+  /** base64-encoded bytes */
+  data: string;
+  name?: string;
+  size?: number;
+}
+
 export interface GatewayAgentParams {
   sessionId: string;
   message: string;
@@ -48,6 +57,8 @@ export interface GatewayAgentParams {
   systemPrompt?: string;
   toolsEnabled?: boolean;
   memoryEnabled?: boolean;
+  attachments?: GatewayAgentAttachment[];
+  tier?: GatewayTierName;
   metadata?: Record<string, unknown>;
 }
 
@@ -169,6 +180,88 @@ export interface GatewayModelConfigStore {
   save(config: GatewayModelConfigSaveParams): Promise<GatewayModelConfig>;
 }
 
+// --- Tier scheduling ---------------------------------------------------------
+
+export type GatewayTierName = "fast" | "standard" | "deep";
+
+export type GatewayTierClassifierMode = "heuristic" | "fixed";
+
+export interface GatewayTierSpec {
+  model?: string;
+  modelFallbacks?: readonly string[];
+  thinking?: DragonThinkingLevel;
+  maxContextChars?: number;
+  toolsEnabled?: boolean;
+  memoryEnabled?: boolean;
+  systemPromptAddendum?: string;
+}
+
+export interface GatewayTierKeywordHint {
+  tier: GatewayTierName;
+  words: readonly string[];
+}
+
+export interface GatewayTierConfig {
+  enabled: boolean;
+  tiers: {
+    fast?: GatewayTierSpec;
+    standard?: GatewayTierSpec;
+    deep?: GatewayTierSpec;
+  };
+  classifier: {
+    mode: GatewayTierClassifierMode;
+    fixedTier?: GatewayTierName;
+    keywordHints?: readonly GatewayTierKeywordHint[];
+  };
+  appliesOn: "next-turn";
+  configPath?: string;
+}
+
+export interface GatewayTierConfigSaveParams {
+  enabled: boolean;
+  tiers: {
+    fast?: GatewayTierSpec;
+    standard?: GatewayTierSpec;
+    deep?: GatewayTierSpec;
+  };
+  classifier: {
+    mode: GatewayTierClassifierMode;
+    fixedTier?: GatewayTierName;
+    keywordHints?: readonly GatewayTierKeywordHint[];
+  };
+}
+
+export interface GatewayTierConfigStore {
+  load(): Promise<GatewayTierConfig>;
+  save(config: GatewayTierConfigSaveParams): Promise<GatewayTierConfig>;
+  /**
+   * Subscribed by the gateway so a save can hot-swap the runtime's tier
+   * decisions for the next turn without restart.
+   */
+  onChange?(listener: (config: GatewayTierConfig) => void): () => void;
+}
+
+export interface GatewayTierClassifyParams {
+  message: string;
+  attachments?: readonly { kind: "image" | "text" | "document"; mimeType: string; size?: number }[];
+  workspace?: string;
+  toolsEnabled?: boolean;
+  memoryRecallCount?: number;
+  hasSkillLoaded?: boolean;
+}
+
+export interface GatewayTierClassifyResult {
+  tier: GatewayTierName;
+  source: "fixed" | "heuristic" | "inherited" | "explicit-input";
+  score: number;
+  reason: string;
+  resolvedModel?: string;
+  resolvedThinking?: DragonThinkingLevel;
+  resolvedMaxContextChars?: number;
+  resolvedToolsEnabled?: boolean;
+  resolvedMemoryEnabled?: boolean;
+}
+
 export interface GatewayAgentProfileConfig {
   id: string;
   name: string;
@@ -271,6 +364,9 @@ export type GatewayRequest =
   | { type: "model.config.save"; id: string; params: GatewayModelConfigSaveParams }
   | { type: "agent.config.get"; id: string }
   | { type: "agent.config.save"; id: string; params: GatewayAgentConfigSaveParams }
+  | { type: "tier.config.get"; id: string }
+  | { type: "tier.config.save"; id: string; params: GatewayTierConfigSaveParams }
+  | { type: "tier.classify"; id: string; params: GatewayTierClassifyParams }
   | { type: "plugins.list"; id: string }
   | { type: "tools.catalog"; id: string; params?: { includeSchemas?: boolean } }
   | { type: "tool.invoke"; id: string; params: GatewayToolInvokeParams }
@@ -315,6 +411,13 @@ export interface HttpDragonGatewayOptions {
   providerSummaries?: readonly GatewayProviderSummary[];
   modelConfigStore?: GatewayModelConfigStore;
   agentConfigStore?: GatewayAgentConfigStore;
+  tierConfigStore?: GatewayTierConfigStore;
+  /**
+   * Notified when a save-tier-config RPC completes successfully. The CLI
+   * binds this to rebuild the runtime's #tierConfig field so changes take
+   * effect on the next turn without process restart.
+   */
+  onTierConfigChange?: (config: GatewayTierConfig) => void;
   tools?: readonly ToolDefinition[];
   toolRegistry?: ToolRegistry;
   permissionEngine?: ToolPermissionEngine;
@@ -352,11 +455,15 @@ export interface EventStreamFilters {
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 17357;
-const MAX_REQUEST_BYTES = 256_000;
+// 32 MB request body cap. Large enough to carry up to ~10 image attachments
+// (base64-encoded, ~14 MB raw budget enforced separately per attachment in
+// parseGatewayAttachments).
+const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 const MAX_RUN_RECORDS = 200;
 const MAX_DIRECT_TOOL_RESULT_BYTES = 256_000;
 const MAX_DIRECT_TOOL_PREVIEW_BYTES = 64_000;
-const MAX_WEBSOCKET_MESSAGE_BYTES = 1_000_000;
+// Match HTTP body limit so WebSocket RPC can carry attachments too.
+const MAX_WEBSOCKET_MESSAGE_BYTES = MAX_REQUEST_BYTES;
 const MAX_WEBSOCKET_BUFFER_BYTES = MAX_REQUEST_BYTES * 2;
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const WEBSOCKET_PROTOCOL = "dragon.gateway.v1";
@@ -377,6 +484,8 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #providers: readonly GatewayProviderSummary[];
   readonly #modelConfigStore: GatewayModelConfigStore | undefined;
   readonly #agentConfigStore: GatewayAgentConfigStore | undefined;
+  readonly #tierConfigStore: GatewayTierConfigStore | undefined;
+  readonly #onTierConfigChange: ((config: GatewayTierConfig) => void) | undefined;
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
   readonly #directToolNames: ReadonlySet<string>;
@@ -403,6 +512,8 @@ export class HttpDragonGateway implements DragonGateway {
     this.#providers = normalizeProviderSummaries(options.providerSummaries ?? []);
     this.#modelConfigStore = options.modelConfigStore;
     this.#agentConfigStore = options.agentConfigStore;
+    this.#tierConfigStore = options.tierConfigStore;
+    this.#onTierConfigChange = options.onTierConfigChange;
     this.#toolRegistry = options.toolRegistry ?? createToolRegistry([...(options.tools ?? [])]);
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
@@ -727,6 +838,7 @@ export class HttpDragonGateway implements DragonGateway {
               "providers.list",
               ...(this.#modelConfigStore ? ["model.config.get", "model.config.save"] : []),
               ...(this.#agentConfigStore ? ["agent.config.get", "agent.config.save"] : []),
+              ...(this.#tierConfigStore ? ["tier.config.get", "tier.config.save", "tier.classify"] : []),
               "plugins.list",
               "tools.catalog",
               "tool.invoke",
@@ -763,6 +875,15 @@ export class HttpDragonGateway implements DragonGateway {
       }
       if (request.type === "agent.config.save") {
         return { type: "response", id: request.id, ok: true, payload: await this.#saveAgentConfig(request.params) };
+      }
+      if (request.type === "tier.config.get") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#loadTierConfig() };
+      }
+      if (request.type === "tier.config.save") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#saveTierConfig(request.params) };
+      }
+      if (request.type === "tier.classify") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#classifyTier(request.params) };
       }
       if (request.type === "plugins.list") {
         return { type: "response", id: request.id, ok: true, payload: this.#listPlugins() };
@@ -1033,10 +1154,14 @@ export class HttpDragonGateway implements DragonGateway {
   }
 
   async #tickCron(): Promise<unknown> {
-    if (!this.#cronRunner) {
+    const runner = this.#cronRunner;
+    if (!runner) {
       throw new Error("Cron runner is not configured.");
     }
-    return await this.#cronRunner.tick();
+    // Serialize manual ticks against any other lane-bound work so a dashboard
+    // user clicking "tick" cannot double-execute a job that the automatic
+    // runner is already firing on the same instant.
+    return await this.#runInLane("__cron__", () => runner.tick());
   }
 
   #pruneRuns(): void {
@@ -1241,6 +1366,37 @@ export class HttpDragonGateway implements DragonGateway {
     return sanitizeAgentConfig(await this.#agentConfigStore.save(params));
   }
 
+  async #loadTierConfig(): Promise<GatewayTierConfig> {
+    if (!this.#tierConfigStore) {
+      throw new GatewayHttpError(404, "Tier configuration store is not available.");
+    }
+    return sanitizeTierConfig(await this.#tierConfigStore.load());
+  }
+
+  async #saveTierConfig(params: GatewayTierConfigSaveParams): Promise<GatewayTierConfig> {
+    if (!this.#tierConfigStore) {
+      throw new GatewayHttpError(404, "Tier configuration store is not available.");
+    }
+    const saved = await this.#tierConfigStore.save(params);
+    // Hot-swap: notify the runtime so the next turn picks up the change.
+    if (this.#onTierConfigChange) {
+      try {
+        this.#onTierConfigChange(saved);
+      } catch (error) {
+        console.error(`[${this.#name}] onTierConfigChange listener threw:`, error);
+      }
+    }
+    return sanitizeTierConfig(saved);
+  }
+
+  async #classifyTier(params: GatewayTierClassifyParams): Promise<GatewayTierClassifyResult> {
+    if (!this.#tierConfigStore) {
+      throw new GatewayHttpError(404, "Tier configuration store is not available.");
+    }
+    const config = await this.#tierConfigStore.load();
+    return classifyTierFromGatewayConfig(config, params);
+  }
+
   #listPlugins(): { plugins: readonly GatewayPluginSummary[] } {
     return {
       plugins: this.#plugins.map(plugin => {
@@ -1357,7 +1513,14 @@ export class HttpDragonGateway implements DragonGateway {
     };
     const permission = this.#permissionEngine.decide(tool, invocation);
     if (permission.decision !== "allow") {
-      throw new Error(`Tool permission ${permission.decision}: ${permission.reason}`);
+      // The gateway has no interactive permission handler for RPC clients —
+      // operators must pre-approve write tools at startup. Make the remedy
+      // explicit instead of returning a bare "Tool permission ask" error.
+      const isWriteTool = toolName === "memory_candidate_promote" || toolName === "memory_candidate_reject";
+      const hint = isWriteTool
+        ? " Restart dragon gateway with --allow-write (or configure a permissionEngine that allows this tool) to enable memory candidate write RPCs."
+        : "";
+      throw new Error(`Tool permission ${permission.decision} for ${toolName}: ${permission.reason}${hint}`);
     }
     const result = await tool.invoke(invocation);
     return sanitizeToolOutput(result, permission);
@@ -1488,6 +1651,23 @@ function parseGatewayRequest(value: unknown): GatewayRequest {
       type: "agent.config.save",
       id: value.id,
       params: parseAgentConfigSaveParams(value.params),
+    };
+  }
+  if (value.type === "tier.config.get") {
+    return { type: "tier.config.get", id: value.id };
+  }
+  if (value.type === "tier.config.save") {
+    return {
+      type: "tier.config.save",
+      id: value.id,
+      params: parseTierConfigSaveParams(value.params),
+    };
+  }
+  if (value.type === "tier.classify") {
+    return {
+      type: "tier.classify",
+      id: value.id,
+      params: parseTierClassifyParams(value.params),
     };
   }
   if (value.type === "plugins.list") {
@@ -1624,6 +1804,26 @@ function parseModelConfigSaveParams(value: unknown): GatewayModelConfigSaveParam
   };
 }
 
+function normalizeProviderBaseUrl(input: string, index: number): string {
+  const trimmed = normalizeShortText(input, "baseUrl", 1000);
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    badRequest(`model.config.save provider ${index + 1} baseUrl is not a valid URL.`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    badRequest(`model.config.save provider ${index + 1} baseUrl must use http or https.`);
+  }
+  if (url.username || url.password) {
+    badRequest(`model.config.save provider ${index + 1} baseUrl must not contain credentials.`);
+  }
+  if (url.search || url.hash) {
+    badRequest(`model.config.save provider ${index + 1} baseUrl must not contain query string or fragment.`);
+  }
+  return trimmed;
+}
+
 function parseModelProviderConfig(value: unknown, index: number): GatewayModelProviderConfig {
   if (!isRecord(value)) {
     badRequest(`model.config.save provider ${index + 1} must be an object.`);
@@ -1648,7 +1848,7 @@ function parseModelProviderConfig(value: unknown, index: number): GatewayModelPr
     provider.apiKeyConfigured = value.apiKeyConfigured;
   }
   if (typeof value.baseUrl === "string" && value.baseUrl.trim()) {
-    provider.baseUrl = normalizeShortText(value.baseUrl, "baseUrl", 1000);
+    provider.baseUrl = normalizeProviderBaseUrl(value.baseUrl, index);
   }
   if (typeof value.defaultModel === "string" && value.defaultModel.trim()) {
     provider.defaultModel = normalizeShortText(value.defaultModel, "defaultModel", 200);
@@ -1714,6 +1914,143 @@ function parseAgentProfileConfig(value: unknown, index: number): GatewayAgentPro
     profile.systemPrompt = normalizeBoundedText(value.systemPrompt, "systemPrompt", 16_000);
   }
   return profile;
+}
+
+function parseTierConfigSaveParams(value: unknown): GatewayTierConfigSaveParams {
+  if (!isRecord(value)) {
+    badRequest("tier.config.save params must be an object.");
+  }
+  const enabled = typeof value.enabled === "boolean" ? value.enabled : false;
+  const tiers: GatewayTierConfigSaveParams["tiers"] = {};
+  if (isRecord(value.tiers)) {
+    for (const name of ["fast", "standard", "deep"] as const) {
+      const spec = parseTierSpec((value.tiers as Record<string, unknown>)[name], `tier.config.save tiers.${name}`);
+      if (spec !== undefined) tiers[name] = spec;
+    }
+  }
+  const classifier: GatewayTierConfigSaveParams["classifier"] = { mode: "heuristic" };
+  if (isRecord(value.classifier)) {
+    const raw = value.classifier;
+    if (raw.mode === "heuristic" || raw.mode === "fixed") {
+      classifier.mode = raw.mode;
+    }
+    if (raw.fixedTier === "fast" || raw.fixedTier === "standard" || raw.fixedTier === "deep") {
+      classifier.fixedTier = raw.fixedTier;
+    }
+    if (Array.isArray(raw.keywordHints)) {
+      const hints: GatewayTierKeywordHint[] = [];
+      for (const [index, item] of raw.keywordHints.entries()) {
+        if (!isRecord(item)) {
+          badRequest(`tier.config.save classifier.keywordHints[${index}] must be an object.`);
+        }
+        if (item.tier !== "fast" && item.tier !== "standard" && item.tier !== "deep") {
+          badRequest(`tier.config.save classifier.keywordHints[${index}].tier is invalid.`);
+        }
+        if (!Array.isArray(item.words)) {
+          badRequest(`tier.config.save classifier.keywordHints[${index}].words must be an array.`);
+        }
+        const words: string[] = [];
+        for (const [wi, word] of item.words.entries()) {
+          if (typeof word !== "string" || !word.trim()) {
+            badRequest(`tier.config.save classifier.keywordHints[${index}].words[${wi}] must be a non-empty string.`);
+          }
+          words.push(normalizeShortText(word, "keyword", 80));
+        }
+        if (words.length > 0) {
+          hints.push({ tier: item.tier, words });
+        }
+      }
+      if (hints.length > 0) classifier.keywordHints = hints;
+    }
+  }
+  return { enabled, tiers, classifier };
+}
+
+function parseTierSpec(value: unknown, ctx: string): GatewayTierSpec | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) {
+    badRequest(`${ctx} must be an object.`);
+  }
+  const spec: GatewayTierSpec = {};
+  if (typeof value.model === "string" && value.model.trim()) {
+    spec.model = normalizeShortText(value.model, "model", 200);
+  }
+  if (Array.isArray(value.modelFallbacks)) {
+    const fallbacks: string[] = [];
+    for (const [i, fb] of value.modelFallbacks.entries()) {
+      if (typeof fb !== "string" || !fb.trim()) {
+        badRequest(`${ctx}.modelFallbacks[${i}] must be a non-empty string.`);
+      }
+      fallbacks.push(normalizeShortText(fb, "modelFallback", 200));
+    }
+    if (fallbacks.length > 0) spec.modelFallbacks = fallbacks;
+  }
+  if (value.thinking !== undefined) {
+    if (!isDragonThinking(value.thinking)) {
+      badRequest(`${ctx}.thinking is invalid.`);
+    }
+    spec.thinking = value.thinking;
+  }
+  if (value.maxContextChars !== undefined) {
+    if (typeof value.maxContextChars !== "number" || !Number.isFinite(value.maxContextChars) || value.maxContextChars <= 0) {
+      badRequest(`${ctx}.maxContextChars must be a positive number.`);
+    }
+    spec.maxContextChars = Math.floor(Math.min(value.maxContextChars, 200_000));
+  }
+  if (typeof value.toolsEnabled === "boolean") {
+    spec.toolsEnabled = value.toolsEnabled;
+  }
+  if (typeof value.memoryEnabled === "boolean") {
+    spec.memoryEnabled = value.memoryEnabled;
+  }
+  if (typeof value.systemPromptAddendum === "string" && value.systemPromptAddendum.trim()) {
+    spec.systemPromptAddendum = normalizeBoundedText(value.systemPromptAddendum, "systemPromptAddendum", 16_000);
+  }
+  return Object.keys(spec).length > 0 ? spec : undefined;
+}
+
+function parseTierClassifyParams(value: unknown): GatewayTierClassifyParams {
+  if (!isRecord(value)) {
+    badRequest("tier.classify params must be an object.");
+  }
+  if (typeof value.message !== "string") {
+    badRequest("tier.classify requires params.message.");
+  }
+  const params: GatewayTierClassifyParams = {
+    message: normalizeBoundedText(value.message, "message", 64_000),
+  };
+  if (Array.isArray(value.attachments)) {
+    const atts: { kind: "image" | "text" | "document"; mimeType: string; size?: number }[] = [];
+    for (const [i, att] of value.attachments.entries()) {
+      if (!isRecord(att)) {
+        badRequest(`tier.classify attachments[${i}] must be an object.`);
+      }
+      if (att.kind !== "image" && att.kind !== "text" && att.kind !== "document") {
+        badRequest(`tier.classify attachments[${i}].kind is invalid.`);
+      }
+      if (typeof att.mimeType !== "string" || !att.mimeType.trim()) {
+        badRequest(`tier.classify attachments[${i}].mimeType is invalid.`);
+      }
+      const entry: { kind: "image" | "text" | "document"; mimeType: string; size?: number } = {
+        kind: att.kind,
+        mimeType: normalizeShortText(att.mimeType, "mimeType", 200),
+      };
+      if (typeof att.size === "number" && att.size >= 0) {
+        entry.size = att.size;
+      }
+      atts.push(entry);
+    }
+    params.attachments = atts;
+  }
+  if (typeof value.workspace === "string" && value.workspace.trim()) {
+    params.workspace = normalizeShortText(value.workspace, "workspace", 4000);
+  }
+  if (typeof value.toolsEnabled === "boolean") params.toolsEnabled = value.toolsEnabled;
+  if (typeof value.memoryRecallCount === "number" && value.memoryRecallCount >= 0) {
+    params.memoryRecallCount = Math.floor(value.memoryRecallCount);
+  }
+  if (typeof value.hasSkillLoaded === "boolean") params.hasSkillLoaded = value.hasSkillLoaded;
+  return params;
 }
 
 function parseToolInvokeParams(value: unknown): GatewayToolInvokeParams {
@@ -1915,11 +2252,17 @@ function parseCronJobUpsertParams(value: unknown): GatewayCronJobUpsertParams {
   if (typeof value.schedule !== "string" || !value.schedule.trim()) {
     badRequest("cron.job.upsert requires params.schedule.");
   }
+  const schedule = normalizeShortText(value.schedule, "schedule", 200);
+  try {
+    parseCronSchedule(schedule);
+  } catch (error) {
+    badRequest(`cron.job.upsert schedule is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const params: GatewayCronJobUpsertParams = {
     id: normalizeShortText(value.id, "id", 200),
     sessionId: normalizeShortText(value.sessionId, "sessionId", 200),
     message: normalizeBoundedText(value.message, "message", 16_000),
-    schedule: normalizeShortText(value.schedule, "schedule", 200),
+    schedule,
   };
   if (typeof value.enabled === "boolean") {
     params.enabled = value.enabled;
@@ -2005,7 +2348,59 @@ function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
     }
     params.metadata = value.metadata;
   }
+  if (value.attachments !== undefined) {
+    params.attachments = parseGatewayAttachments(value.attachments);
+  }
+  if (value.tier !== undefined) {
+    if (value.tier !== "fast" && value.tier !== "standard" && value.tier !== "deep") {
+      badRequest(`Invalid gateway agent tier: ${String(value.tier)}`);
+    }
+    params.tier = value.tier;
+  }
   return params;
+}
+
+const GATEWAY_MAX_ATTACHMENTS = 10;
+const GATEWAY_MAX_ATTACHMENT_BASE64 = 14 * 1024 * 1024; // ~10MB raw
+
+function parseGatewayAttachments(value: unknown): GatewayAgentAttachment[] {
+  if (!Array.isArray(value)) {
+    badRequest("Gateway agent attachments must be an array.");
+  }
+  if (value.length > GATEWAY_MAX_ATTACHMENTS) {
+    badRequest(`Gateway agent attachments exceed cap of ${GATEWAY_MAX_ATTACHMENTS}.`);
+  }
+  const out: GatewayAgentAttachment[] = [];
+  for (const [index, raw] of value.entries()) {
+    if (!isRecord(raw)) {
+      badRequest(`Gateway agent attachment ${index + 1} must be an object.`);
+    }
+    if (raw.kind !== "image" && raw.kind !== "text" && raw.kind !== "document") {
+      badRequest(`Gateway agent attachment ${index + 1} kind must be image, text, or document.`);
+    }
+    if (typeof raw.mimeType !== "string" || !raw.mimeType.trim()) {
+      badRequest(`Gateway agent attachment ${index + 1} requires mimeType.`);
+    }
+    if (typeof raw.data !== "string" || raw.data.length === 0) {
+      badRequest(`Gateway agent attachment ${index + 1} requires base64 data.`);
+    }
+    if (raw.data.length > GATEWAY_MAX_ATTACHMENT_BASE64) {
+      badRequest(`Gateway agent attachment ${index + 1} exceeds size cap.`);
+    }
+    const att: GatewayAgentAttachment = {
+      kind: raw.kind,
+      mimeType: raw.mimeType.trim(),
+      data: raw.data,
+    };
+    if (typeof raw.name === "string" && raw.name.trim()) {
+      att.name = normalizeShortText(raw.name, "attachment name", 200);
+    }
+    if (typeof raw.size === "number" && Number.isFinite(raw.size) && raw.size >= 0) {
+      att.size = Math.floor(raw.size);
+    }
+    out.push(att);
+  }
+  return out;
 }
 
 function parseGatewayWebhookParams(value: unknown): GatewayWebhookParams {
@@ -2168,6 +2563,18 @@ function toTurnInput(params: GatewayAgentParams): DragonTurnInput {
   }
   if (params.memoryEnabled !== undefined) {
     input.memoryEnabled = params.memoryEnabled;
+  }
+  if (params.attachments !== undefined && params.attachments.length > 0) {
+    input.attachments = params.attachments.map(a => ({
+      kind: a.kind,
+      mimeType: a.mimeType,
+      data: a.data,
+      ...(a.name !== undefined ? { name: a.name } : {}),
+      ...(a.size !== undefined ? { size: a.size } : {}),
+    }));
+  }
+  if (params.tier !== undefined) {
+    input.tier = params.tier;
   }
   if (params.metadata !== undefined) {
     input.metadata = params.metadata;
@@ -2555,6 +2962,160 @@ function sanitizeAgentConfig(config: GatewayAgentConfig): GatewayAgentConfig {
     sanitized.configPath = trimBounded(config.configPath, 1000);
   }
   return sanitized;
+}
+
+function sanitizeTierConfig(config: GatewayTierConfig): GatewayTierConfig {
+  const sanitized: GatewayTierConfig = {
+    enabled: Boolean(config.enabled),
+    tiers: {
+      ...(config.tiers.fast !== undefined ? { fast: sanitizeTierSpec(config.tiers.fast) } : {}),
+      ...(config.tiers.standard !== undefined ? { standard: sanitizeTierSpec(config.tiers.standard) } : {}),
+      ...(config.tiers.deep !== undefined ? { deep: sanitizeTierSpec(config.tiers.deep) } : {}),
+    },
+    classifier: {
+      mode: config.classifier.mode === "fixed" ? "fixed" : "heuristic",
+      ...(config.classifier.fixedTier !== undefined ? { fixedTier: config.classifier.fixedTier } : {}),
+      ...(config.classifier.keywordHints !== undefined && config.classifier.keywordHints.length > 0
+        ? {
+            keywordHints: config.classifier.keywordHints.map(hint => ({
+              tier: hint.tier,
+              words: hint.words.map(w => trimBounded(w, 80)),
+            })),
+          }
+        : {}),
+    },
+    appliesOn: "next-turn",
+  };
+  if (config.configPath !== undefined) {
+    sanitized.configPath = trimBounded(config.configPath, 1000);
+  }
+  return sanitized;
+}
+
+function sanitizeTierSpec(spec: GatewayTierSpec): GatewayTierSpec {
+  const out: GatewayTierSpec = {};
+  if (spec.model !== undefined) out.model = trimBounded(spec.model, 200);
+  if (spec.modelFallbacks !== undefined && spec.modelFallbacks.length > 0) {
+    out.modelFallbacks = spec.modelFallbacks.map(m => trimBounded(m, 200));
+  }
+  if (spec.thinking !== undefined) out.thinking = spec.thinking;
+  if (spec.maxContextChars !== undefined && spec.maxContextChars > 0) {
+    out.maxContextChars = Math.floor(Math.min(spec.maxContextChars, 200_000));
+  }
+  if (spec.toolsEnabled !== undefined) out.toolsEnabled = spec.toolsEnabled;
+  if (spec.memoryEnabled !== undefined) out.memoryEnabled = spec.memoryEnabled;
+  if (spec.systemPromptAddendum !== undefined) {
+    out.systemPromptAddendum = trimBounded(spec.systemPromptAddendum, 16_000);
+  }
+  return out;
+}
+
+function classifyTierFromGatewayConfig(
+  config: GatewayTierConfig,
+  params: GatewayTierClassifyParams,
+): GatewayTierClassifyResult {
+  // Build a synthetic DragonTurnInput and reuse the core classifier (the
+  // gateway types parallel the core types, but we avoid importing the core
+  // classifier here to keep the dependency surface flat — instead we inline a
+  // lightweight scoring that matches the core rules).
+  if (!config.enabled) {
+    const fallback: GatewayTierClassifyResult = {
+      tier: "standard",
+      source: "heuristic",
+      score: 0,
+      reason: "tier scheduling disabled (default=standard)",
+    };
+    const spec = config.tiers.standard;
+    if (spec?.model !== undefined) fallback.resolvedModel = spec.model;
+    if (spec?.thinking !== undefined) fallback.resolvedThinking = spec.thinking;
+    if (spec?.maxContextChars !== undefined) fallback.resolvedMaxContextChars = spec.maxContextChars;
+    if (spec?.toolsEnabled !== undefined) fallback.resolvedToolsEnabled = spec.toolsEnabled;
+    if (spec?.memoryEnabled !== undefined) fallback.resolvedMemoryEnabled = spec.memoryEnabled;
+    return fallback;
+  }
+
+  if (config.classifier.mode === "fixed" && config.classifier.fixedTier !== undefined) {
+    const tier = config.classifier.fixedTier;
+    const spec = config.tiers[tier];
+    const out: GatewayTierClassifyResult = {
+      tier,
+      source: "fixed",
+      score: 0,
+      reason: `classifier.mode=fixed → ${tier}`,
+    };
+    if (spec?.model !== undefined) out.resolvedModel = spec.model;
+    if (spec?.thinking !== undefined) out.resolvedThinking = spec.thinking;
+    if (spec?.maxContextChars !== undefined) out.resolvedMaxContextChars = spec.maxContextChars;
+    if (spec?.toolsEnabled !== undefined) out.resolvedToolsEnabled = spec.toolsEnabled;
+    if (spec?.memoryEnabled !== undefined) out.resolvedMemoryEnabled = spec.memoryEnabled;
+    return out;
+  }
+
+  const FAST_KEYWORDS = [
+    "translate", "summarize", "one line", "tldr", "format ", "list ", "json only", "yes or no",
+    "翻译", "总结一句", "一句话", "格式化", "列出", "罗列", "是或否",
+  ];
+  const DEEP_KEYWORDS = [
+    "analyze deeply", "step by step", "step-by-step", "think carefully", "think hard",
+    "design a", "architect", "plan the", "deep dive", "compare and contrast",
+    "review the entire",
+    "深入分析", "深度分析", "逐步", "一步步", "仔细思考", "全面分析", "深度思考",
+    "架构", "规划", "深入研究", "对比分析", "复杂", "整体设计",
+  ];
+
+  let score = 0;
+  const reasons: string[] = [];
+  const message = params.message ?? "";
+  const len = message.length;
+  if (len > 2000) { score += 2; reasons.push(`msgLen=${len}>2000 (+2)`); }
+  else if (len > 500) { score += 1; reasons.push(`msgLen=${len}>500 (+1)`); }
+  const attachments = params.attachments ?? [];
+  if (attachments.length > 2) { score += 2; reasons.push(`attach=${attachments.length}>2 (+2)`); }
+  else if (attachments.length > 0) { score += 1; reasons.push(`attach=${attachments.length} (+1)`); }
+  const heavy = attachments.find(a => a.kind === "document"
+    && (a.mimeType === "application/pdf" || a.mimeType.includes("presentationml") || a.mimeType.includes("spreadsheetml")));
+  if (heavy !== undefined) { score += 1; reasons.push(`heavyDoc=${heavy.mimeType} (+1)`); }
+  if (params.hasSkillLoaded === true) { score += 2; reasons.push("skillLoaded (+2)"); }
+  if (params.memoryRecallCount !== undefined && params.memoryRecallCount > 3) {
+    score += 1; reasons.push(`memoryRecall=${params.memoryRecallCount}>3 (+1)`);
+  }
+  if (params.toolsEnabled !== false && params.workspace !== undefined) {
+    score += 1; reasons.push("agentMode (+1)");
+  }
+  const lower = message.toLowerCase();
+  const fastHits: string[] = [];
+  const deepHits: string[] = [];
+  for (const w of FAST_KEYWORDS) if (lower.includes(w.toLowerCase())) fastHits.push(w);
+  for (const w of DEEP_KEYWORDS) if (lower.includes(w.toLowerCase())) deepHits.push(w);
+  for (const hint of config.classifier.keywordHints ?? []) {
+    for (const w of hint.words) {
+      if (lower.includes(w.toLowerCase())) {
+        if (hint.tier === "fast") fastHits.push(`*${w}`);
+        else if (hint.tier === "deep") deepHits.push(`*${w}`);
+      }
+    }
+  }
+  if (deepHits.length > 0) { score += 3; reasons.push(`deepKeyword=${JSON.stringify(deepHits.slice(0, 3))} (+3)`); }
+  if (fastHits.length > 0) { score -= 2; reasons.push(`fastKeyword=${JSON.stringify(fastHits.slice(0, 3))} (-2)`); }
+
+  let tier: GatewayTierName;
+  if (score >= 5) tier = "deep";
+  else if (score >= 2) tier = "standard";
+  else tier = "fast";
+
+  const spec = config.tiers[tier];
+  const out: GatewayTierClassifyResult = {
+    tier,
+    source: "heuristic",
+    score,
+    reason: reasons.length > 0 ? reasons.join("; ") : "no signals (score=0)",
+  };
+  if (spec?.model !== undefined) out.resolvedModel = spec.model;
+  if (spec?.thinking !== undefined) out.resolvedThinking = spec.thinking;
+  if (spec?.maxContextChars !== undefined) out.resolvedMaxContextChars = spec.maxContextChars;
+  if (spec?.toolsEnabled !== undefined) out.resolvedToolsEnabled = spec.toolsEnabled;
+  if (spec?.memoryEnabled !== undefined) out.resolvedMemoryEnabled = spec.memoryEnabled;
+  return out;
 }
 
 function normalizeProviderSummaries(values: readonly GatewayProviderSummary[]): readonly GatewayProviderSummary[] {

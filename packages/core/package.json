@@ -20,6 +20,18 @@
     "@dragon/security": "workspace:*",
     "@dragon/tools": "workspace:*"
   },
+  "peerDependencies": {
+    "mammoth": "^1.8.0",
+    "pdfjs-dist": "^4.7.76",
+    "xlsx": "^0.18.5",
+    "jszip": "^3.10.1"
+  },
+  "peerDependenciesMeta": {
+    "mammoth": { "optional": true },
+    "pdfjs-dist": { "optional": true },
+    "xlsx": { "optional": true },
+    "jszip": { "optional": true }
+  },
   "devDependencies": {
     "typescript": "^5.9.3"
   }

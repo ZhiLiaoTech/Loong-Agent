@@ -4,6 +4,13 @@
   gap: var(--space-2);
   padding-top: var(--space-3);
   border-top: 1px solid var(--line);
+  transition: background-color 120ms ease;
+}
+
+.dragging {
+  background-color: rgba(64, 128, 196, 0.08);
+  outline: 2px dashed rgba(64, 128, 196, 0.45);
+  outline-offset: -8px;
 }
 
 .input {
@@ -50,4 +57,76 @@
 .sendBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.attachBtn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.attachBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fileInput {
+  display: none;
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.attachmentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 4px 8px;
+  font-size: var(--text-xs);
+  max-width: 280px;
+}
+
+.attachmentKind {
+  font-size: 14px;
+}
+
+.attachmentName {
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.attachmentSize {
+  color: var(--muted);
+}
+
+.attachmentRemove {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.attachmentRemove:hover {
+  color: var(--danger);
+}
+
+.attachmentError {
+  color: var(--danger);
+  font-size: var(--text-xs);
 }

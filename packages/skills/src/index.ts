@@ -1,4 +1,4 @@
-import { lstat, mkdir, open, opendir, realpath, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, opendir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import type { Dirent, Stats } from "node:fs";
 import path from "node:path";
 import { TextDecoder } from "node:util";
@@ -433,6 +433,7 @@ export class FileSkillRuntime implements SkillRuntime {
   readonly #maxReferences: number;
   readonly #maxReferenceEntries: number;
   readonly #maxReferenceBytes: number;
+  readonly #warnedDuplicates = new Set<string>();
 
   constructor(options: FileSkillRuntimeOptions) {
     if (options.roots.length === 0) {
@@ -514,16 +515,28 @@ export class FileSkillRuntime implements SkillRuntime {
 
       const skillDir = path.join(root, draft.name);
       await mkdir(skillDir, { recursive: false });
-      const realSkillDir = await realpath(skillDir);
-      if (!isPathInside(realSkillDir, root)) {
-        throw new SkillRuntimeError("Skill directory escaped configured root.");
-      }
+      // Roll back the just-created directory if any later step throws.
+      // Without this, a partial create leaves an orphan empty/half-written
+      // directory that blocks retry with "Skill already exists".
+      let createdDir = true;
+      try {
+        const realSkillDir = await realpath(skillDir);
+        if (!isPathInside(realSkillDir, root)) {
+          throw new SkillRuntimeError("Skill directory escaped configured root.");
+        }
 
-      await writeFile(path.join(realSkillDir, "SKILL.md"), createSkillDocument(draft), { encoding: "utf8", flag: "wx" });
-      if (draft.references !== undefined && draft.references.length > 0) {
-        await writeSkillReferences(realSkillDir, root, draft.references, this.#maxReferenceBytes);
+        await writeFile(path.join(realSkillDir, "SKILL.md"), createSkillDocument(draft), { encoding: "utf8", flag: "wx" });
+        if (draft.references !== undefined && draft.references.length > 0) {
+          await writeSkillReferences(realSkillDir, root, draft.references, this.#maxReferenceBytes);
+        }
+        const summary = await parseSkillSummary(path.join(realSkillDir, "SKILL.md"), root, this.#maxSkillBytes);
+        createdDir = false;
+        return summary;
+      } finally {
+        if (createdDir) {
+          try { await rm(skillDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+        }
       }
-      return parseSkillSummary(path.join(realSkillDir, "SKILL.md"), root, this.#maxSkillBytes);
     } catch (error) {
       throw toSkillRuntimeError(error, "Failed to create skill.");
     }
@@ -579,11 +592,33 @@ export class FileSkillRuntime implements SkillRuntime {
         const summary = await parseSkillSummary(skillFile, root, this.#maxSkillBytes);
         entries.push({ summary, skillFile, root });
         if (entries.length >= this.#maxSkills) {
-          return sortSkills(entries);
+          return this.#dedupeAndSortSkills(entries);
         }
       }
     }
-    return sortSkills(entries);
+    return this.#dedupeAndSortSkills(entries);
+  }
+
+  // Entries are appended in root order; the first-root winner keeps the
+  // duplicate name. Warn once per duplicate so admins can diagnose unexpected
+  // shadowing instead of silently picking one.
+  #dedupeAndSortSkills(entries: SkillIndexEntry[]): SkillIndexEntry[] {
+    const seen = new Map<string, SkillIndexEntry>();
+    for (const entry of entries) {
+      const key = entry.summary.name.toLowerCase();
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, entry);
+        continue;
+      }
+      if (!this.#warnedDuplicates.has(key)) {
+        this.#warnedDuplicates.add(key);
+        console.warn(
+          `[dragon-skills] duplicate skill "${entry.summary.name}" — keeping ${path.relative(process.cwd(), existing.skillFile)}, ignoring ${path.relative(process.cwd(), entry.skillFile)}`,
+        );
+      }
+    }
+    return sortSkills([...seen.values()]);
   }
 
   async #resolveWritableRoot(): Promise<string> {
@@ -838,10 +873,16 @@ async function writeSkillReferences(
 }
 
 function normalizeReferenceWritePath(value: string): string {
-  if (path.isAbsolute(value) || /^[a-zA-Z]:/.test(value)) {
+  if (path.isAbsolute(value) || /^[a-zA-Z]:/.test(value) || value.startsWith("\\\\")) {
     throw new SkillRuntimeError("Skill reference path must be relative.");
   }
+  // Normalize separators first, then detect any newly-revealed absolute
+  // forms (e.g. "\foo" -> "/foo", "C:\bar" -> "C:/bar") so cross-platform
+  // inputs cannot bypass the relative-path checks below.
   const trimmed = value.trim().replace(/\\/g, "/").replace(/^references\//, "");
+  if (trimmed.startsWith("/") || /^[a-zA-Z]:/.test(trimmed)) {
+    throw new SkillRuntimeError("Skill reference path must be relative.");
+  }
   if (!trimmed || trimmed.includes("\0") || trimmed.split("/").some(part => part === "" || part === "." || part === "..")) {
     throw new SkillRuntimeError("Skill reference path must stay inside references/.");
   }

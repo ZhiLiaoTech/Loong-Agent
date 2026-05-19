@@ -1,11 +1,14 @@
 import { LoadedProvidersTable } from "./components/LoadedProvidersTable.js";
 import { ModelConfigTable } from "./components/ModelConfigTable.js";
 import { ModelProviderForm } from "./components/ModelProviderForm.js";
+import { TierConfigPanel } from "./components/TierConfigPanel.js";
 import styles from "./ModelsWorkspace.module.css";
 import { useModelsPage } from "./useModelsPage.js";
+import { useTiersPage } from "./useTiersPage.js";
 
 export function ModelsWorkspace() {
   const page = useModelsPage();
+  const tiers = useTiersPage();
 
   return (
     <div className={styles.workspace}>
@@ -61,6 +64,8 @@ export function ModelsWorkspace() {
         loading={page.loading}
         onRefresh={() => void page.load()}
       />
+
+      <TierConfigPanel page={tiers} />
     </div>
   );
 }

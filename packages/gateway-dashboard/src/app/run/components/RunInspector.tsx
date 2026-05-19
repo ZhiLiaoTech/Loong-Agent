@@ -1,9 +1,11 @@
 import type { AgentRunResult } from "../types.js";
+import type { LastTierInfo } from "../useRunChat.js";
 import styles from "./RunInspector.module.css";
 
 export interface RunInspectorProps {
   activeRunId: string;
   lastResult: AgentRunResult | null;
+  lastTier: LastTierInfo | null;
   cancelError: string | null;
   showRaw: boolean;
   onToggleRaw: () => void;
@@ -13,6 +15,7 @@ export interface RunInspectorProps {
 export function RunInspector({
   activeRunId,
   lastResult,
+  lastTier,
   cancelError,
   showRaw,
   onToggleRaw,
@@ -41,6 +44,23 @@ export function RunInspector({
         <dd>{activeRunId || lastResult?.runId || "—"}</dd>
         <dt>Status</dt>
         <dd>{lastResult?.status || "—"}</dd>
+        {lastTier ? (
+          <>
+            <dt>Tier</dt>
+            <dd>
+              <strong>{lastTier.tier}</strong>
+              {lastTier.source ? ` · ${lastTier.source}` : ""}
+              {typeof lastTier.score === "number" ? ` · score=${lastTier.score}` : ""}
+              {lastTier.thinking ? ` · thinking=${lastTier.thinking}` : ""}
+            </dd>
+            {lastTier.reason ? (
+              <>
+                <dt>Tier reason</dt>
+                <dd><code>{lastTier.reason}</code></dd>
+              </>
+            ) : null}
+          </>
+        ) : null}
       </dl>
       {cancelError ? <p className={styles.error}>{cancelError}</p> : null}
       {showRaw ? (

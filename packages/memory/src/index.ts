@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, lstat, mkdir, open, opendir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, open, opendir, readFile, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type {
@@ -159,7 +159,7 @@ export interface MemoryCandidateToolsOptions {
   maxCandidateBytes?: number;
 }
 
-export type MemoryCandidateStatus = "pending" | "promoted" | "rejected";
+export type MemoryCandidateStatus = "pending" | "promoting" | "promoted" | "rejected";
 
 export interface MemoryCandidateRecord {
   id: string;
@@ -178,6 +178,11 @@ export interface MemoryCandidateRecord {
   workspace?: string;
   assistantPreview?: string;
   metadata?: Record<string, unknown>;
+  // Reservation written when status transitions to "promoting". Used to
+  // detect crashes between phase 2 (store.remember) and phase 3 (finalize),
+  // so a retry cannot silently create a duplicate memory record.
+  reservationId?: string;
+  reservationAt?: string;
 }
 
 export interface MemoryCandidateListInput {
@@ -344,7 +349,7 @@ const memoryRememberSchema: ToolJsonSchema = {
 const memoryCandidateListSchema: ToolJsonSchema = {
   type: "object",
   properties: {
-    status: { type: "string", enum: ["pending", "promoted", "rejected", "all"] },
+    status: { type: "string", enum: ["pending", "promoting", "promoted", "rejected", "all"] },
     dateFrom: { type: "string" },
     dateTo: { type: "string" },
     limit: { type: "number" },
@@ -600,13 +605,17 @@ export function createMemoryCandidateLifecycleHook(
       const filePath = memoryCandidatePath(rootDir, candidate.createdAt);
       await mkdir(path.dirname(filePath), { recursive: true });
       await assertSafeMemoryCandidateDirectory(path.dirname(filePath));
-      await assertCanAppendRegularFile(
-        filePath,
-        Buffer.byteLength(`${serialized}\n`, "utf8"),
-        maxFileBytes,
-        "Memory candidate file",
-      );
-      await appendFile(filePath, `${serialized}\n`, "utf8");
+      // Hold the per-file lock so append is serialized against concurrent
+      // promote/reject rewrites in this and other processes.
+      await withMemoryFileLock(filePath, async () => {
+        await assertCanAppendRegularFile(
+          filePath,
+          Buffer.byteLength(`${serialized}\n`, "utf8"),
+          maxFileBytes,
+          "Memory candidate file",
+        );
+        await appendFile(filePath, `${serialized}\n`, "utf8");
+      });
     },
   };
 }
@@ -698,29 +707,92 @@ export function createMemoryCandidatePromoteTool(
       return safelyInvokeMemoryTool(invocation, async () => {
         const input = parseMemoryCandidatePromoteInput(invocation.input);
         return await withMemoryCandidateReviewLock(input.id, async () => {
-          const current = await findMemoryCandidate(rootDir, input.id, maxFiles, maxFileBytes);
-          if (current.record.status !== "pending") {
-            throw new MemoryToolError(`Memory candidate is already ${current.record.status}.`);
-          }
-          const draft = memoryDraftFromCandidate(current.record, input, invocation);
-          const memoryRecord = await options.store.remember(draft);
-          const promoted = await rewriteMemoryCandidate(rootDir, current.filePath, input.id, maxFileBytes, maxCandidateBytes, candidate => {
-            const updated: MemoryCandidateRecord = {
-              ...candidate,
-              status: "promoted",
-              reviewedAt: new Date().toISOString(),
-              promotedMemoryId: memoryRecord.id,
-            };
-            const runId = readInvocationRunId(invocation);
-            if (runId !== undefined) {
-              updated.reviewedByRunId = runId;
+          const initial = await findMemoryCandidate(rootDir, input.id, maxFiles, maxFileBytes);
+          return await withMemoryFileLock(initial.filePath, async () => {
+            const current = await findMemoryCandidate(rootDir, input.id, maxFiles, maxFileBytes);
+            if (current.record.status === "promoting") {
+              throw new MemoryToolError(
+                `Memory candidate ${input.id} is in transient "promoting" state from a prior incomplete promote (reservation ${current.record.reservationId ?? "unknown"} at ${current.record.reservationAt ?? "unknown"}). Inspect ${path.basename(current.filePath)} before retrying.`,
+              );
             }
-            return updated;
+            if (current.record.status !== "pending") {
+              throw new MemoryToolError(`Memory candidate is already ${current.record.status}.`);
+            }
+            const draft = memoryDraftFromCandidate(current.record, input, invocation);
+            // Phase 1: reserve. A reservation in the candidate file means a
+            // crash before phase 3 leaves a visible "stuck" record instead
+            // of silently re-storing on a retry.
+            const reservationId = randomUUID();
+            const reservedAt = new Date().toISOString();
+            await rewriteMemoryCandidate(
+              rootDir,
+              current.filePath,
+              input.id,
+              maxFileBytes,
+              maxCandidateBytes,
+              candidate => ({
+                ...candidate,
+                status: "promoting",
+                reservationId,
+                reservationAt: reservedAt,
+              }),
+              { allowedStatuses: ["pending"] },
+            );
+            // Phase 2: durable store write.
+            let memoryRecord;
+            try {
+              memoryRecord = await options.store.remember(draft);
+            } catch (storeError) {
+              // Best-effort rollback to pending so the user can retry.
+              try {
+                await rewriteMemoryCandidate(
+                  rootDir,
+                  current.filePath,
+                  input.id,
+                  maxFileBytes,
+                  maxCandidateBytes,
+                  candidate => {
+                    const reverted: MemoryCandidateRecord = { ...candidate, status: "pending" };
+                    delete reverted.reservationId;
+                    delete reverted.reservationAt;
+                    return reverted;
+                  },
+                  { allowedStatuses: ["promoting"] },
+                );
+              } catch {
+                // Rollback failed; surface the original error.
+              }
+              throw storeError;
+            }
+            // Phase 3: finalize.
+            const promoted = await rewriteMemoryCandidate(
+              rootDir,
+              current.filePath,
+              input.id,
+              maxFileBytes,
+              maxCandidateBytes,
+              candidate => {
+                const updated: MemoryCandidateRecord = {
+                  ...candidate,
+                  status: "promoted",
+                  reviewedAt: new Date().toISOString(),
+                  promotedMemoryId: memoryRecord.id,
+                };
+                const runId = readInvocationRunId(invocation);
+                if (runId !== undefined) {
+                  updated.reviewedByRunId = runId;
+                }
+                delete updated.reservationId;
+                delete updated.reservationAt;
+                return updated;
+              },
+              { allowedStatuses: ["promoting"] },
+            );
+            return {
+              candidate: promoted,
+              record: memoryRecord,
+            };
           });
-          return {
-            candidate: promoted,
-            record: memoryRecord,
-          };
         });
       });
     },
@@ -752,26 +824,39 @@ export function createMemoryCandidateRejectTool(
       return safelyInvokeMemoryTool(invocation, async () => {
         const input = parseMemoryCandidateRejectInput(invocation.input);
         return await withMemoryCandidateReviewLock(input.id, async () => {
-          const current = await findMemoryCandidate(rootDir, input.id, maxFiles, maxFileBytes);
-          if (current.record.status !== "pending") {
-            throw new MemoryToolError(`Memory candidate is already ${current.record.status}.`);
-          }
-          const rejected = await rewriteMemoryCandidate(rootDir, current.filePath, input.id, maxFileBytes, maxCandidateBytes, candidate => {
-            const updated: MemoryCandidateRecord = {
-              ...candidate,
-              status: "rejected",
-              reviewedAt: new Date().toISOString(),
-            };
-            const runId = readInvocationRunId(invocation);
-            if (runId !== undefined) {
-              updated.reviewedByRunId = runId;
+          const initial = await findMemoryCandidate(rootDir, input.id, maxFiles, maxFileBytes);
+          return await withMemoryFileLock(initial.filePath, async () => {
+            const current = await findMemoryCandidate(rootDir, input.id, maxFiles, maxFileBytes);
+            if (current.record.status !== "pending" && current.record.status !== "promoting") {
+              throw new MemoryToolError(`Memory candidate is already ${current.record.status}.`);
             }
-            if (input.reason !== undefined) {
-              updated.rejectionReason = input.reason;
-            }
-            return updated;
+            const rejected = await rewriteMemoryCandidate(
+              rootDir,
+              current.filePath,
+              input.id,
+              maxFileBytes,
+              maxCandidateBytes,
+              candidate => {
+                const updated: MemoryCandidateRecord = {
+                  ...candidate,
+                  status: "rejected",
+                  reviewedAt: new Date().toISOString(),
+                };
+                const runId = readInvocationRunId(invocation);
+                if (runId !== undefined) {
+                  updated.reviewedByRunId = runId;
+                }
+                if (input.reason !== undefined) {
+                  updated.rejectionReason = input.reason;
+                }
+                delete updated.reservationId;
+                delete updated.reservationAt;
+                return updated;
+              },
+              { allowedStatuses: ["pending", "promoting"] },
+            );
+            return { candidate: rejected };
           });
-          return { candidate: rejected };
         });
       });
     },
@@ -1165,7 +1250,7 @@ async function listDailyMarkdownNotes(notesDir: SafeMarkdownDirectory, maxDailyN
     if (scanned > MARKDOWN_DAILY_NOTE_SCAN_LIMIT) {
       break;
     }
-    if (entry.isFile() && /^\d{4}-\d{2}-\d{2}\.md$/i.test(entry.name)) {
+    if (entry.isFile() && /^\d{4}-\d{2}-\d{2}\.md$/i.test(entry.name) && isRealCalendarDate(entry.name.slice(0, 10))) {
       names.push(entry.name);
     }
   }
@@ -1776,6 +1861,64 @@ async function withMemoryCandidateReviewLock<T>(candidateId: string, task: () =>
   }
 }
 
+const MEMORY_FILE_LOCK_TIMEOUT_MS = 15_000;
+const MEMORY_FILE_LOCK_RETRY_MS = 50;
+const MEMORY_FILE_LOCK_STALE_MS = 60_000;
+
+// Cross-process advisory lock per JSONL file. Uses mkdir which is atomic on
+// POSIX and Windows. Same file cannot be appended-to and rewritten
+// concurrently across processes (e.g. CLI and Gateway sharing .dragon/memory).
+async function withMemoryFileLock<T>(filePath: string, task: () => Promise<T>): Promise<T> {
+  const release = await acquireMemoryFileLock(filePath);
+  try {
+    return await task();
+  } finally {
+    await release();
+  }
+}
+
+async function acquireMemoryFileLock(filePath: string): Promise<() => Promise<void>> {
+  const lockDir = `${filePath}.lock`;
+  const deadline = Date.now() + MEMORY_FILE_LOCK_TIMEOUT_MS;
+  while (true) {
+    try {
+      await mkdir(lockDir, { recursive: false });
+      try {
+        await writeFile(path.join(lockDir, "owner"), String(process.pid), "utf8");
+      } catch {
+        // owner marker is best-effort
+      }
+      let released = false;
+      return async () => {
+        if (released) return;
+        released = true;
+        try { await unlink(path.join(lockDir, "owner")); } catch { /* ignore */ }
+        try { await rmdir(lockDir); } catch { /* may have been cleaned by stale handler */ }
+      };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") {
+        throw error;
+      }
+      try {
+        const lockStat = await stat(lockDir);
+        if (Date.now() - lockStat.mtimeMs > MEMORY_FILE_LOCK_STALE_MS) {
+          try { await unlink(path.join(lockDir, "owner")); } catch { /* ignore */ }
+          try { await rmdir(lockDir); } catch { /* ignore */ }
+        }
+      } catch {
+        // stale check best-effort
+      }
+      if (Date.now() >= deadline) {
+        throw new MemoryToolError(
+          `Timed out acquiring memory candidate lock on ${path.basename(filePath)} after ${MEMORY_FILE_LOCK_TIMEOUT_MS}ms.`,
+        );
+      }
+      await new Promise(resolve => setTimeout(resolve, MEMORY_FILE_LOCK_RETRY_MS));
+    }
+  }
+}
+
 interface MemoryCandidateEntry {
   record: MemoryCandidateRecord;
   filePath: string;
@@ -1826,21 +1969,44 @@ async function readMemoryCandidateEntries(
     return [];
   }
   const fileNames = await listMemoryCandidateFileNames(candidateDir, input, maxFiles);
-  const entries: MemoryCandidateEntry[] = [];
+  // Collect all entries first, then dedupe by id (keep latest mutation per id)
+  // so a JSONL file with multiple lines for the same candidate (append +
+  // rewrite) does not show duplicates in the review list.
+  const allEntries: MemoryCandidateEntry[] = [];
   for (const fileName of fileNames) {
     const filePath = path.join(candidateDir.path, fileName);
     const fileEntries = await readMemoryCandidateFile(filePath, candidateDir, maxFileBytes);
     for (const entry of fileEntries) {
-      if (!memoryCandidateMatches(entry.record, input)) {
-        continue;
-      }
-      entries.push(entry);
-      if (entries.length >= maxEntries) {
-        return entries;
-      }
+      allEntries.push(entry);
+    }
+  }
+  const byId = new Map<string, MemoryCandidateEntry>();
+  for (const entry of allEntries) {
+    const existing = byId.get(entry.record.id);
+    if (!existing || compareCandidateRecency(entry.record, existing.record) > 0) {
+      byId.set(entry.record.id, entry);
+    }
+  }
+  const entries: MemoryCandidateEntry[] = [];
+  for (const entry of byId.values()) {
+    if (!memoryCandidateMatches(entry.record, input)) {
+      continue;
+    }
+    entries.push(entry);
+    if (entries.length >= maxEntries) {
+      break;
     }
   }
   return entries;
+}
+
+function compareCandidateRecency(a: MemoryCandidateRecord, b: MemoryCandidateRecord): number {
+  const aTs = Date.parse(a.reviewedAt ?? a.reservationAt ?? a.createdAt);
+  const bTs = Date.parse(b.reviewedAt ?? b.reservationAt ?? b.createdAt);
+  if (Number.isNaN(aTs) || Number.isNaN(bTs)) {
+    return 0;
+  }
+  return aTs - bTs;
 }
 
 interface SafeMemoryCandidateDirectory {
@@ -1899,6 +2065,9 @@ async function listMemoryCandidateFileNames(
       continue;
     }
     const date = entry.name.slice(0, 10);
+    if (!isRealCalendarDate(date)) {
+      continue;
+    }
     if (input.dateFrom !== undefined && date < input.dateFrom) {
       continue;
     }
@@ -1995,11 +2164,13 @@ async function rewriteMemoryCandidate(
   maxFileBytes: number,
   maxCandidateBytes: number,
   update: (candidate: MemoryCandidateRecord) => MemoryCandidateRecord,
+  options: { allowedStatuses?: readonly MemoryCandidateStatus[] } = {},
 ): Promise<MemoryCandidateRecord> {
   const candidateDir = await resolveSafeMemoryCandidateDirectory(path.join(rootDir, "candidates"));
   if (candidateDir === undefined || !isPathInside(filePath, candidateDir.path)) {
     throw new MemoryToolError("Memory candidate file is unavailable.");
   }
+  const allowedStatuses = options.allowedStatuses ?? (["pending"] as const);
   const content = await readSafeMemoryCandidateFile(filePath, candidateDir, maxFileBytes);
   const lines = content.split(/\r?\n/);
   let updated: MemoryCandidateRecord | undefined;
@@ -2012,7 +2183,7 @@ async function rewriteMemoryCandidate(
     if (record.id !== candidateId) {
       return stringifyMemoryCandidate(record, maxCandidateBytes);
     }
-    if (record.status !== "pending") {
+    if (!allowedStatuses.includes(record.status)) {
       throw new MemoryToolError(`Memory candidate is already ${record.status}.`);
     }
     updated = update(record);
@@ -2125,10 +2296,28 @@ function validateMemoryCandidateRecord(value: unknown, source: string): asserts 
   if (value.metadata !== undefined && !isObject(value.metadata)) {
     throw new MemoryToolError(`Invalid memory candidate at ${source}: invalid metadata.`);
   }
+  if (value.reservationId !== undefined && typeof value.reservationId !== "string") {
+    throw new MemoryToolError(`Invalid memory candidate at ${source}: invalid reservationId.`);
+  }
+  if (value.reservationAt !== undefined && (typeof value.reservationAt !== "string" || Number.isNaN(Date.parse(value.reservationAt)))) {
+    throw new MemoryToolError(`Invalid memory candidate at ${source}: invalid reservationAt.`);
+  }
 }
 
 function isMemoryCandidateStatus(value: unknown): value is MemoryCandidateStatus {
-  return value === "pending" || value === "promoted" || value === "rejected";
+  return value === "pending" || value === "promoting" || value === "promoted" || value === "rejected";
+}
+
+function isRealCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return false;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
 }
 
 function normalizeCandidateId(value: string): string {

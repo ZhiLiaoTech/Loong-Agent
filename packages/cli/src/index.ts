@@ -6,11 +6,15 @@ import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import {
   createDragonRuntime,
+  normalizeTierConfig,
   type DragonAgentRuntime,
+  type DragonAttachment,
   type DragonEvent,
   type DragonLifecycleHook,
   type DragonPermissionHandler,
   type DragonPermissionRequest,
+  type DragonTierHint,
+  type ModelTierConfig,
 } from "@dragon/core";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
 import { createRuntimeDelegationTool } from "@dragon/delegation";
@@ -27,6 +31,9 @@ import {
   type GatewayModelProviderConfig,
   type GatewayPluginSummary,
   type GatewayProviderSummary,
+  type GatewayTierConfig,
+  type GatewayTierConfigSaveParams,
+  type GatewayTierConfigStore,
 } from "@dragon/gateway";
 import {
   createFileMemoryStore,
@@ -78,6 +85,77 @@ const MAX_PLUGIN_MEMORY_METADATA_BYTES = 4096;
 const MAX_PLUGIN_MEMORY_METADATA_DEPTH = 8;
 const MAX_PLUGIN_MEMORY_METADATA_ARRAY_ITEMS = 100;
 const MAX_PLUGIN_MEMORY_METADATA_OBJECT_KEYS = 100;
+
+// Declared above the top-level `await` dispatch so the helper below can be
+// invoked during runChat without hitting a TDZ on these maps.
+const TEXT_FILE_EXTENSIONS = new Map<string, string>([
+  [".md", "text/markdown"],
+  [".markdown", "text/markdown"],
+  [".txt", "text/plain"],
+  [".log", "text/plain"],
+  [".csv", "text/csv"],
+  [".tsv", "text/csv"],
+  [".html", "text/html"],
+  [".htm", "text/html"],
+  [".css", "text/css"],
+  [".js", "text/javascript"],
+  [".mjs", "text/javascript"],
+  [".cjs", "text/javascript"],
+  [".ts", "text/plain"],
+  [".tsx", "text/plain"],
+  [".jsx", "text/javascript"],
+  [".py", "text/x-python"],
+  [".json", "application/json"],
+  [".jsonl", "application/json"],
+  [".yaml", "application/yaml"],
+  [".yml", "application/yaml"],
+  [".xml", "application/xml"],
+  [".rs", "text/plain"],
+  [".go", "text/plain"],
+  [".rb", "text/plain"],
+  [".sh", "text/plain"],
+  [".sql", "text/plain"],
+]);
+const IMAGE_FILE_EXTENSIONS = new Map<string, string>([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+  [".gif", "image/gif"],
+]);
+const DOCUMENT_FILE_EXTENSIONS = new Map<string, string>([
+  [".pdf", "application/pdf"],
+  [".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  [".doc", "application/msword"],
+  [".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  [".xls", "application/vnd.ms-excel"],
+  [".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+  [".ppt", "application/vnd.ms-powerpoint"],
+  [".rtf", "application/rtf"],
+]);
+
+async function readAttachmentFromDisk(filePath: string): Promise<DragonAttachment> {
+  const absolute = path.resolve(filePath);
+  const buffer = await readFile(absolute);
+  const ext = path.extname(absolute).toLowerCase();
+  const name = path.basename(absolute);
+  const imageMime = IMAGE_FILE_EXTENSIONS.get(ext);
+  if (imageMime) {
+    return { kind: "image", mimeType: imageMime, data: buffer.toString("base64"), name, size: buffer.byteLength };
+  }
+  const documentMime = DOCUMENT_FILE_EXTENSIONS.get(ext);
+  if (documentMime) {
+    return { kind: "document", mimeType: documentMime, data: buffer.toString("base64"), name, size: buffer.byteLength };
+  }
+  const textMime = TEXT_FILE_EXTENSIONS.get(ext) ?? "text/plain";
+  // Validate UTF-8 before sending — fail loudly on binary files passed as text
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    throw new Error(`--attach: ${filePath} is not a UTF-8 text file (and its extension is not a known image / pdf / docx / xlsx / pptx / rtf type).`);
+  }
+  return { kind: "text", mimeType: textMime, data: buffer.toString("base64"), name, size: buffer.byteLength };
+}
 
 try {
   if (command === "help" || command === "--help" || command === "-h") {
@@ -172,6 +250,7 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
 
   const builtinProviders = await createBuiltinProviders();
   const permissionHandler = mode === "agent" ? createCliPermissionHandler() : undefined;
+  const tierConfig = await loadPersistedTierConfig(configuredTierConfigPath());
   const runtimeBundle = await createRuntime({
     mode,
     allowWrite: parsed.allowWrite,
@@ -184,6 +263,7 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
     providers: builtinProviders.providers,
     ...(builtinProviders.defaultProviderId ? { defaultProviderId: builtinProviders.defaultProviderId } : {}),
     ...(permissionHandler ? { permissionHandler } : {}),
+    tierConfig,
   });
   const runtime = runtimeBundle.runtime;
 
@@ -196,12 +276,17 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
       renderEvent(event);
     });
 
+    const attachments = parsed.attachments
+      ? await Promise.all(parsed.attachments.map(spec => readAttachmentFromDisk(spec.filePath)))
+      : undefined;
     const turnInput = {
       sessionId: parsed.sessionId,
       source: "cli",
       message: parsed.message,
       ...(parsed.model !== undefined ? { model: parsed.model } : {}),
       ...(parsed.modelFallbacks !== undefined ? { modelFallbacks: parsed.modelFallbacks } : {}),
+      ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {}),
+      ...(parsed.tier !== undefined ? { tier: parsed.tier } : {}),
       metadata: {
         mode,
         agentAlias: mode === "agent",
@@ -233,7 +318,9 @@ async function runGateway(args: string[]): Promise<void> {
   const parsed = parseGatewayArgs(args);
   const modelConfigPath = configuredModelConfigPath();
   const agentConfigPath = configuredAgentConfigPath();
+  const tierConfigPath = configuredTierConfigPath();
   const builtinProviders = await createBuiltinProviders();
+  const initialTierConfig = await loadPersistedTierConfig(tierConfigPath);
   const trajectoryStore = createFileTrajectoryStore({ rootDir: path.join(parsed.memoryDir, "trajectories") });
   const cronStore = createFileCronJobStore({ filePath: parsed.cronJobsFile });
   const cronRunner = createCronRunner({
@@ -255,6 +342,7 @@ async function runGateway(args: string[]): Promise<void> {
     trajectoryStore,
     providers: builtinProviders.providers,
     ...(builtinProviders.defaultProviderId ? { defaultProviderId: builtinProviders.defaultProviderId } : {}),
+    tierConfig: initialTierConfig,
   });
   const gateway = createHttpGateway({
     runtime: runtimeBundle.runtime,
@@ -265,6 +353,16 @@ async function runGateway(args: string[]): Promise<void> {
     providerSummaries: summarizeProviders(runtimeBundle.providers),
     modelConfigStore: createModelConfigStore(modelConfigPath),
     agentConfigStore: createAgentConfigStore(agentConfigPath),
+    tierConfigStore: createTierConfigStore(tierConfigPath),
+    onTierConfigChange: (saved) => {
+      const next = normalizeTierConfig(saved);
+      const runtime = runtimeBundle.runtime as DragonAgentRuntime & {
+        setTierConfig?: (config: ModelTierConfig | undefined) => void;
+      };
+      if (typeof runtime.setTierConfig === "function") {
+        runtime.setTierConfig(next);
+      }
+    },
     tools: runtimeBundle.tools,
     ...(runtimeBundle.permissionEngine ? { permissionEngine: runtimeBundle.permissionEngine } : {}),
   });
@@ -327,6 +425,7 @@ interface RuntimeFactoryOptions {
   providers?: ModelProvider[];
   defaultProviderId?: string;
   permissionHandler?: DragonPermissionHandler;
+  tierConfig?: ModelTierConfig;
 }
 
 interface RuntimeFactoryResult {
@@ -457,9 +556,11 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
     const defaultProvider = options.defaultProviderId !== undefined
       ? providers.find(provider => provider.id === options.defaultProviderId)
       : undefined;
-    const runtimeConfig = defaultProvider?.defaultModel !== undefined
-      ? { ...runtimeOptions, defaultModel: defaultProvider.defaultModel }
-      : runtimeOptions;
+    const runtimeConfig: Parameters<typeof createDragonRuntime>[0] = {
+      ...runtimeOptions,
+      ...(defaultProvider?.defaultModel !== undefined ? { defaultModel: defaultProvider.defaultModel } : {}),
+      ...(options.tierConfig !== undefined ? { tierConfig: options.tierConfig } : {}),
+    };
 
     runtime = createDragonRuntime(runtimeConfig);
 
@@ -802,6 +903,11 @@ function configuredModelConfigPath(): string {
   return path.resolve(configured || path.join(process.cwd(), ".dragon", "config", "providers.json"));
 }
 
+function configuredTierConfigPath(): string {
+  const configured = process.env.DRAGON_TIER_CONFIG?.trim();
+  return path.resolve(configured || path.join(process.cwd(), ".dragon", "config", "tiers.json"));
+}
+
 function createModelConfigStore(filePath: string): GatewayModelConfigStore {
   return {
     async load() {
@@ -845,6 +951,61 @@ async function savePersistedModelConfig(
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify({ providers }, null, 2)}\n`, "utf8");
   return toSafeModelConfig({ providers }, filePath);
+}
+
+function createTierConfigStore(filePath: string): GatewayTierConfigStore {
+  return {
+    async load() {
+      return toGatewayTierConfig(await loadPersistedTierConfig(filePath), filePath);
+    },
+    async save(config: GatewayTierConfigSaveParams) {
+      return savePersistedTierConfig(filePath, config);
+    },
+  };
+}
+
+async function loadPersistedTierConfig(filePath: string): Promise<ModelTierConfig> {
+  let text: string;
+  try {
+    text = await readFile(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return normalizeTierConfig(undefined);
+    }
+    throw error;
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Invalid tier config JSON at ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return normalizeTierConfig(json);
+}
+
+async function savePersistedTierConfig(
+  filePath: string,
+  config: GatewayTierConfigSaveParams,
+): Promise<GatewayTierConfig> {
+  const normalized = normalizeTierConfig(config);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  return toGatewayTierConfig(normalized, filePath);
+}
+
+function toGatewayTierConfig(config: ModelTierConfig, filePath: string): GatewayTierConfig {
+  const out: GatewayTierConfig = {
+    enabled: config.enabled,
+    tiers: { ...config.tiers },
+    classifier: {
+      mode: config.classifier.mode,
+      ...(config.classifier.fixedTier !== undefined ? { fixedTier: config.classifier.fixedTier } : {}),
+      ...(config.classifier.keywordHints !== undefined ? { keywordHints: config.classifier.keywordHints } : {}),
+    },
+    appliesOn: "next-turn",
+    configPath: filePath,
+  };
+  return out;
 }
 
 function normalizePersistedModelConfig(value: unknown, source: string): { providers: GatewayModelProviderConfig[] } {
@@ -1239,6 +1400,12 @@ interface ParsedChatArgs {
   allowWrite: boolean;
   skillRoots?: string[];
   pluginRoots: string[];
+  attachments?: ParsedAttachmentSpec[];
+  tier?: DragonTierHint;
+}
+
+interface ParsedAttachmentSpec {
+  filePath: string;
 }
 
 function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
@@ -1249,11 +1416,13 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
   let memoryBackendId = mode === "agent" ? process.env.DRAGON_MEMORY_BACKEND?.trim() || undefined : undefined;
   let model = process.env.DRAGON_MODEL?.trim() || undefined;
   const modelFallbacks = parseListEnv(process.env.DRAGON_MODEL_FALLBACKS);
+  let tier: DragonTierHint | undefined = parseTierName(process.env.DRAGON_TIER);
   let noSession = false;
   let allowWrite = false;
   const defaultSkillRoots = mode === "agent" ? configuredSkillRoots() : [];
   const skillRoots: string[] = [];
   const pluginRoots = configuredPluginRoots();
+  const attachments: ParsedAttachmentSpec[] = [];
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -1263,6 +1432,23 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
     }
     if (arg === "--allow-write") {
       allowWrite = true;
+      continue;
+    }
+    if (arg === "--attach") {
+      const value = args[index + 1]?.trim();
+      if (!value) {
+        throw new Error(`Usage: dragon ${mode} --attach <path> <message>`);
+      }
+      attachments.push({ filePath: path.resolve(value) });
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith("--attach=")) {
+      const value = arg.slice("--attach=".length).trim();
+      if (!value) {
+        throw new Error(`Usage: dragon ${mode} --attach=<path> <message>`);
+      }
+      attachments.push({ filePath: path.resolve(value) });
       continue;
     }
     if (arg === "--model") {
@@ -1289,6 +1475,25 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
       }
       modelFallbacks.push(value);
       index += 1;
+      continue;
+    }
+    if (arg === "--tier") {
+      const value = args[index + 1]?.trim();
+      const parsed = parseTierName(value);
+      if (!parsed) {
+        throw new Error(`Usage: dragon ${mode} --tier <fast|standard|deep> <message>`);
+      }
+      tier = parsed;
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith("--tier=")) {
+      const value = arg.slice("--tier=".length).trim();
+      const parsed = parseTierName(value);
+      if (!parsed) {
+        throw new Error(`Usage: dragon ${mode} --tier=<fast|standard|deep> <message>`);
+      }
+      tier = parsed;
       continue;
     }
     if (arg?.startsWith("--model-fallback=")) {
@@ -1423,8 +1628,8 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
   }
 
   const message = messageParts.join(" ").trim();
-  if (!message) {
-    throw new Error(`Usage: dragon ${mode} [--session <id>] [--no-session] <message>`);
+  if (!message && attachments.length === 0) {
+    throw new Error(`Usage: dragon ${mode} [--session <id>] [--no-session] [--attach <path>] <message>`);
   }
 
   return {
@@ -1439,7 +1644,17 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
     allowWrite,
     pluginRoots: uniquePaths(pluginRoots),
     ...(mode === "agent" ? { skillRoots: uniquePaths([...skillRoots, ...defaultSkillRoots]) } : {}),
+    ...(attachments.length > 0 ? { attachments } : {}),
+    ...(tier !== undefined ? { tier } : {}),
   };
+}
+
+function parseTierName(value: string | undefined): DragonTierHint | undefined {
+  const trimmed = value?.trim();
+  if (trimmed === "fast" || trimmed === "standard" || trimmed === "deep") {
+    return trimmed;
+  }
+  return undefined;
 }
 
 function parseListEnv(value: string | undefined): string[] {
@@ -2084,8 +2299,8 @@ function printHelp(): void {
   console.log(`Dragon (Qianlong)
 
 Usage:
-  dragon chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--model-fallback <ref>] [--plugin-root <path>] <message>
-  dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--model <ref>] [--model-fallback <ref>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] <message>
+  dragon chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--plugin-root <path>] [--attach <path>]... <message>
+  dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--attach <path>]... <message>
   dragon gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>]
   dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] [--once] [--interval-ms <ms>]
 
@@ -2099,6 +2314,11 @@ Provider:
   Dashboard model provider config is stored in .dragon/config/providers.json by default; override with DRAGON_MODEL_CONFIG.
   Dashboard agent profile config is stored in .dragon/config/agents.json by default; override with DRAGON_AGENT_CONFIG.
   Optional: DRAGON_MODEL, --model <ref>, DRAGON_MODEL_FALLBACKS, --model-fallback <ref>.
+
+Tiers (multi-model scheduling):
+  Tier config is stored in .dragon/config/tiers.json by default; override with DRAGON_TIER_CONFIG.
+  Heuristic classifier auto-routes to fast/standard/deep based on message length, attachments, keywords, and agent signals.
+  Forcing a tier: DRAGON_TIER=fast|standard|deep or --tier <fast|standard|deep>. Explicit --model always wins over tier routing.
 
 Permissions:
   Write tools prompt for approval in an interactive terminal.

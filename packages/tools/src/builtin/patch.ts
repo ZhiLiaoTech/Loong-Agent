@@ -1,4 +1,5 @@
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { TextDecoder } from "node:util";
 import type { ToolDefinition, ToolInvocation, ToolJsonSchema, ToolResult } from "../types.js";
@@ -76,7 +77,7 @@ export function createFilePatchTool(): ToolDefinition<FilePatchInput, FilePatchO
           throw new Error(`Refusing to write patched file larger than ${MAX_PATCH_FILE_BYTES} bytes: ${input.path}`);
         }
 
-        await writeFile(absolutePath, after, "utf8");
+        await atomicWriteFile(absolutePath, after);
         return {
           path: relativePath,
           replacements: input.replaceAll ? matchCount : 1,
@@ -131,6 +132,20 @@ function parseFilePatchInput(input: unknown): FilePatchInput {
     newText: input.newText,
     ...(typeof input.replaceAll === "boolean" ? { replaceAll: input.replaceAll } : {}),
   };
+}
+
+// Atomic write: write content to a sibling temp file, then rename over the
+// destination. A crash mid-write leaves the original file intact instead of
+// truncated, which plain writeFile would not guarantee.
+async function atomicWriteFile(filePath: string, content: string): Promise<void> {
+  const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(tempPath, content, { encoding: "utf8", flag: "wx" });
+    await rename(tempPath, filePath);
+  } catch (error) {
+    try { await unlink(tempPath); } catch { /* best-effort */ }
+    throw error;
+  }
 }
 
 async function readTextFile(filePath: string): Promise<string> {

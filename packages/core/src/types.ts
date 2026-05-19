@@ -2,6 +2,36 @@ export type DragonSource = "cli" | "gateway" | "web" | "ide" | "cron" | "api";
 
 export type DragonThinkingLevel = "none" | "low" | "medium" | "high";
 
+export type DragonAttachmentKind = "image" | "text" | "document" | "binary";
+
+/**
+ * A single attachment carried in a turn input. The runtime resolves text
+ * attachments inline as a structured `<file>` block in the user prompt, image
+ * attachments as multimodal content for vision-capable providers, and document
+ * attachments (PDF/DOCX/XLSX/PPTX/...) by extracting their text server-side
+ * before inlining.
+ *
+ * `data` is always base64-encoded.
+ */
+export interface DragonAttachment {
+  /**
+   * `image`    → forwarded to the provider as multimodal image content
+   * `text`     → decoded as UTF-8 and inlined into the user prompt
+   * `document` → extracted to text (mammoth/pdfjs/xlsx/jszip-pptx) and inlined
+   * `binary`   → reserved for future use; currently rejected
+   */
+  kind: DragonAttachmentKind;
+  mimeType: string;
+  /** base64-encoded bytes */
+  data: string;
+  /** original filename for display */
+  name?: string;
+  /** decoded byte size (informational; runtime re-computes for validation) */
+  size?: number;
+}
+
+export type DragonTierHint = "fast" | "standard" | "deep";
+
 export interface DragonTurnInput {
   sessionId: string;
   message: string;
@@ -17,6 +47,10 @@ export interface DragonTurnInput {
   memoryEnabled?: boolean;
   /** Appended to the runtime system prompt for this turn. */
   systemPrompt?: string;
+  /** Optional file/image attachments. The runtime validates and resolves them. */
+  attachments?: readonly DragonAttachment[];
+  /** Caller-forced tier. Bypasses the heuristic classifier entirely. */
+  tier?: DragonTierHint;
   signal?: AbortSignal;
   metadata?: Record<string, unknown>;
 }

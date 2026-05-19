@@ -19,6 +19,7 @@ export interface AnthropicProviderOptions {
 
 type AnthropicContentBlock =
   | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: string };
 
@@ -382,7 +383,25 @@ function toAnthropicPrompt(messages: ModelMessage[]): { system?: string; message
     if (content.length === 0) {
       continue;
     }
-    appendAnthropicMessage(anthropicMessages, message.role === "assistant" ? "assistant" : "user", content);
+    const targetRole: AnthropicMessage["role"] = message.role === "assistant" ? "assistant" : "user";
+    if (message.role === "tool") {
+      // tool_result blocks must follow the assistant's tool_use. Multiple
+      // consecutive tool_result blocks belong in a single user message (one
+      // assistant turn can issue multiple tool_use blocks, each with a
+      // matching tool_result). Do not merge tool_result into a user message
+      // that already carries non-tool_result content (e.g. plain text).
+      // modelMessageToAnthropicContent for a tool message always returns
+      // only tool_result blocks; assert the narrower type for the merge path.
+      const toolResultBlocks = content as Array<Extract<AnthropicContentBlock, { type: "tool_result" }>>;
+      const previous = anthropicMessages[anthropicMessages.length - 1];
+      if (previous?.role === "user" && previous.content.every(block => block.type === "tool_result")) {
+        previous.content.push(...toolResultBlocks);
+      } else {
+        anthropicMessages.push({ role: "user", content });
+      }
+      continue;
+    }
+    appendAnthropicMessage(anthropicMessages, targetRole, content);
   }
 
   if (anthropicMessages.length === 0) {
@@ -414,11 +433,24 @@ function modelMessageToAnthropicContent(message: ModelMessage): AnthropicContent
     content.push({
       type: "tool_result",
       tool_use_id: message.toolCallId,
-      content: message.content ?? "",
+      content: extractMessageText(message.content) ?? "",
     });
     return content;
   }
-  if (message.content?.trim()) {
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (part.type === "text") {
+        if (part.text.trim()) {
+          content.push({ type: "text", text: part.text });
+        }
+      } else if (part.type === "image") {
+        content.push({
+          type: "image",
+          source: { type: "base64", media_type: part.mimeType, data: part.dataBase64 },
+        });
+      }
+    }
+  } else if (typeof message.content === "string" && message.content.trim()) {
     content.push({ type: "text", text: message.content });
   }
   if (message.role === "assistant" && message.toolCalls !== undefined) {
@@ -438,16 +470,30 @@ function modelMessageToAnthropicContent(message: ModelMessage): AnthropicContent
   return content;
 }
 
+function extractMessageText(content: ModelMessage["content"]): string | undefined {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .filter(part => part.type === "text")
+      .map(part => (part as { type: "text"; text: string }).text)
+      .join("\n") || undefined;
+  }
+  return undefined;
+}
+
 function modelMessageToText(message: ModelMessage): string | undefined {
   const parts: string[] = [];
-  if (message.content?.trim()) {
-    parts.push(message.content);
+  const text = extractMessageText(message.content);
+  if (text && text.trim()) {
+    parts.push(text);
   }
   if (message.toolCallId !== undefined && message.role === "tool") {
     parts.unshift(`Tool result ${message.toolCallId}:`);
   }
-  const text = parts.join("\n").trim();
-  return text || undefined;
+  const combined = parts.join("\n").trim();
+  return combined || undefined;
 }
 
 function toAnthropicTools(tools: unknown[] | undefined): Array<Record<string, unknown>> {

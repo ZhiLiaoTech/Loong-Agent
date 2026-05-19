@@ -1,5 +1,8 @@
 export type {
+  DragonAttachment,
+  DragonAttachmentKind,
   DragonAgentRuntime,
+  DragonTierHint,
   DragonContextItem,
   DragonContextProvider,
   DragonContextRequest,
@@ -27,3 +30,17 @@ export {
   createDragonRuntime,
   type DragonRuntimeOptions,
 } from "./runtime.js";
+export {
+  TIER_DEFAULTS,
+  classifyTierHeuristic,
+  decideTier,
+  applyTierToInput,
+  normalizeTierConfig,
+  type DragonTierName,
+  type DragonTierClassifierMode,
+  type DragonTierKeywordHint,
+  type ModelTierConfig,
+  type ModelTierSpec,
+  type ClassifierSignals,
+  type TierDecision,
+} from "./tiers.js";

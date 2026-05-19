@@ -12,19 +12,64 @@ function trimChatTurns(turns: ChatTurn[]): ChatTurn[] {
   return turns.length > MAX_CHAT_TURNS ? turns.slice(-MAX_CHAT_TURNS) : turns;
 }
 
+// Module-level cache so chat state survives RunWorkspace unmount when the user
+// navigates to Models/Agents/etc. and returns. This is intentionally NOT
+// sessionStorage — the smoke test forbids browser storage for secret-safety,
+// and a module-scoped variable already gives us cross-route persistence
+// within a single tab load (cleared on full refresh, which is the right
+// trust boundary).
+export interface LastTierInfo {
+  tier: "fast" | "standard" | "deep";
+  source: "heuristic" | "fixed" | "inherited" | "explicit-input";
+  score?: number;
+  reason?: string;
+  maxContextChars?: number;
+  thinking?: "none" | "low" | "medium" | "high";
+}
+
+interface CachedChatState {
+  chatTurns: ChatTurn[];
+  activeRunId: string;
+  lastResult: AgentRunResult | null;
+  lastTier: LastTierInfo | null;
+}
+const chatStateCache: CachedChatState = {
+  chatTurns: [],
+  activeRunId: "",
+  lastResult: null,
+  lastTier: null,
+};
+
 export function useRunChat(
   settings: RunSettings,
   selectedProfile: AgentProfile | undefined,
 ) {
   const client = useGatewayClient();
   const { events, connectionEpoch } = useDragonEvents();
-  const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
+  // Hydrate from the module cache. Any assistant turn that was mid-stream
+  // when the user navigated away gets settled so we don't show a stuck "...".
+  const initialChatTurns = chatStateCache.chatTurns.map(turn =>
+    turn.role === "assistant" && turn.streaming
+      ? { ...turn, streaming: false, text: turn.text || "[interrupted by navigation]" }
+      : turn,
+  );
+  const [chatTurns, setChatTurns] = useState<ChatTurn[]>(initialChatTurns);
   const [sending, setSending] = useState(false);
-  const [activeRunId, setActiveRunId] = useState("");
+  const [activeRunId, setActiveRunId] = useState(chatStateCache.activeRunId);
   const [expectingRun, setExpectingRun] = useState(false);
-  const [lastResult, setLastResult] = useState<AgentRunResult | null>(null);
+  const [lastResult, setLastResult] = useState<AgentRunResult | null>(chatStateCache.lastResult);
+  const [lastTier, setLastTier] = useState<LastTierInfo | null>(chatStateCache.lastTier);
   const [showRaw, setShowRaw] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Mirror current chat state into the module cache so the next mount can
+  // restore it after a navigation.
+  useEffect(() => {
+    chatStateCache.chatTurns = chatTurns;
+    chatStateCache.activeRunId = activeRunId;
+    chatStateCache.lastResult = lastResult;
+    chatStateCache.lastTier = lastTier;
+  }, [chatTurns, activeRunId, lastResult, lastTier]);
   const lastSequenceRef = useRef(0);
   const activeRunIdRef = useRef("");
   const expectingRunRef = useRef(false);
@@ -120,12 +165,29 @@ export function useRunChat(
     });
   }, [clearFinalizeTimer]);
 
-  const handleStreamEvent = useCallback((event: { type?: string; phase?: string; runId?: string; text?: string }) => {
+  const handleStreamEvent = useCallback((event: { type?: string; phase?: string; runId?: string; text?: string; metadata?: Record<string, unknown> }) => {
     if (event.type === "lifecycle" && event.phase === "start" && expectingRunRef.current && event.runId) {
       activeRunIdRef.current = event.runId;
       setActiveRunId(event.runId);
       expectingRunRef.current = false;
       setExpectingRun(false);
+      const meta = event.metadata ?? {};
+      const tierRaw = meta.tier;
+      if (tierRaw === "fast" || tierRaw === "standard" || tierRaw === "deep") {
+        const info: LastTierInfo = { tier: tierRaw, source: "heuristic" };
+        if (meta.tierSource === "heuristic" || meta.tierSource === "fixed" || meta.tierSource === "inherited" || meta.tierSource === "explicit-input") {
+          info.source = meta.tierSource;
+        }
+        if (typeof meta.tierScore === "number") info.score = meta.tierScore;
+        if (typeof meta.tierReason === "string") info.reason = meta.tierReason;
+        if (typeof meta.tierMaxContextChars === "number") info.maxContextChars = meta.tierMaxContextChars;
+        if (meta.tierThinking === "none" || meta.tierThinking === "low" || meta.tierThinking === "medium" || meta.tierThinking === "high") {
+          info.thinking = meta.tierThinking;
+        }
+        setLastTier(info);
+      } else {
+        setLastTier(null);
+      }
     }
     if (
       event.type === "assistant_delta"
@@ -158,9 +220,9 @@ export function useRunChat(
     }
   }, [connectionEpoch, events, handleStreamEvent]);
 
-  const sendMessage = useCallback(async (rawMessage: string) => {
+  const sendMessage = useCallback(async (rawMessage: string, attachments: ReadonlyArray<{ kind: "image" | "text" | "document"; mimeType: string; data: string; name: string; size: number }> = []) => {
     const message = rawMessage.trim();
-    if (!message || sending || expectingRunRef.current) {
+    if ((!message && attachments.length === 0) || sending || expectingRunRef.current) {
       return;
     }
 
@@ -175,9 +237,12 @@ export function useRunChat(
     receivedStreamDeltaRef.current = false;
     pendingRpcAssistantRef.current = "";
 
+    const attachmentSummary = attachments.length > 0
+      ? "\n\n" + attachments.map(a => `📎 ${a.name} (${a.kind}, ${a.mimeType})`).join("\n")
+      : "";
     setChatTurns(turns => trimChatTurns([
       ...turns,
-      { role: "user", text: message, streaming: false },
+      { role: "user", text: message + attachmentSummary, streaming: false },
       { role: "assistant", text: "", streaming: true },
     ]));
 
@@ -211,6 +276,15 @@ export function useRunChat(
       }
       if (settings.thinking) {
         params.thinking = settings.thinking;
+      }
+      if (attachments.length > 0) {
+        params.attachments = attachments.map(a => ({
+          kind: a.kind,
+          mimeType: a.mimeType,
+          data: a.data,
+          name: a.name,
+          size: a.size,
+        }));
       }
 
       const payload = await client.rpc<{ result: AgentRunResult }>("agent", params);
@@ -286,6 +360,7 @@ export function useRunChat(
     expectingRun,
     activeRunId,
     lastResult,
+    lastTier,
     showRaw,
     setShowRaw,
     cancelError,

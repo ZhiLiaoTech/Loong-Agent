@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { accessSync, constants as fsConstants, realpathSync } from "node:fs";
+import path from "node:path";
 import type { ToolDefinition, ToolInvocation, ToolJsonSchema, ToolResult } from "../types.js";
 
 export interface ShellExecInput {
@@ -340,12 +342,25 @@ function isSafeGitReadArg(arg: string): boolean {
 
 function isUnsafeGitReadFlag(arg: string): boolean {
   const normalized = arg.toLowerCase();
+  // --pretty/--format and -p/--patch can surface unbounded patch content
+  // or invoke format directives; disallow them under read-only profiles.
+  // -c/--config can override git config inline (e.g. set core.sshCommand),
+  // which is a sandbox bypass.
   return normalized === "--ext-diff"
     || normalized === "--textconv"
     || normalized === "--no-textconv"
+    || normalized === "-p"
+    || normalized === "--patch"
     || normalized.startsWith("--ext-diff=")
     || normalized.startsWith("--textconv=")
-    || normalized.startsWith("--exec-path");
+    || normalized.startsWith("--exec-path")
+    || normalized.startsWith("--pretty")
+    || normalized.startsWith("--format")
+    || normalized.startsWith("--upload-pack")
+    || normalized.startsWith("--receive-pack")
+    || normalized.startsWith("--config")
+    || normalized === "-c"
+    || normalized.startsWith("-c=");
 }
 
 function isAllowedRgArgs(args: string[]): boolean {
@@ -357,6 +372,21 @@ function isAllowedRgArgs(args: string[]): boolean {
       return false;
     }
     if (arg === "-L" || arg === "--follow" || arg === "--pre" || arg.startsWith("--pre=")) {
+      return false;
+    }
+    // Explicitly reject flags that can extend the sandbox: type injection,
+    // ignore-file overrides, search-zip, engine, and ignore-policy escapes.
+    if (
+      arg === "--type-add" || arg.startsWith("--type-add=")
+      || arg === "--type-clear" || arg.startsWith("--type-clear=")
+      || arg === "--ignore-file" || arg.startsWith("--ignore-file=")
+      || arg === "--no-ignore-vcs"
+      || arg === "--no-ignore-parent"
+      || arg === "--no-ignore-global"
+      || arg === "--no-config"
+      || arg === "--engine" || arg.startsWith("--engine=")
+      || arg === "--search-zip" || arg === "-z"
+    ) {
       return false;
     }
     if (isUnsafePathArg(arg)) {
@@ -420,8 +450,12 @@ async function runCommand(
   cwd: string | undefined,
   timeoutMs: number,
 ): Promise<ShellExecOutput> {
+  // Resolve to an absolute path via a workspace-aware PATH search. Without
+  // this, spawn(shell:false) still consults PATH at exec time, leaving room
+  // for PATH-shadowing if the user's PATH starts with a writable directory.
+  const resolvedExecutable = resolveExecutablePath(parsed.executable, cwd);
   return await new Promise((resolve, reject) => {
-    const child = spawn(parsed.executable, parsed.args, {
+    const child = spawn(resolvedExecutable, parsed.args, {
       cwd,
       shell: false,
       windowsHide: true,
@@ -624,7 +658,77 @@ function splitCommand(command: string): string[] {
 }
 
 function hasShellMetacharacters(value: string): boolean {
-  return /[&|;<>()`$>{}\[\]\r\n]/.test(value);
+  // Standard shell metacharacters plus tab (re-parseable via unusual IFS) and
+  // bash history expansion (`!`). All are blocked even though spawn runs
+  // shell:false — defense in depth against rare quoting bypasses.
+  return /[&|;<>()`$>{}\[\]\r\n\t!]/.test(value);
+}
+
+const RESOLVED_EXECUTABLES = new Map<string, string>();
+
+// Resolve a bare executable name to an absolute path via PATH lookup. The
+// workspace directory is removed from the search list so an attacker who can
+// write files into the workspace cannot shadow `git`/`rg`/`node` even if the
+// caller's PATH starts with `.` or the workspace itself.
+function resolveExecutablePath(name: string, workspace: string | undefined): string {
+  if (path.isAbsolute(name)) {
+    return name;
+  }
+  const cacheKey = `${workspace ?? ""} ${name}`;
+  const cached = RESOLVED_EXECUTABLES.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const pathEntries = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  const workspaceReal = workspace ? safeRealpath(workspace) : undefined;
+  const candidates = process.platform === "win32"
+    ? expandWindowsCandidates(name, process.env.PATHEXT)
+    : [name];
+  for (const dir of pathEntries) {
+    const realDir = safeRealpath(dir);
+    if (workspaceReal && realDir !== undefined && (realDir === workspaceReal || isPathInsideDir(realDir, workspaceReal))) {
+      continue;
+    }
+    for (const candidate of candidates) {
+      const candidatePath = path.join(dir, candidate);
+      if (isExecutableFile(candidatePath)) {
+        const resolved = safeRealpath(candidatePath) ?? candidatePath;
+        RESOLVED_EXECUTABLES.set(cacheKey, resolved);
+        return resolved;
+      }
+    }
+  }
+  throw new Error(`Executable not found in PATH (or PATH entry shadowed by workspace): ${name}`);
+}
+
+function expandWindowsCandidates(name: string, pathext: string | undefined): string[] {
+  if (path.extname(name)) {
+    return [name];
+  }
+  const exts = (pathext ?? ".COM;.EXE;.BAT;.CMD").split(";").map(item => item.trim()).filter(Boolean);
+  return [name, ...exts.map(ext => `${name}${ext}`)];
+}
+
+function safeRealpath(input: string): string | undefined {
+  try {
+    return realpathSync(input);
+  } catch {
+    return undefined;
+  }
+}
+
+function isPathInsideDir(target: string, parent: string): boolean {
+  const relative = path.relative(parent, target);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function isExecutableFile(filePath: string): boolean {
+  try {
+    accessSync(filePath, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function appendBounded(current: string, next: string): string {
