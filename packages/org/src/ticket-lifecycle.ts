@@ -41,6 +41,9 @@ async function appendTicket(
   },
 ): Promise<void> {
   const registry = await store.load();
+  if (registry.tickets.some(ticket => ticket.runId === input.request.runId && ticket.tags?.includes("lifecycle"))) {
+    return;
+  }
   const now = new Date().toISOString();
   const description = input.request.error?.trim() || input.request.userMessage?.trim();
   const ticket: OrgTicket = {

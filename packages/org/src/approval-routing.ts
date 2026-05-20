@@ -55,16 +55,22 @@ function resolveStepAssignee(
     return findActiveEmployee(employees, step.approverEmployeeId);
   }
 
-  if (step.scope === "manager" && requester?.managerId) {
-    const manager = findActiveEmployee(employees, requester.managerId);
+  if (step.scope === "manager" && requester) {
+    const managerId = resolveManagerId(requester, org);
+    if (!managerId) {
+      return findEmployeeByPosition(employees, step.approverRole, requester.unitId);
+    }
+    const manager = findActiveEmployee(employees, managerId);
     if (manager && matchesApproverRole(manager, step.approverRole)) {
       return manager;
     }
-    const unitLead = findEmployeeByPosition(employees, step.approverRole, requester.unitId);
-    if (unitLead) {
-      return unitLead;
+    const delegate = requester.approvalDelegateId
+      ? findActiveEmployee(employees, requester.approvalDelegateId)
+      : undefined;
+    if (delegate && matchesApproverRole(delegate, step.approverRole)) {
+      return delegate;
     }
-    return manager;
+    return findEmployeeByPosition(employees, step.approverRole, requester.unitId);
   }
 
   if (step.scope === "same-unit" && requester) {
@@ -107,6 +113,13 @@ function findEmployeeByPosition(
       && entry.positionId === positionId
       && (unitId === undefined || entry.unitId === unitId),
   );
+}
+
+function resolveManagerId(requester: DigitalEmployee, org: OrgDocument): string | undefined {
+  if (requester.managerId) {
+    return requester.managerId;
+  }
+  return org.reporting.find(line => line.employeeId === requester.id)?.managerId;
 }
 
 function matchesApproverRole(employee: DigitalEmployee, approverRole: string | undefined): boolean {

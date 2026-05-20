@@ -4,6 +4,7 @@ import { ApprovalInboxPanel } from "./components/ApprovalInboxPanel.js";
 import { KpiSnapshotPanel } from "./components/KpiSnapshotPanel.js";
 import { MemoryCandidatesPanel } from "./components/MemoryCandidatesPanel.js";
 import { RunsObserveTable } from "./components/RunsObserveTable.js";
+import { TicketsPanel } from "./components/TicketsPanel.js";
 import { TrajectoriesSection } from "./components/TrajectoriesSection.js";
 import styles from "./ObserveWorkspace.module.css";
 import { useObservePage } from "./useObservePage.js";
@@ -43,6 +44,12 @@ export function ObserveWorkspace() {
         loading={page.loading}
         onRefresh={() => void page.refreshRuns()}
         onCancel={runId => void page.cancelRun(runId)}
+      />
+
+      <TicketsPanel
+        tickets={page.tickets}
+        loading={page.loading}
+        onRefresh={() => void page.refreshTickets()}
       />
 
       <KpiSnapshotPanel

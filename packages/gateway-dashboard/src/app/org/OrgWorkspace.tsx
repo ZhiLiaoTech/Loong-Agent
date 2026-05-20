@@ -77,6 +77,20 @@ export function OrgWorkspace() {
           </ul>
         </section>
 
+        <section className={styles.card}>
+          <h3>工具策略 ({state.toolPolicies.length})</h3>
+          <ul className={styles.list}>
+            {state.toolPolicies.map(policy => (
+              <li key={policy.id}>
+                <strong>{policy.id}</strong>
+                <span className={styles.muted}>
+                  {policy.description ?? "—"} · {policy.ruleCount} 条规则
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
         <section className={`${styles.card} ${styles.full}`}>
           <h3>员工自动路由 ({state.employeeRouting.length})</h3>
           <p className={styles.note}>Run 未指定员工时，Gateway 按关键词匹配规则并回退到 defaultEmployeeId。</p>
@@ -86,6 +100,7 @@ export function OrgWorkspace() {
                 <strong>{employeeName(rule.employeeId)}</strong>
                 <span className={styles.muted}>
                   {rule.id ? `${rule.id} · ` : ""}
+                  {rule.match.profileId ? `profile ${rule.match.profileId} · ` : ""}
                   keywords: {(rule.match.keywords ?? []).join(", ") || "—"}
                 </span>
               </li>

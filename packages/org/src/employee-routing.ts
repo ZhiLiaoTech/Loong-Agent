@@ -11,6 +11,7 @@ export function resolveEmployeeForMessage(
   message: string,
   org: OrgDocument,
   registry: EmployeeRegistry,
+  profileId?: string,
 ): EmployeeRouteResult | undefined {
   const text = message.trim().toLowerCase();
   if (!text) {
@@ -19,7 +20,7 @@ export function resolveEmployeeForMessage(
 
   const rules = org.employeeRouting ?? [];
   for (const [index, rule] of rules.entries()) {
-    if (matchesRoutingRule(text, rule)) {
+    if (matchesRoutingRule(text, rule, profileId)) {
       const employee = registry.employees.find(
         entry => entry.id === rule.employeeId && entry.status === "active",
       );
@@ -37,13 +38,17 @@ export function resolveEmployeeForMessage(
   return resolveDefaultEmployee(registry, "No routing rule matched; using default employee.");
 }
 
-function matchesRoutingRule(text: string, rule: OrgEmployeeRoutingRule): boolean {
-  if (rule.match.profileId) {
+function matchesRoutingRule(
+  text: string,
+  rule: OrgEmployeeRoutingRule,
+  profileId?: string,
+): boolean {
+  if (rule.match.profileId && rule.match.profileId !== profileId) {
     return false;
   }
   const keywords = rule.match.keywords ?? [];
   if (!keywords.length) {
-    return false;
+    return Boolean(rule.match.profileId);
   }
   return keywords.some(keyword => text.includes(keyword.trim().toLowerCase()));
 }

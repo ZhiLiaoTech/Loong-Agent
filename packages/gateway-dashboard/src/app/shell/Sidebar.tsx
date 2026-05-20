@@ -9,6 +9,7 @@ export interface SidebarNavCounts {
   agents: number;
   org: number;
   observe: number;
+  observePending?: number;
   /** Gateway health for System nav indicator. */
   systemOnline?: boolean;
 }
@@ -71,6 +72,16 @@ export function Sidebar({ counts, onNavigate }: SidebarProps) {
                 }
               >
                 {(counts.runActive ?? 0) > 0 ? counts.runActive : counts.run}
+              </span>
+            ) : item.countKey === "observe" ? (
+              <span
+                className={
+                  (counts.observePending ?? 0) > 0
+                    ? `${styles.count} ${styles.countActive}`
+                    : styles.count
+                }
+              >
+                {(counts.observePending ?? 0) > 0 ? counts.observePending : counts.observe}
               </span>
             ) : item.countKey !== null ? (
               <span className={styles.count}>{counts[item.countKey]}</span>

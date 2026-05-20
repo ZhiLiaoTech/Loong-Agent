@@ -12,6 +12,7 @@ const EMPTY_COUNTS: SidebarNavCounts = {
   agents: 0,
   org: 0,
   observe: 0,
+  observePending: 0,
 };
 
 export function useNavCounts(): SidebarNavCounts {
@@ -23,11 +24,14 @@ export function useNavCounts(): SidebarNavCounts {
   const [counts, setCounts] = useState<SidebarNavCounts>(EMPTY_COUNTS);
 
   const refresh = useCallback(async () => {
-    const [runsResult, modelResult, agentResult, orgResult, healthResult] = await Promise.all([
+    const [runsResult, modelResult, agentResult, orgResult, approvalResult, healthResult] = await Promise.all([
       client.rpc<{ runs: GatewayRunRecord[] }>("runs.list", { limit: 20 }).catch(() => ({ runs: [] })),
       client.rpc<{ providers: unknown[] }>("model.config.get").catch(() => ({ providers: [] })),
       client.rpc<{ profiles: unknown[] }>("agent.config.get").catch(() => ({ profiles: [] })),
       client.rpc<{ employees: unknown[] }>("employee.list").catch(() => ({ employees: [] })),
+      client.rpc<{ requests: Array<{ status: string }> }>("approval.list", { status: "pending" }).catch(
+        () => ({ requests: [] }),
+      ),
       client.fetchHealth().catch(() => ({ ok: false as const, error: "offline", status: 0 })),
     ]);
 
@@ -42,6 +46,7 @@ export function useNavCounts(): SidebarNavCounts {
       agents: agentResult.profiles?.length ?? 0,
       org: orgResult.employees?.length ?? 0,
       observe: eventsLengthRef.current,
+      observePending: approvalResult.requests?.length ?? 0,
     };
 
     if (runActive > 0) {

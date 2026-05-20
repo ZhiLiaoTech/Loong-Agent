@@ -61,6 +61,12 @@ export function createGatewayApprovalService(
     if (options.getOrg && options.getEmployees) {
       const [org, employees] = await Promise.all([options.getOrg(), options.getEmployees()]);
       assignee = resolveApprovalAssignee(org, employees, chainId, employeeId);
+      if (!assignee.approverId) {
+        return {
+          decision: "deny",
+          reason: `No active approver found for approval chain "${assignee.chainName ?? chainId}".`,
+        };
+      }
     }
     const record: ApprovalRequest = {
       id,
@@ -131,6 +137,9 @@ export function createGatewayApprovalService(
     }
     if (existing.status !== "pending") {
       throw new Error(`Approval request "${id}" is already ${existing.status}.`);
+    }
+    if (!entry) {
+      throw new Error(`Approval request "${id}" is no longer awaiting a live run (timed out or gateway restarted).`);
     }
 
     const now = new Date().toISOString();

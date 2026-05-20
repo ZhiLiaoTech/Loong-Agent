@@ -46,4 +46,13 @@ export interface ApprovalInboxItem {
   inputSummary?: string;
 }
 
+export interface OrgTicketView {
+  id: string;
+  title: string;
+  status: string;
+  assigneeEmployeeId?: string;
+  runId?: string;
+  createdAt?: string;
+}
+
 export type { GatewayRunRecord };

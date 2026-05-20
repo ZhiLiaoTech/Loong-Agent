@@ -58,8 +58,17 @@ function resolveMetricValue(
       return scopedTickets.filter(ticket => ticket.status === "done").length;
     case "runs.completed":
       return scopedTickets.filter(ticket => ticket.status === "done" && ticket.runId).length;
-    case "approvals.pending":
-      return approvals.requests.filter(request => request.status === "pending").length;
+    case "approvals.pending": {
+      const pending = approvals.requests.filter(request => request.status === "pending");
+      if (!employeeId) {
+        return pending.length;
+      }
+      return pending.filter(
+        request =>
+          request.employeeId === employeeId
+          || request.assignedApproverId === employeeId,
+      ).length;
+    }
     default:
       return 0;
   }

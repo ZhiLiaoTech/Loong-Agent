@@ -15,6 +15,8 @@ import { parseCronSchedule, type DragonCronJob, type DragonCronJobStore, type Dr
 import type { DragonModelCapabilities, DragonModelStatus } from "@dragon/model-catalog";
 import {
   buildKpiSnapshot,
+  mergeEmployeeIntoAgentParams,
+  readEmployeeId,
   resolveEmployeeForMessage,
   type ApprovalRegistry,
   type ApprovalRequest,
@@ -675,56 +677,36 @@ export class HttpDragonGateway implements DragonGateway {
 
   async #resolveAgentParams(params: GatewayAgentParams): Promise<GatewayAgentParams> {
     let resolved = await resolveAgentParamsWithProfile(params, this.#agentConfigStore);
-    const explicitEmployeeId = params.employeeId?.trim();
+    const explicitEmployeeId = params.employeeId?.trim() || readEmployeeId(params.metadata);
     let employeeId = explicitEmployeeId;
 
-    if (!employeeId && this.#orgStore && this.#employeeStore && params.message.trim()) {
+    if (!employeeId && this.#orgStore && this.#employeeStore) {
       const [org, registry] = await Promise.all([
         this.#orgStore.load(),
         this.#employeeStore.load(),
       ]);
-      const routed = resolveEmployeeForMessage(params.message, org, registry);
+      const routed = resolveEmployeeForMessage(params.message, org, registry, resolved.profileId);
       if (routed) {
         employeeId = routed.employeeId;
-        resolved = {
-          ...resolved,
-          profileId: resolved.profileId ?? routed.employee.profileId,
-          metadata: {
-            ...(resolved.metadata ?? {}),
-            employeeId: routed.employee.id,
-            employeeDisplayName: routed.employee.displayName,
-            employeePositionId: routed.employee.positionId,
-            employeeUnitId: routed.employee.unitId,
-            employeeRoutingReason: routed.reason,
-            ...(routed.ruleId ? { employeeRoutingRuleId: routed.ruleId } : {}),
-            ...(routed.employee.managerId ? { employeeManagerId: routed.employee.managerId } : {}),
-          },
-        };
+        resolved = mergeEmployeeIntoAgentParams(resolved, routed.employee, {
+          employeeRoutingReason: routed.reason,
+          ...(routed.ruleId ? { employeeRoutingRuleId: routed.ruleId } : {}),
+        });
       }
-    }
-
-    if (employeeId && this.#employeeStore && !explicitEmployeeId) {
-      return resolved;
     }
 
     if (explicitEmployeeId && this.#employeeStore) {
       const registry = await this.#employeeStore.load();
       const employee = registry.employees.find(entry => entry.id === explicitEmployeeId);
-      if (employee) {
-        resolved = {
-          ...resolved,
-          profileId: resolved.profileId ?? employee.profileId,
-          metadata: {
-            ...(resolved.metadata ?? {}),
-            employeeId: employee.id,
-            employeeDisplayName: employee.displayName,
-            employeePositionId: employee.positionId,
-            employeeUnitId: employee.unitId,
-            ...(employee.managerId ? { employeeManagerId: employee.managerId } : {}),
-          },
-        };
+      if (!employee) {
+        return resolved;
       }
+      if (employee.status !== "active") {
+        throw new GatewayHttpError(400, `Employee "${explicitEmployeeId}" is inactive.`);
+      }
+      resolved = mergeEmployeeIntoAgentParams(resolved, employee);
     }
+
     return resolved;
   }
 

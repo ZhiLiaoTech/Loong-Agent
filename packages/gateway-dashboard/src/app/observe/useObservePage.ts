@@ -6,6 +6,7 @@ import type { GatewayRunRecord } from "../run/types.js";
 import type {
   ApprovalInboxItem,
   KpiMetricView,
+  OrgTicketView,
   MemoryCandidate,
   MemoryReviewState,
   TrajectorySummary,
@@ -74,6 +75,13 @@ export function useObservePage() {
     setKpiMetrics(snapshot.metrics ?? []);
   }, [client]);
 
+  const refreshTickets = useCallback(async () => {
+    const payload = await client.rpc<{ tickets: OrgTicketView[] }>("ticket.list").catch(
+      (): { tickets: OrgTicketView[] } => ({ tickets: [] }),
+    );
+    setTickets(payload.tickets ?? []);
+  }, [client]);
+
   const refreshApprovals = useCallback(async () => {
     const payload = await client.rpc<{ requests: ApprovalInboxItem[] }>("approval.list", {
       status: "pending",
@@ -100,6 +108,7 @@ export function useObservePage() {
         refreshMemory(),
         refreshApprovals(),
         refreshKpi(),
+        refreshTickets(),
       ]);
     } catch (caught) {
       const message = caught instanceof GatewayApiError ? caught.message : String(caught);
@@ -119,7 +128,7 @@ export function useObservePage() {
     } finally {
       setLoading(false);
     }
-  }, [refreshApprovals, refreshKpi, refreshMemory, refreshRuns, refreshTrajectories]);
+  }, [refreshApprovals, refreshKpi, refreshMemory, refreshRuns, refreshTickets, refreshTrajectories]);
 
   useEffect(() => {
     void refreshAll();
@@ -251,6 +260,7 @@ export function useObservePage() {
     kpiTemplateName,
     kpiEmployeeId,
     kpiMetrics,
+    tickets,
     trajectoryDetail,
     error,
     loading,
@@ -261,6 +271,7 @@ export function useObservePage() {
     refreshMemory,
     refreshApprovals,
     refreshKpi,
+    refreshTickets,
     cancelRun,
     loadTrajectory,
     promoteMemory,

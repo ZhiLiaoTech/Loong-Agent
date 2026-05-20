@@ -51,7 +51,7 @@ export async function evaluateOrgAwarePermission(
   const org = resolveEmployeeToolPolicy(policy, tool, invocation);
   const merged = mergeOrgDecisionWithBaseline(org, base.decision);
 
-  if (merged.decision === "approval") {
+  if (merged.decision === "approval" || (merged.decision === "ask" && merged.chainId)) {
     return {
       decision: "ask",
       reason: `[approval:${merged.chainId ?? "default"}] ${merged.reason}`,
