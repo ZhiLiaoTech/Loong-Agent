@@ -55,7 +55,9 @@ export function useObservePage() {
 
   const refreshKpi = useCallback(async () => {
     const [employeesPayload, templatesPayload] = await Promise.all([
-      client.rpc<{ employees: Array<{ id: string; kpiTemplateId?: string }>; defaultEmployeeId?: string }>("employee.list").catch(() => ({ employees: [] })),
+      client.rpc<{ employees: Array<{ id: string; kpiTemplateId?: string }>; defaultEmployeeId?: string }>("employee.list").catch(
+        (): { employees: []; defaultEmployeeId?: string } => ({ employees: [] }),
+      ),
       client.rpc<{ templates: Array<{ id: string; name: string }> }>("kpi.template.list").catch(() => ({ templates: [] })),
     ]);
     const employees = employeesPayload.employees ?? [];
@@ -90,7 +92,11 @@ export function useObservePage() {
     const payload = await client.rpc<{
       employees: Array<{ id: string; displayName: string; status: string }>;
       defaultEmployeeId?: string;
-    }>("employee.list").catch(() => ({ employees: [] as Array<{ id: string; displayName: string; status: string }> }));
+    }>("employee.list").catch(
+      (): { employees: Array<{ id: string; displayName: string; status: string }>; defaultEmployeeId?: string } => ({
+        employees: [],
+      }),
+    );
     const active = (payload.employees ?? []).filter(entry => entry.status === "active");
     setEmployeeOptions(active.map(entry => ({ id: entry.id, displayName: entry.displayName })));
     setApproverEmployeeId(current => {

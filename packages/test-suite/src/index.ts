@@ -9,7 +9,14 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createGatewayWebhookChannelTarget, parseSlackWebhook, parseTelegramWebhook, toGatewayWebhookPayload } from "@dragon/channels";
 import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
-import { classifyTierHeuristic, createDragonRuntime, decideTier, normalizeTierConfig } from "@dragon/core";
+import {
+  augmentResponseWithTextToolCalls,
+  classifyTierHeuristic,
+  createDragonRuntime,
+  decideTier,
+  extractTextToolCalls,
+  normalizeTierConfig,
+} from "@dragon/core";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
 import {
   createDelegationPlan,
@@ -68,6 +75,7 @@ async function main(): Promise<void> {
     ["tier classifier heuristic", testTierClassifierHeuristic],
     ["runtime tier overrides", testRuntimeTierOverrides],
     ["gateway tier RPC", testGatewayTierRpc],
+    ["text tool call extraction", testTextToolCallExtraction],
     ["runtime tool-call loop", testRuntimeToolCallLoop],
     ["openai provider tool call translation", testOpenAIProviderToolCallTranslation],
     ["openai provider streaming", testOpenAIProviderStreaming],
@@ -2237,6 +2245,37 @@ async function testGatewayTierRpc(): Promise<void> {
   } finally {
     await gateway.stop();
   }
+}
+
+async function testTextToolCallExtraction(): Promise<void> {
+  const fileRead = extractTextToolCalls("让我直接查看工作目录的内容：\n\n<file_read>\n<path>.</path>\n</file_read>\n");
+  assert(fileRead.length === 1, "file_read XML block should parse");
+  assert(fileRead[0]?.function?.name === "file_read", "tool name should map to file_read");
+  assert(fileRead[0]?.function?.arguments === JSON.stringify({ path: "." }), "path field should parse");
+
+  const bash = extractTextToolCalls("<bash>ls -la</bash>");
+  assert(bash.length === 1, "bash block should parse");
+  assert(bash[0]?.function?.name === "shell_exec", "bash should alias to shell_exec");
+  assert(JSON.parse(bash[0]?.function?.arguments ?? "{}").command === "ls -la", "bash body should become command");
+
+  const augmented = augmentResponseWithTextToolCalls({
+    id: "test-augment",
+    text: "<file_read>\n<path>README.md</path>\n</file_read>",
+  });
+  assert(augmented.toolCalls?.length === 1, "augment should attach toolCalls");
+  assert(augmented.textToolCallsExtracted === true, "augment should flag text extraction");
+  assert(augmented.text === "", "tool XML should be stripped from assistant text");
+
+  const skipped = augmentResponseWithTextToolCalls(
+    {
+      id: "test-skip",
+      text: "<file_read><path>x</path></file_read>",
+      toolCalls: [{ id: "native-1", type: "function", function: { name: "file_read", arguments: "{}" } }],
+    },
+    true,
+  );
+  assert(skipped.toolCalls?.length === 1 && skipped.toolCalls[0]?.id === "native-1", "native toolCalls should win");
+  assert(skipped.textToolCallsExtracted === undefined, "should not extract when native toolCalls exist");
 }
 
 async function testRuntimeToolCallLoop(): Promise<void> {

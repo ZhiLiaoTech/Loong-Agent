@@ -16,6 +16,7 @@ const defaultCounts: SidebarNavCounts = {
   run: 0,
   models: 0,
   agents: 0,
+  org: 0,
   observe: 0,
 };
 

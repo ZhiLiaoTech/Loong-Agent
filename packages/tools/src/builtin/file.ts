@@ -71,7 +71,7 @@ const fileSearchSchema: ToolJsonSchema = {
 export function createFileReadTool(): ToolDefinition<FileReadInput, FileReadOutput> {
   return {
     name: "file_read",
-    description: "Read a UTF-8 text file inside the current workspace.",
+    description: "Read a UTF-8 text file or list a directory inside the current workspace.",
     inputSchema: fileReadSchema,
     capabilities: ["read"],
     permission: "allow",
@@ -80,6 +80,16 @@ export function createFileReadTool(): ToolDefinition<FileReadInput, FileReadOutp
         const input = parseFileReadInput(invocation.input);
         const absolutePath = await resolveWorkspacePath(invocation.workspace, input.path);
         const workspaceRoot = await resolveWorkspaceRoot(invocation.workspace);
+        const entryStat = await stat(absolutePath);
+        if (entryStat.isDirectory()) {
+          const listing = await formatDirectoryListing(absolutePath, workspaceRoot);
+          return {
+            path: path.relative(workspaceRoot, absolutePath) || ".",
+            content: listing,
+            truncated: false,
+            bytesRead: listing.length,
+          };
+        }
         const maxBytes = Math.min(input.maxBytes ?? DEFAULT_FILE_READ_MAX_BYTES, ABSOLUTE_MAX_BYTES_PER_FILE);
         const { content, bytesRead, truncated } = await readBoundedTextFile(absolutePath, maxBytes);
         return {
@@ -252,6 +262,26 @@ async function* walkTextFiles(
   }
 
   yield* walk(root);
+}
+
+const DIRECTORY_LISTING_MAX_ENTRIES = 200;
+
+const DIRECTORY_SKIP_NAMES = new Set(["node_modules", ".git", "dist", ".pnpm"]);
+
+async function formatDirectoryListing(dirPath: string, workspaceRoot: string): Promise<string> {
+  const entries = (await readdir(dirPath, { withFileTypes: true }))
+    .filter(entry => !DIRECTORY_SKIP_NAMES.has(entry.name));
+  const lines = entries.slice(0, DIRECTORY_LISTING_MAX_ENTRIES).map(entry => {
+    const kind = entry.isDirectory() ? "dir" : entry.isFile() ? "file" : "other";
+    return `${kind}\t${entry.name}`;
+  });
+  const payload = {
+    kind: "directory",
+    path: path.relative(workspaceRoot, dirPath) || ".",
+    entries: lines,
+    truncated: entries.length > DIRECTORY_LISTING_MAX_ENTRIES,
+  };
+  return JSON.stringify(payload, null, 2);
 }
 
 async function readBoundedTextFile(

@@ -44,3 +44,9 @@ export {
   type ClassifierSignals,
   type TierDecision,
 } from "./tiers.js";
+export {
+  augmentResponseWithTextToolCalls,
+  extractTextToolCalls,
+  stripTextToolBlocks,
+  type AugmentedModelResponse,
+} from "./text-tool-calls.js";

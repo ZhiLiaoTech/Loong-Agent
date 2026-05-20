@@ -16,6 +16,7 @@ import {
   type ModelTierConfig,
   type TierDecision,
 } from "./tiers.js";
+import { augmentResponseWithTextToolCalls } from "./text-tool-calls.js";
 import type {
   ToolDefinition,
   ToolInvocation,
@@ -225,9 +226,12 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
 
       const modelRefs = modelAttemptRefs(input.model, this.#defaultModel, input.modelFallbacks, this.#modelFallbacks);
       let completion = await this.#completeModelWithFallback(modelRefs, modelMessages, input, runId);
-      let providerResponse = completion.response;
+      let providerResponse = augmentResponseWithTextToolCalls(completion.response, input.toolsEnabled);
       let resolution = completion.resolution;
       let fallbackFailures = completion.failures;
+      if (providerResponse.textToolCallsExtracted && providerResponse.streamedText) {
+        this.#emit({ type: "assistant_delta", runId, text: "\n\n[正在执行工具调用…]\n" });
+      }
 
       if (input.signal?.aborted) {
         throw new DragonCancelledError("Turn was cancelled.");
@@ -283,7 +287,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         }
 
         completion = await this.#completeModelWithFallback(modelRefs, modelMessages, input, runId);
-        providerResponse = completion.response;
+        providerResponse = augmentResponseWithTextToolCalls(completion.response, input.toolsEnabled);
         resolution = completion.resolution;
         fallbackFailures = completion.failures;
       }

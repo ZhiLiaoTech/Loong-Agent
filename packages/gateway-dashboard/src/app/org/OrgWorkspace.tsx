@@ -49,7 +49,9 @@ export function OrgWorkspace() {
         />
         <EmployeesTable
           employees={page.draftEmployees}
-          defaultEmployeeId={page.draftDefaultEmployeeId}
+          {...(page.draftDefaultEmployeeId
+            ? { defaultEmployeeId: page.draftDefaultEmployeeId }
+            : {})}
           onEdit={page.editDraft}
           onRemove={page.removeDraft}
         />

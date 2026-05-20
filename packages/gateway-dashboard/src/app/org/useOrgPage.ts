@@ -185,7 +185,11 @@ export function useOrgPage() {
         positions: orgPayload.positions ?? [],
         approvalChains: orgPayload.approvalChains ?? [],
         employeeRouting: orgPayload.employeeRouting ?? [],
-        toolPolicies: (policyPayload.policies ?? []).map((policy: { id: string; description?: string; rules?: unknown[] }) => ({
+        toolPolicies: ((policyPayload.policies ?? []) as Array<{
+          id: string;
+          description?: string;
+          rules?: unknown[];
+        }>).map(policy => ({
           id: policy.id,
           ...(policy.description ? { description: policy.description } : {}),
           ruleCount: policy.rules?.length ?? 0,
