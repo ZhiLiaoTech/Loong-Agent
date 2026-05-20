@@ -12,6 +12,18 @@
   "reporting": [
     { "employeeId": "dev-01", "managerId": "lead-01" }
   ],
+  "employeeRouting": [
+    {
+      "id": "pm-keywords",
+      "employeeId": "pm-01",
+      "match": { "keywords": ["需求", "产品", "prd", "原型"] }
+    },
+    {
+      "id": "eng-keywords",
+      "employeeId": "dev-01",
+      "match": { "keywords": ["代码", "bug", "修复", "实现", "重构"] }
+    }
+  ],
   "approvalChains": [
     {
       "id": "write-ops",

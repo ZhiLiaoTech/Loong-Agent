@@ -39,7 +39,7 @@ export function RunSettingsPanel({
               value={settings.employeeId}
               onChange={event => onEmployeeChange(event.target.value)}
             >
-              <option value="">未指定</option>
+              <option value="">自动路由</option>
               {employees.map(employee => (
                 <option key={employee.id} value={employee.id}>
                   {employee.displayName} ({employee.id})

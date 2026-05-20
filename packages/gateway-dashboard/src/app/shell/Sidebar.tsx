@@ -7,6 +7,7 @@ export interface SidebarNavCounts {
   runActive?: number;
   models: number;
   agents: number;
+  org: number;
   observe: number;
   /** Gateway health for System nav indicator. */
   systemOnline?: boolean;
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { to: "/run", label: "Run", countKey: "run" as const },
   { to: "/models", label: "Models", countKey: "models" as const },
   { to: "/agents", label: "Agents", countKey: "agents" as const },
+  { to: "/org", label: "Org", countKey: "org" as const },
   { to: "/observe", label: "Observe", countKey: "observe" as const },
   { to: "/system", label: "System", countKey: "system" as const },
 ];

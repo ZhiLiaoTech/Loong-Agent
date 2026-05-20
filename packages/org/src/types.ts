@@ -33,12 +33,22 @@ export interface OrgApprovalChain {
   steps: readonly OrgApprovalChainStep[];
 }
 
+export interface OrgEmployeeRoutingRule {
+  id?: string;
+  employeeId: string;
+  match: {
+    keywords?: readonly string[];
+    profileId?: string;
+  };
+}
+
 export interface OrgDocument {
   version: number;
   units: readonly OrgUnit[];
   positions: readonly OrgPosition[];
   reporting: readonly OrgReportingLine[];
   approvalChains: readonly OrgApprovalChain[];
+  employeeRouting?: readonly OrgEmployeeRoutingRule[];
   configPath?: string;
 }
 
@@ -130,6 +140,9 @@ export interface ApprovalRequest {
   updatedAt: string;
   employeeId?: string;
   employeeDisplayName?: string;
+  assignedApproverId?: string;
+  assignedApproverDisplayName?: string;
+  chainName?: string;
   inputSummary?: string;
   resolvedAt?: string;
   resolvedBy?: string;

@@ -2,6 +2,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AgentsPage } from "../../pages/AgentsPage.js";
 import { ModelsPage } from "../../pages/ModelsPage.js";
 import { ObservePage } from "../../pages/ObservePage.js";
+import { OrgPage } from "../../pages/OrgPage.js";
 import { RunPage } from "../../pages/RunPage.js";
 import { SystemPage } from "../../pages/SystemPage.js";
 import { EventsProvider } from "../events/EventsContext.js";
@@ -28,6 +29,7 @@ function RoutedApp() {
         <Route path="/run" element={<RunPage />} />
         <Route path="/models" element={<ModelsPage />} />
         <Route path="/agents" element={<AgentsPage />} />
+        <Route path="/org" element={<OrgPage />} />
         <Route path="/observe" element={<ObservePage />} />
         <Route path="/system" element={<SystemPage />} />
       </Route>

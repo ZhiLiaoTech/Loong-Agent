@@ -40,6 +40,9 @@ export interface ApprovalInboxItem {
   updatedAt: string;
   employeeId?: string;
   employeeDisplayName?: string;
+  assignedApproverId?: string;
+  assignedApproverDisplayName?: string;
+  chainName?: string;
   inputSummary?: string;
 }
 

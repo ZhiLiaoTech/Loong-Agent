@@ -10,6 +10,7 @@ const EMPTY_COUNTS: SidebarNavCounts = {
   run: 0,
   models: 0,
   agents: 0,
+  org: 0,
   observe: 0,
 };
 
@@ -22,10 +23,11 @@ export function useNavCounts(): SidebarNavCounts {
   const [counts, setCounts] = useState<SidebarNavCounts>(EMPTY_COUNTS);
 
   const refresh = useCallback(async () => {
-    const [runsResult, modelResult, agentResult, healthResult] = await Promise.all([
+    const [runsResult, modelResult, agentResult, orgResult, healthResult] = await Promise.all([
       client.rpc<{ runs: GatewayRunRecord[] }>("runs.list", { limit: 20 }).catch(() => ({ runs: [] })),
       client.rpc<{ providers: unknown[] }>("model.config.get").catch(() => ({ providers: [] })),
       client.rpc<{ profiles: unknown[] }>("agent.config.get").catch(() => ({ profiles: [] })),
+      client.rpc<{ employees: unknown[] }>("employee.list").catch(() => ({ employees: [] })),
       client.fetchHealth().catch(() => ({ ok: false as const, error: "offline", status: 0 })),
     ]);
 
@@ -38,6 +40,7 @@ export function useNavCounts(): SidebarNavCounts {
       run: runs.length,
       models: modelResult.providers?.length ?? 0,
       agents: agentResult.profiles?.length ?? 0,
+      org: orgResult.employees?.length ?? 0,
       observe: eventsLengthRef.current,
     };
 

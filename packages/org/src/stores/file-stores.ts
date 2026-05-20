@@ -84,8 +84,48 @@ function normalizeOrgDocument(value: unknown, configPath: string): OrgDocument {
     positions: normalizePositions(raw.positions),
     reporting: normalizeReporting(raw.reporting),
     approvalChains: normalizeApprovalChains(raw.approvalChains),
+    employeeRouting: normalizeEmployeeRouting(raw.employeeRouting),
     configPath,
   };
+}
+
+function normalizeEmployeeRouting(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        return undefined;
+      }
+      const raw = entry as Record<string, unknown>;
+      if (typeof raw.employeeId !== "string" || !raw.employeeId.trim()) {
+        return undefined;
+      }
+      if (!raw.match || typeof raw.match !== "object") {
+        return undefined;
+      }
+      const matchRaw = raw.match as Record<string, unknown>;
+      const keywords = Array.isArray(matchRaw.keywords)
+        ? matchRaw.keywords
+            .filter((keyword): keyword is string => typeof keyword === "string" && Boolean(keyword.trim()))
+            .map(keyword => keyword.trim())
+        : [];
+      if (!keywords.length && typeof matchRaw.profileId !== "string") {
+        return undefined;
+      }
+      return {
+        ...(typeof raw.id === "string" && raw.id.trim() ? { id: raw.id.trim() } : {}),
+        employeeId: raw.employeeId.trim(),
+        match: {
+          ...(keywords.length ? { keywords } : {}),
+          ...(typeof matchRaw.profileId === "string" && matchRaw.profileId.trim()
+            ? { profileId: matchRaw.profileId.trim() }
+            : {}),
+        },
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
 }
 
 function normalizeEmployeeRegistry(value: unknown, configPath: string): EmployeeRegistry {

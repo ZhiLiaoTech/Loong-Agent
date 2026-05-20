@@ -1,7 +1,17 @@
 import type { DragonPermissionHandler, DragonPermissionRequest, DragonPermissionResponse } from "@dragon/core";
+import { resolveApprovalAssignee } from "./approval-routing.js";
 import { isOrgApprovalReason, parseApprovalChainId, stripApprovalPrefix } from "./approval-reason.js";
 import { readEmployeeId } from "./policy.js";
-import type { ApprovalRegistry, ApprovalRequest, ApprovalStatus, ApprovalStore } from "./types.js";
+import type {
+  ApprovalRegistry,
+  ApprovalRequest,
+  ApprovalStatus,
+  ApprovalStore,
+  EmployeeRegistry,
+  OrgDocument,
+  OrgTicket,
+  TicketStore,
+} from "./types.js";
 
 interface PendingApproval {
   request: DragonPermissionRequest;
@@ -17,6 +27,9 @@ export interface GatewayApprovalService {
 
 export interface GatewayApprovalServiceOptions {
   store: ApprovalStore;
+  getOrg?: () => Promise<OrgDocument>;
+  getEmployees?: () => Promise<EmployeeRegistry>;
+  ticketStore?: TicketStore;
   defaultTimeoutMs?: number;
 }
 
@@ -44,6 +57,11 @@ export function createGatewayApprovalService(
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const employeeId = readEmployeeId(request.metadata);
+    let assignee: ReturnType<typeof resolveApprovalAssignee> = {};
+    if (options.getOrg && options.getEmployees) {
+      const [org, employees] = await Promise.all([options.getOrg(), options.getEmployees()]);
+      assignee = resolveApprovalAssignee(org, employees, chainId, employeeId);
+    }
     const record: ApprovalRequest = {
       id,
       status: "pending",
@@ -59,6 +77,9 @@ export function createGatewayApprovalService(
       ...(typeof request.metadata?.employeeDisplayName === "string"
         ? { employeeDisplayName: request.metadata.employeeDisplayName }
         : {}),
+      ...(assignee.approverId ? { assignedApproverId: assignee.approverId } : {}),
+      ...(assignee.approverDisplayName ? { assignedApproverDisplayName: assignee.approverDisplayName } : {}),
+      ...(assignee.chainName ? { chainName: assignee.chainName } : {}),
       inputSummary: summarizeInput(request.input),
     };
 
@@ -140,6 +161,10 @@ export function createGatewayApprovalService(
       );
     }
 
+    if (status === "rejected" && options.ticketStore) {
+      await appendRejectionTicket(options.ticketStore, updated);
+    }
+
     return updated;
   }
 
@@ -162,6 +187,24 @@ export function createGatewayApprovalService(
       return resolveApproval(id, "rejected", "deny", resolvedBy, note);
     },
   };
+}
+
+async function appendRejectionTicket(ticketStore: TicketStore, approval: ApprovalRequest): Promise<void> {
+  const registry = await ticketStore.load();
+  const now = new Date().toISOString();
+  const ticket: OrgTicket = {
+    id: crypto.randomUUID(),
+    title: `审批拒绝: ${approval.toolName}`,
+    status: "blocked",
+    createdAt: now,
+    updatedAt: now,
+    runId: approval.runId,
+    toolName: approval.toolName,
+    ...(approval.employeeId ? { assigneeEmployeeId: approval.employeeId, createdByEmployeeId: approval.employeeId } : {}),
+    description: approval.resolutionNote ?? approval.reason,
+    tags: ["approval-rejected", approval.chainId],
+  };
+  await ticketStore.save({ tickets: [...registry.tickets, ticket] });
 }
 
 function summarizeInput(input: unknown): string {

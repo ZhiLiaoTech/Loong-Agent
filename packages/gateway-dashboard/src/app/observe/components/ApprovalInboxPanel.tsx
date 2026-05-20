@@ -32,7 +32,12 @@ export function ApprovalInboxPanel({
           {approvals.map(item => {
             const meta = [
               item.employeeDisplayName || item.employeeId || "",
-              item.chainId ? `链 ${item.chainId}` : "",
+              item.assignedApproverDisplayName
+                ? `审批人 ${item.assignedApproverDisplayName}`
+                : item.assignedApproverId
+                  ? `审批人 ${item.assignedApproverId}`
+                  : "",
+              item.chainName || (item.chainId ? `链 ${item.chainId}` : ""),
               item.createdAt ? formatTime(item.createdAt) : "",
               `run ${shortId(item.runId)}`,
             ].filter(Boolean).join(" · ");

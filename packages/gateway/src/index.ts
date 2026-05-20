@@ -15,6 +15,7 @@ import { parseCronSchedule, type DragonCronJob, type DragonCronJobStore, type Dr
 import type { DragonModelCapabilities, DragonModelStatus } from "@dragon/model-catalog";
 import {
   buildKpiSnapshot,
+  resolveEmployeeForMessage,
   type ApprovalRegistry,
   type ApprovalRequest,
   type ApprovalStatus,
@@ -674,9 +675,41 @@ export class HttpDragonGateway implements DragonGateway {
 
   async #resolveAgentParams(params: GatewayAgentParams): Promise<GatewayAgentParams> {
     let resolved = await resolveAgentParamsWithProfile(params, this.#agentConfigStore);
-    if (params.employeeId?.trim() && this.#employeeStore) {
+    const explicitEmployeeId = params.employeeId?.trim();
+    let employeeId = explicitEmployeeId;
+
+    if (!employeeId && this.#orgStore && this.#employeeStore && params.message.trim()) {
+      const [org, registry] = await Promise.all([
+        this.#orgStore.load(),
+        this.#employeeStore.load(),
+      ]);
+      const routed = resolveEmployeeForMessage(params.message, org, registry);
+      if (routed) {
+        employeeId = routed.employeeId;
+        resolved = {
+          ...resolved,
+          profileId: resolved.profileId ?? routed.employee.profileId,
+          metadata: {
+            ...(resolved.metadata ?? {}),
+            employeeId: routed.employee.id,
+            employeeDisplayName: routed.employee.displayName,
+            employeePositionId: routed.employee.positionId,
+            employeeUnitId: routed.employee.unitId,
+            employeeRoutingReason: routed.reason,
+            ...(routed.ruleId ? { employeeRoutingRuleId: routed.ruleId } : {}),
+            ...(routed.employee.managerId ? { employeeManagerId: routed.employee.managerId } : {}),
+          },
+        };
+      }
+    }
+
+    if (employeeId && this.#employeeStore && !explicitEmployeeId) {
+      return resolved;
+    }
+
+    if (explicitEmployeeId && this.#employeeStore) {
       const registry = await this.#employeeStore.load();
-      const employee = registry.employees.find(entry => entry.id === params.employeeId!.trim());
+      const employee = registry.employees.find(entry => entry.id === explicitEmployeeId);
       if (employee) {
         resolved = {
           ...resolved,

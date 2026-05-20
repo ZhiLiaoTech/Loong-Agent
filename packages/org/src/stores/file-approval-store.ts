@@ -65,6 +65,15 @@ function normalizeApprovalRequest(value: unknown, index: number): ApprovalReques
   if (typeof raw.employeeDisplayName === "string" && raw.employeeDisplayName.trim()) {
     request.employeeDisplayName = raw.employeeDisplayName.trim();
   }
+  if (typeof raw.assignedApproverId === "string" && raw.assignedApproverId.trim()) {
+    request.assignedApproverId = raw.assignedApproverId.trim();
+  }
+  if (typeof raw.assignedApproverDisplayName === "string" && raw.assignedApproverDisplayName.trim()) {
+    request.assignedApproverDisplayName = raw.assignedApproverDisplayName.trim();
+  }
+  if (typeof raw.chainName === "string" && raw.chainName.trim()) {
+    request.chainName = raw.chainName.trim();
+  }
   if (typeof raw.inputSummary === "string" && raw.inputSummary.trim()) {
     request.inputSummary = raw.inputSummary.trim();
   }

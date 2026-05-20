@@ -353,8 +353,13 @@ async function runGateway(args: string[]): Promise<void> {
   const employeeStore = createFileEmployeeStore(defaultEmployeeConfigPath());
   const toolPolicyStore = createFileToolPolicyStore(defaultToolPolicyConfigPath());
   const approvalStore = createFileApprovalStore(defaultApprovalConfigPath());
-  const approvalService = createGatewayApprovalService({ store: approvalStore });
   const ticketStore = createFileTicketStore(defaultTicketConfigPath());
+  const approvalService = createGatewayApprovalService({
+    store: approvalStore,
+    getOrg: () => orgStore.load(),
+    getEmployees: () => employeeStore.load(),
+    ticketStore,
+  });
   const kpiTemplateStore = createFileKpiTemplateStore(defaultKpiTemplateConfigPath());
   const runtimeBundle = await createRuntime({
     mode: "agent",

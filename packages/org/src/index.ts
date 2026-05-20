@@ -5,6 +5,7 @@ export type {
   OrgApprovalChain,
   OrgApprovalChainStep,
   OrgDocument,
+  OrgEmployeeRoutingRule,
   OrgPosition,
   OrgReportingLine,
   OrgRiskLevel,
@@ -37,6 +38,8 @@ export {
 } from "./approval-service.js";
 
 export { isOrgApprovalReason, parseApprovalChainId, stripApprovalPrefix } from "./approval-reason.js";
+export { resolveApprovalAssignee, type ApprovalAssignee } from "./approval-routing.js";
+export { resolveEmployeeForMessage, type EmployeeRouteResult } from "./employee-routing.js";
 
 export {
   findEmployeePolicy,
