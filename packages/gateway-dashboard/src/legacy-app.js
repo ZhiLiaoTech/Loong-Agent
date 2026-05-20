@@ -11,6 +11,7 @@
       modelConfig: { providers: [], appliesOn: "restart" },
       editingModelProviderId: "",
       agentConfig: { profiles: [] },
+      employeeCatalog: { employees: [], defaultEmployeeId: "" },
       editingAgentProfileId: "",
       plugins: [],
       tools: [],
@@ -21,10 +22,14 @@
       activeRunId: "",
       expectingRun: false,
       streamBuffer: "",
+      receivedStreamDelta: false,
+      pendingRunFailure: null,
+      runFinalizeTimer: 0,
       chatTurns: [],
     };
 
     const MAX_CHAT_TURNS = 80;
+    const RUN_FINALIZE_TIMEOUT_MS = 30_000;
 
     const $ = (id) => document.getElementById(id);
 
@@ -43,6 +48,7 @@
 
     $("sendBtn").addEventListener("click", sendRun);
     $("runProfile").addEventListener("change", applySelectedAgentProfile);
+    $("runEmployee")?.addEventListener("change", applySelectedEmployee);
     $("refreshRunsBtn").addEventListener("click", refreshRuns);
     $("refreshRunsObserveBtn").addEventListener("click", refreshRuns);
     $("refreshTrajectoryBtn").addEventListener("click", refreshTrajectories);
@@ -87,7 +93,10 @@
       document.querySelectorAll("[data-panel]").forEach(panel => {
         panel.classList.toggle("active", panel.getAttribute("data-panel") === state.activeTab);
       });
-      if (state.activeTab === "run") refreshRuns();
+      if (state.activeTab === "run") {
+        refreshRuns();
+        refreshEmployees();
+      }
       if (state.activeTab === "models") {
         refreshModelConfig();
         refreshProviders();
@@ -137,6 +146,7 @@
       refreshProviders();
       refreshModelConfig();
       refreshAgentConfig();
+      refreshEmployees();
       refreshPlugins();
       refreshTools();
       refreshMemoryCandidates();
@@ -197,6 +207,9 @@
       state.expectingRun = true;
       state.activeRunId = "";
       state.streamBuffer = "";
+      state.receivedStreamDelta = false;
+      state.pendingRunFailure = null;
+      clearRunFinalizeTimer();
       state.chatTurns.push({ role: "user", text: rawMessage, streaming: false });
       trimChatTurns();
       renderChatTranscript();
@@ -211,6 +224,11 @@
           metadata: { source: "dashboard" },
         };
         if (profile?.id) params.profileId = profile.id;
+        const employeeId = $("runEmployee")?.value?.trim() || "";
+        if (employeeId) {
+          params.employeeId = employeeId;
+          params.metadata.employeeId = employeeId;
+        }
         if (profile?.systemPrompt) params.systemPrompt = profile.systemPrompt;
         if (profile?.toolsEnabled === false) params.toolsEnabled = false;
         if (profile?.memoryEnabled === false) params.memoryEnabled = false;
@@ -224,17 +242,30 @@
         trimChatTurns();
         renderChatTranscript();
         const payload = await rpc("agent", params);
-        if (payload.result?.runId) {
-          bindActiveRun(payload.result.runId);
+        const result = payload.result;
+        const assistant = [...(result?.messages || [])].reverse().find(message => message.role === "assistant");
+        const failure = result?.status === "error" || result?.status === "cancelled"
+          ? { phase: result.status, message: result.error }
+          : null;
+        if (failure) {
+          state.pendingRunFailure = failure;
         }
-        const assistant = [...(payload.result?.messages || [])].reverse().find(message => message.role === "assistant");
-        finalizeAssistant(assistant?.content || state.streamBuffer || "");
+        if (result?.runId) {
+          bindActiveRun(result.runId);
+          scheduleRunFinalizeFallback(result.runId);
+          if (failure && !state.receivedStreamDelta && !assistant?.content) {
+            completeRun("", failure);
+          }
+        } else {
+          completeRun(assistant?.content || state.streamBuffer || "", failure);
+        }
         $("runOutput").textContent = JSON.stringify(payload.result, null, 2);
         $("message").value = "";
         await refreshRuns();
       } catch (error) {
+        clearRunFinalizeTimer();
         state.expectingRun = false;
-        finalizeAssistant("Error: " + (error.message || String(error)));
+        completeRun("", { phase: "error", message: error.message || String(error) });
         $("runOutput").textContent = error.message || String(error);
         pushLocalEvent("error", error.message || String(error));
       } finally {
@@ -320,6 +351,20 @@
         state.agentConfig = { profiles: [] };
         renderAgentConfig();
         showResult("agentConfigResult", error.message || String(error));
+      }
+    }
+
+    async function refreshEmployees() {
+      try {
+        const payload = await rpc("employee.list");
+        state.employeeCatalog = {
+          employees: (payload.employees || []).filter(employee => employee.status === "active"),
+          defaultEmployeeId: payload.defaultEmployeeId || "",
+        };
+        renderRunEmployees();
+      } catch {
+        state.employeeCatalog = { employees: [], defaultEmployeeId: "" };
+        renderRunEmployees();
       }
     }
 
@@ -555,6 +600,34 @@
       if (profile.defaultModel) $("model").value = profile.defaultModel;
       if (profile.workspace) $("workspace").value = profile.workspace;
       $("thinking").value = profile.thinking || "";
+    }
+
+    function renderRunEmployees() {
+      const select = $("runEmployee");
+      if (!select) return;
+      const selected = select.value;
+      const employees = state.employeeCatalog.employees || [];
+      const defaultId = state.employeeCatalog.defaultEmployeeId || "";
+      select.innerHTML = "<option value=''>Auto / none</option>" + employees.map(employee => {
+        const suffix = defaultId === employee.id ? " *" : "";
+        return "<option value='" + escapeHtml(employee.id || "") + "'>" +
+          escapeHtml((employee.displayName || employee.id || "") + suffix) + "</option>";
+      }).join("");
+      if (selected && employees.some(employee => employee.id === selected)) {
+        select.value = selected;
+      } else if (!selected && defaultId) {
+        select.value = defaultId;
+      }
+    }
+
+    function applySelectedEmployee() {
+      const employeeId = $("runEmployee")?.value?.trim() || "";
+      if (!employeeId) return;
+      const employee = (state.employeeCatalog.employees || []).find(entry => entry.id === employeeId);
+      if (employee?.profileId && $("runProfile")) {
+        $("runProfile").value = employee.profileId;
+        applySelectedAgentProfile();
+      }
     }
 
     async function saveCronJob() {
@@ -1031,6 +1104,41 @@
       state.expectingRun = false;
     }
 
+    function clearRunFinalizeTimer() {
+      if (state.runFinalizeTimer) {
+        clearTimeout(state.runFinalizeTimer);
+        state.runFinalizeTimer = 0;
+      }
+    }
+
+    function completeRun(text, failure) {
+      clearRunFinalizeTimer();
+      const resolvedFailure = failure ?? state.pendingRunFailure ?? null;
+      const last = state.chatTurns[state.chatTurns.length - 1];
+      const body = last?.role === "assistant"
+        ? (text || last.text || state.streamBuffer || "")
+        : (text || state.streamBuffer || "");
+      finalizeAssistant(body, resolvedFailure);
+      state.pendingRunFailure = null;
+      state.streamBuffer = "";
+      state.receivedStreamDelta = false;
+      state.activeRunId = "";
+      state.expectingRun = false;
+    }
+
+    function scheduleRunFinalizeFallback(runId) {
+      clearRunFinalizeTimer();
+      state.runFinalizeTimer = setTimeout(() => {
+        state.runFinalizeTimer = 0;
+        if (state.activeRunId !== runId) {
+          return;
+        }
+        const last = state.chatTurns[state.chatTurns.length - 1];
+        const body = last?.role === "assistant" ? (last.text || state.streamBuffer || "") : state.streamBuffer || "";
+        completeRun(body, state.pendingRunFailure);
+      }, RUN_FINALIZE_TIMEOUT_MS);
+    }
+
     function handleRunStreamEvent(ev) {
       if (ev.type === "lifecycle" && ev.phase === "start" && state.expectingRun && ev.runId) {
         bindActiveRun(ev.runId);
@@ -1046,13 +1154,25 @@
         && ["end", "error", "cancelled"].includes(ev.phase)
       ) {
         const last = state.chatTurns[state.chatTurns.length - 1];
-        if (last?.role === "assistant" && last.streaming) {
-          finalizeAssistant(last.text || state.streamBuffer || "");
+        const failure = ev.phase === "error" || ev.phase === "cancelled"
+          ? { phase: ev.phase, message: ev.message }
+          : null;
+        if (failure) {
+          state.pendingRunFailure = null;
         }
-        state.activeRunId = "";
-        state.expectingRun = false;
-        state.streamBuffer = "";
+        if (last?.role === "assistant") {
+          completeRun(last.text || state.streamBuffer || "", failure);
+        } else {
+          completeRun("", failure);
+        }
       }
+    }
+
+    function buildRunErrorDetail(failure) {
+      const label = failure.phase === "cancelled" ? "运行已取消" : "运行失败";
+      const detail = (failure.message || "").trim()
+        || (failure.phase === "cancelled" ? "本次运行已被取消。" : "本次运行异常结束，请重试。");
+      return label + ": " + detail;
     }
 
     function trimChatTurns() {
@@ -1071,9 +1191,17 @@
       el.innerHTML = state.chatTurns.map(turn => {
         const role = turn.role === "user" ? "user" : "assistant";
         const streaming = turn.streaming ? " streaming" : "";
-        return "<div class='chat-bubble " + role + streaming + "'>" +
+        const outcome = turn.outcome ? " chat-" + turn.outcome : "";
+        const failureHtml = turn.errorDetail
+          ? "<p class='chat-error-detail' role='alert'>" + escapeHtml(turn.errorDetail) + "</p>"
+          : "";
+        const textHtml = turn.text
+          ? "<div class='chat-text'>" + escapeHtml(turn.text) + "</div>"
+          : "";
+        return "<div class='chat-bubble " + role + outcome + streaming + "'>" +
           "<div class='chat-meta'>" + escapeHtml(role) + "</div>" +
-          "<div class='chat-text'>" + escapeHtml(turn.text || "") + "</div>" +
+          textHtml +
+          failureHtml +
         "</div>";
       }).join("");
       el.scrollTop = el.scrollHeight;
@@ -1081,6 +1209,8 @@
 
     function appendChatDelta(text) {
       if (!text) return;
+      state.receivedStreamDelta = true;
+      clearRunFinalizeTimer();
       const last = state.chatTurns[state.chatTurns.length - 1];
       if (last?.role === "assistant") {
         if (!last.streaming) return;
@@ -1092,13 +1222,26 @@
       renderChatTranscript();
     }
 
-    function finalizeAssistant(text) {
+    function finalizeAssistant(text, failure) {
       const last = state.chatTurns[state.chatTurns.length - 1];
+      const body = (text || (last?.role === "assistant" ? last.text : "") || "").trim();
       if (last && last.role === "assistant") {
         last.streaming = false;
-        if (text) last.text = text;
-      } else if (text) {
-        state.chatTurns.push({ role: "assistant", text, streaming: false });
+        last.text = body;
+        if (failure) {
+          last.outcome = failure.phase;
+          last.errorDetail = buildRunErrorDetail(failure);
+        } else {
+          delete last.outcome;
+          delete last.errorDetail;
+        }
+      } else if (body || failure) {
+        const turn = { role: "assistant", text: body, streaming: false };
+        if (failure) {
+          turn.outcome = failure.phase;
+          turn.errorDetail = buildRunErrorDetail(failure);
+        }
+        state.chatTurns.push(turn);
       }
       renderChatTranscript();
     }

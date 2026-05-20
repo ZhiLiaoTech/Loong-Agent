@@ -132,6 +132,21 @@ body {
   animation: blink 1s step-end infinite;
 }
 
+.chat-bubble.chat-error {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+}
+
+.chat-error-detail {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 @keyframes blink {
   50% { opacity: 0; }
 }

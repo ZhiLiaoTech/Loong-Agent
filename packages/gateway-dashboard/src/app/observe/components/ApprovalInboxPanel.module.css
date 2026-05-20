@@ -13,7 +13,33 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
   margin-bottom: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.filterCheck {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.filterSelect {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filterSelect select {
+  min-width: 180px;
+  font-size: var(--text-xs);
 }
 
 .title {

@@ -6,6 +6,11 @@ export function ApprovalInboxPanel({
   approvals,
   result,
   loading,
+  mineOnly,
+  approverEmployeeId,
+  employeeOptions,
+  onMineOnlyChange,
+  onApproverChange,
   onRefresh,
   onApprove,
   onReject,
@@ -13,6 +18,11 @@ export function ApprovalInboxPanel({
   approvals: readonly ApprovalInboxItem[];
   result: string | null;
   loading: boolean;
+  mineOnly: boolean;
+  approverEmployeeId: string;
+  employeeOptions: readonly { id: string; displayName: string }[];
+  onMineOnlyChange: (value: boolean) => void;
+  onApproverChange: (employeeId: string) => void;
   onRefresh: () => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
@@ -24,6 +34,31 @@ export function ApprovalInboxPanel({
         <button type="button" className={styles.refresh} onClick={onRefresh} disabled={loading}>
           刷新
         </button>
+      </div>
+      <div className={styles.filters}>
+        <label className={styles.filterCheck}>
+          <input
+            type="checkbox"
+            checked={mineOnly}
+            onChange={event => onMineOnlyChange(event.target.checked)}
+          />
+          <span>我的待办</span>
+        </label>
+        <label className={styles.filterSelect}>
+          <span>审批人</span>
+          <select
+            value={approverEmployeeId}
+            disabled={!mineOnly}
+            onChange={event => onApproverChange(event.target.value)}
+          >
+            {!employeeOptions.length ? <option value="">无员工</option> : null}
+            {employeeOptions.map(option => (
+              <option key={option.id} value={option.id}>
+                {option.displayName} ({option.id})
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       {!approvals.length ? (
         <p className={styles.empty}>暂无待审批工具调用。</p>

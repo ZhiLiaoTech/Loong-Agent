@@ -6,6 +6,10 @@ export interface ChatTurn {
   role: "user" | "assistant";
   text: string;
   streaming: boolean;
+  /** Set when the run ended in error or was cancelled. */
+  outcome?: "error" | "cancelled";
+  /** Human-readable failure reason shown below the assistant text. */
+  errorDetail?: string;
 }
 
 export interface RunSettings {
@@ -63,6 +67,7 @@ export interface GatewayRunRecord {
 export interface AgentRunResult {
   runId: string;
   status: string;
+  error?: string;
   messages?: readonly { role: string; content: string }[];
 }
 

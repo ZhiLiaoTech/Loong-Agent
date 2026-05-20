@@ -20,11 +20,16 @@ export function ChatTranscript({ turns }: { turns: readonly ChatTurn[] }) {
             className={
               turn.role === "user"
                 ? `${styles.bubble} ${styles.user}`
-                : `${styles.bubble} ${styles.assistant}${turn.streaming ? ` ${styles.streaming}` : ""}`
+                : `${styles.bubble} ${styles.assistant}${turn.streaming ? ` ${styles.streaming}` : ""}${turn.outcome ? ` ${styles[turn.outcome]}` : ""}`
             }
           >
             <div className={styles.meta}>{turn.role}</div>
-            <div className={styles.text}>{turn.text}</div>
+            {turn.text ? <div className={styles.text}>{turn.text}</div> : null}
+            {turn.errorDetail ? (
+              <p className={styles.errorDetail} role="alert">
+                {turn.errorDetail}
+              </p>
+            ) : null}
           </article>
         ))
       )}

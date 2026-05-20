@@ -43,7 +43,25 @@ export function RunInspector({
         <dt>Run ID</dt>
         <dd>{activeRunId || lastResult?.runId || "—"}</dd>
         <dt>Status</dt>
-        <dd>{lastResult?.status || "—"}</dd>
+        <dd>
+          <span
+            className={
+              lastResult?.status === "error"
+                ? styles.statusError
+                : lastResult?.status === "cancelled"
+                  ? styles.statusCancelled
+                  : undefined
+            }
+          >
+            {lastResult?.status || "—"}
+          </span>
+        </dd>
+        {lastResult?.error ? (
+          <>
+            <dt>Error</dt>
+            <dd className={styles.errorMessage}>{lastResult.error}</dd>
+          </>
+        ) : null}
         {lastTier ? (
           <>
             <dt>Tier</dt>

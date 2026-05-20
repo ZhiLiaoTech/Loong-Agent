@@ -320,6 +320,7 @@ export type GatewayToolPolicySaveParams = ToolPolicyDocument;
 
 export interface GatewayApprovalListParams {
   status?: ApprovalStatus;
+  assignedApproverId?: string;
 }
 
 export interface GatewayApprovalResolveParams {
@@ -1556,7 +1557,10 @@ export class HttpDragonGateway implements DragonGateway {
     if (!this.#approvalService) {
       throw new GatewayHttpError(404, "Approval service is not available.");
     }
-    return await this.#approvalService.list(params?.status);
+    return await this.#approvalService.list({
+      ...(params?.status ? { status: params.status } : {}),
+      ...(params?.assignedApproverId ? { assignedApproverId: params.assignedApproverId } : {}),
+    });
   }
 
   async #approveRequest(params: GatewayApprovalResolveParams): Promise<ApprovalRequest> {
@@ -2228,13 +2232,17 @@ function parseApprovalListParams(value: unknown): GatewayApprovalListParams {
     badRequest("approval.list params must be an object.");
   }
   const status = value.status;
-  if (status === undefined) {
-    return {};
+  const params: GatewayApprovalListParams = {};
+  if (status !== undefined) {
+    if (status !== "pending" && status !== "approved" && status !== "rejected" && status !== "expired") {
+      badRequest("approval.list status is invalid.");
+    }
+    params.status = status;
   }
-  if (status !== "pending" && status !== "approved" && status !== "rejected" && status !== "expired") {
-    badRequest("approval.list status is invalid.");
+  if (typeof value.assignedApproverId === "string" && value.assignedApproverId.trim()) {
+    params.assignedApproverId = normalizeShortText(value.assignedApproverId, "assignedApproverId", 120);
   }
-  return { status };
+  return params;
 }
 
 function parseTicketUpsertParams(value: unknown): GatewayTicketUpsertParams {

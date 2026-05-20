@@ -18,9 +18,14 @@ interface PendingApproval {
   resolve: (response: DragonPermissionResponse | "allow" | "deny") => void;
 }
 
+export interface ApprovalListFilter {
+  status?: ApprovalStatus;
+  assignedApproverId?: string;
+}
+
 export interface GatewayApprovalService {
   readonly handler: DragonPermissionHandler;
-  list(status?: ApprovalStatus): Promise<ApprovalRegistry>;
+  list(filter?: ApprovalListFilter): Promise<ApprovalRegistry>;
   approve(id: string, resolvedBy?: string, note?: string): Promise<ApprovalRequest>;
   reject(id: string, resolvedBy?: string, note?: string): Promise<ApprovalRequest>;
 }
@@ -179,15 +184,18 @@ export function createGatewayApprovalService(
 
   return {
     handler,
-    async list(status) {
+    async list(filter) {
       const registry = await options.store.load();
-      if (!status) {
-        return registry;
+      let requests = registry.requests;
+      if (filter?.status) {
+        requests = requests.filter(request => request.status === filter.status);
       }
-      return {
-        ...registry,
-        requests: registry.requests.filter(request => request.status === status),
-      };
+      if (filter?.assignedApproverId) {
+        requests = requests.filter(
+          request => request.assignedApproverId === filter.assignedApproverId,
+        );
+      }
+      return { ...registry, requests };
     },
     approve(id, resolvedBy, note) {
       return resolveApproval(id, "approved", "allow", resolvedBy, note);

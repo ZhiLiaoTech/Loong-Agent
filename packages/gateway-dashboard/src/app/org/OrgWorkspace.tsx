@@ -1,3 +1,6 @@
+import { EmployeeForm } from "./components/EmployeeForm.js";
+import { EmployeesTable } from "./components/EmployeesTable.js";
+import { PolicyJsonEditor } from "./components/PolicyJsonEditor.js";
 import styles from "./OrgWorkspace.module.css";
 import { useOrgPage } from "./useOrgPage.js";
 
@@ -6,20 +9,61 @@ export function OrgWorkspace() {
   const { state } = page;
 
   const employeeName = (id: string) =>
-    state.employees.find(entry => entry.id === id)?.displayName ?? id;
+    state.employees.find(entry => entry.id === id)?.displayName
+    ?? page.draftEmployees.find(entry => entry.id === id)?.displayName
+    ?? id;
 
   return (
     <div className={styles.workspace}>
       <header className={styles.header}>
-        <h2 className={styles.title}>组织</h2>
-        <p className={styles.lead}>查看部门、岗位、审批链、路由规则与数字员工（只读）。</p>
-        <button type="button" className={styles.refresh} onClick={() => void page.reload()} disabled={page.loading}>
-          刷新
-        </button>
+        <div>
+          <h2 className={styles.title}>组织</h2>
+          <p className={styles.lead}>管理部门结构，并编辑数字员工与工具策略。</p>
+        </div>
+        <div className={styles.headerActions}>
+          <button
+            type="button"
+            className={styles.save}
+            onClick={() => void page.saveEmployees()}
+            disabled={page.savingEmployees || page.loading}
+          >
+            {page.savingEmployees ? "保存中…" : "保存员工"}
+          </button>
+          <button type="button" className={styles.refresh} onClick={() => void page.reload()} disabled={page.loading}>
+            刷新
+          </button>
+        </div>
       </header>
 
       {page.error ? <p className={styles.error}>{page.error}</p> : null}
+      {page.status ? <p className={styles.status}>{page.status}</p> : null}
 
+      <section className={styles.editor}>
+        <EmployeeForm
+          form={page.employeeForm}
+          profileIds={page.profileIds}
+          policyIds={page.policyIds}
+          onChange={page.patchForm}
+          onUpsert={page.upsertDraft}
+          onClear={page.clearForm}
+        />
+        <EmployeesTable
+          employees={page.draftEmployees}
+          defaultEmployeeId={page.draftDefaultEmployeeId}
+          onEdit={page.editDraft}
+          onRemove={page.removeDraft}
+        />
+        <PolicyJsonEditor
+          jsonText={page.policyJsonText}
+          loading={page.loading}
+          saving={page.savingPolicies}
+          onChange={page.setPolicyJsonText}
+          onReload={() => void page.reloadPolicies()}
+          onSave={() => void page.savePolicies()}
+        />
+      </section>
+
+      <h3 className={styles.sectionTitle}>组织概览（只读）</h3>
       <div className={styles.grid}>
         <section className={styles.card}>
           <h3>部门 ({state.units.length})</h3>
@@ -49,7 +93,7 @@ export function OrgWorkspace() {
         </section>
 
         <section className={styles.card}>
-          <h3>数字员工 ({state.employees.length})</h3>
+          <h3>在职员工 ({state.employees.length})</h3>
           {state.defaultEmployeeId ? (
             <p className={styles.note}>默认员工：{employeeName(state.defaultEmployeeId)}</p>
           ) : null}

@@ -61,3 +61,22 @@
   font-size: var(--text-sm);
   line-height: var(--line-height-normal);
 }
+
+.errorDetail {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  color: var(--danger);
+  font-size: var(--text-xs);
+  line-height: var(--line-height-normal);
+}
+
+.bubble.error {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+}
+
+.bubble.cancelled {
+  border-color: color-mix(in srgb, var(--muted) 50%, var(--line));
+}

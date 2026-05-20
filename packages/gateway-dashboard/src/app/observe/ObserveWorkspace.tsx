@@ -66,6 +66,11 @@ export function ObserveWorkspace() {
           approvals={page.approvals}
           result={page.approvalResult}
           loading={page.loading}
+          mineOnly={page.approvalMineOnly}
+          approverEmployeeId={page.approverEmployeeId}
+          employeeOptions={page.employeeOptions}
+          onMineOnlyChange={page.setApprovalMineOnly}
+          onApproverChange={page.setApproverEmployeeId}
           onRefresh={() => void page.refreshApprovals()}
           onApprove={id => void page.approveRequest(id)}
           onReject={id => void page.rejectRequest(id)}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { GatewayApiError } from "../../api/errors.js";
 import { useDragonEvents } from "../events/EventsContext.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
+import { buildErrorDetail, type RunFailureInfo } from "./runFailure.js";
 import type { AgentProfile, AgentRunResult, ChatTurn, RunSettings } from "./types.js";
 
 const MAX_CHAT_TURNS = 80;
@@ -56,6 +57,7 @@ export function useRunChat(
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>(initialChatTurns);
   const [sending, setSending] = useState(false);
   const [activeRunId, setActiveRunId] = useState(chatStateCache.activeRunId);
+  const [timelineRunId, setTimelineRunId] = useState("");
   const [expectingRun, setExpectingRun] = useState(false);
   const [lastResult, setLastResult] = useState<AgentRunResult | null>(chatStateCache.lastResult);
   const [lastTier, setLastTier] = useState<LastTierInfo | null>(chatStateCache.lastTier);
@@ -76,6 +78,7 @@ export function useRunChat(
   const streamBufferRef = useRef("");
   const receivedStreamDeltaRef = useRef(false);
   const pendingRpcAssistantRef = useRef("");
+  const pendingRunFailureRef = useRef<RunFailureInfo | null>(null);
   const finalizeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const clearFinalizeTimer = useCallback(() => {
@@ -98,6 +101,7 @@ export function useRunChat(
     streamBufferRef.current = "";
     receivedStreamDeltaRef.current = false;
     pendingRpcAssistantRef.current = "";
+    pendingRunFailureRef.current = null;
     clearFinalizeTimer();
   }, [clearFinalizeTimer, connectionEpoch]);
 
@@ -105,18 +109,31 @@ export function useRunChat(
     clearFinalizeTimer();
   }, [clearFinalizeTimer]);
 
-  const finalizeAssistant = useCallback((text: string) => {
+  const finalizeAssistant = useCallback((text: string, failure?: RunFailureInfo) => {
+    const failureFields = failure ? buildErrorDetail(failure) : {};
     setChatTurns(turns => {
       const next = [...turns];
       const last = next[next.length - 1];
+      const body = (text || last?.text || "").trim();
       if (last?.role === "assistant") {
-        next[next.length - 1] = {
-          ...last,
+        if (failure) {
+          next[next.length - 1] = {
+            ...last,
+            streaming: false,
+            text: body,
+            ...failureFields,
+          };
+        } else {
+          const { outcome: _outcome, errorDetail: _detail, ...rest } = last;
+          next[next.length - 1] = { ...rest, streaming: false, text: body };
+        }
+      } else if (body || failure) {
+        next.push({
+          role: "assistant",
+          text: body,
           streaming: false,
-          text: text || last.text,
-        };
-      } else if (text) {
-        next.push({ role: "assistant", text, streaming: false });
+          ...failureFields,
+        });
       } else {
         next.push({ role: "assistant", text: "", streaming: false });
       }
@@ -124,10 +141,15 @@ export function useRunChat(
     });
   }, []);
 
-  const completeRun = useCallback((text: string) => {
+  const completeRun = useCallback((text: string, failure?: RunFailureInfo) => {
     clearFinalizeTimer();
-    finalizeAssistant(text);
+    const resolvedFailure = failure ?? pendingRunFailureRef.current ?? undefined;
+    if (activeRunIdRef.current) {
+      setTimelineRunId(activeRunIdRef.current);
+    }
+    finalizeAssistant(text, resolvedFailure);
     pendingRpcAssistantRef.current = "";
+    pendingRunFailureRef.current = null;
     activeRunIdRef.current = "";
     setActiveRunId("");
     expectingRunRef.current = false;
@@ -143,7 +165,10 @@ export function useRunChat(
       if (activeRunIdRef.current !== runId) {
         return;
       }
-      completeRun(streamBufferRef.current || pendingRpcAssistantRef.current);
+      completeRun(
+        streamBufferRef.current || pendingRpcAssistantRef.current,
+        pendingRunFailureRef.current ?? undefined,
+      );
     }, RUN_FINALIZE_TIMEOUT_MS);
   }, [clearFinalizeTimer, completeRun]);
 
@@ -165,7 +190,14 @@ export function useRunChat(
     });
   }, [clearFinalizeTimer]);
 
-  const handleStreamEvent = useCallback((event: { type?: string; phase?: string; runId?: string; text?: string; metadata?: Record<string, unknown> }) => {
+  const handleStreamEvent = useCallback((event: {
+    type?: string;
+    phase?: string;
+    runId?: string;
+    text?: string;
+    message?: string;
+    metadata?: Record<string, unknown>;
+  }) => {
     if (event.type === "lifecycle" && event.phase === "start" && expectingRunRef.current && event.runId) {
       activeRunIdRef.current = event.runId;
       setActiveRunId(event.runId);
@@ -205,7 +237,17 @@ export function useRunChat(
       && event.phase
       && ["end", "error", "cancelled"].includes(event.phase)
     ) {
-      completeRun(streamBufferRef.current || pendingRpcAssistantRef.current);
+      const failure: RunFailureInfo | undefined = event.phase === "error" || event.phase === "cancelled"
+        ? {
+            phase: event.phase,
+            ...(event.message ? { message: event.message } : {}),
+          }
+        : undefined;
+      // Prefer lifecycle message over RPC-cached failure when both exist.
+      if (failure) {
+        pendingRunFailureRef.current = null;
+      }
+      completeRun(streamBufferRef.current || pendingRpcAssistantRef.current, failure);
     }
   }, [appendDelta, completeRun]);
 
@@ -236,6 +278,7 @@ export function useRunChat(
     streamBufferRef.current = "";
     receivedStreamDeltaRef.current = false;
     pendingRpcAssistantRef.current = "";
+    pendingRunFailureRef.current = null;
 
     const attachmentSummary = attachments.length > 0
       ? "\n\n" + attachments.map(a => `📎 ${a.name} (${a.kind}, ${a.mimeType})`).join("\n")
@@ -305,10 +348,26 @@ export function useRunChat(
         .find(entry => entry.role === "assistant");
       pendingRpcAssistantRef.current = assistant?.content || "";
 
+      if (result?.status === "error" || result?.status === "cancelled") {
+        pendingRunFailureRef.current = {
+          phase: result.status,
+          ...(result.error ? { message: result.error } : {}),
+        };
+      }
+
       if (result?.runId) {
         scheduleRunFinalizeFallback(result.runId);
+        if (result.status === "error" || result.status === "cancelled") {
+          // Sync / fast-fail paths may not emit SSE lifecycle; finalize when no stream arrives.
+          if (!receivedStreamDeltaRef.current && !pendingRpcAssistantRef.current) {
+            completeRun("", pendingRunFailureRef.current ?? undefined);
+          }
+        }
       } else {
-        completeRun(pendingRpcAssistantRef.current);
+        completeRun(
+          pendingRpcAssistantRef.current,
+          pendingRunFailureRef.current ?? undefined,
+        );
       }
     } catch (error) {
       expectingRunRef.current = false;
@@ -320,7 +379,7 @@ export function useRunChat(
         : error instanceof Error
           ? error.message
           : String(error);
-      finalizeAssistant(`Error: ${messageText}`);
+      finalizeAssistant("", { phase: "error", message: messageText });
     } finally {
       setSending(false);
       if (!completedRunId) {
@@ -362,6 +421,7 @@ export function useRunChat(
     sending,
     expectingRun,
     activeRunId,
+    timelineRunId,
     lastResult,
     lastTier,
     showRaw,

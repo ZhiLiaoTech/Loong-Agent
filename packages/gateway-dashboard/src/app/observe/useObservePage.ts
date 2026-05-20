@@ -28,6 +28,10 @@ export function useObservePage() {
   const [memoryResult, setMemoryResult] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<readonly ApprovalInboxItem[]>([]);
   const [approvalResult, setApprovalResult] = useState<string | null>(null);
+  const [tickets, setTickets] = useState<readonly OrgTicketView[]>([]);
+  const [approvalMineOnly, setApprovalMineOnly] = useState(false);
+  const [approverEmployeeId, setApproverEmployeeId] = useState("");
+  const [employeeOptions, setEmployeeOptions] = useState<readonly { id: string; displayName: string }[]>([]);
   const [kpiTemplateName, setKpiTemplateName] = useState("");
   const [kpiEmployeeId, setKpiEmployeeId] = useState("");
   const [kpiMetrics, setKpiMetrics] = useState<readonly KpiMetricView[]>([]);
@@ -82,12 +86,34 @@ export function useObservePage() {
     setTickets(payload.tickets ?? []);
   }, [client]);
 
-  const refreshApprovals = useCallback(async () => {
-    const payload = await client.rpc<{ requests: ApprovalInboxItem[] }>("approval.list", {
-      status: "pending",
-    }).catch((): { requests: ApprovalInboxItem[] } => ({ requests: [] }));
-    setApprovals(payload.requests ?? []);
+  const refreshEmployeeOptions = useCallback(async () => {
+    const payload = await client.rpc<{
+      employees: Array<{ id: string; displayName: string; status: string }>;
+      defaultEmployeeId?: string;
+    }>("employee.list").catch(() => ({ employees: [] as Array<{ id: string; displayName: string; status: string }> }));
+    const active = (payload.employees ?? []).filter(entry => entry.status === "active");
+    setEmployeeOptions(active.map(entry => ({ id: entry.id, displayName: entry.displayName })));
+    setApproverEmployeeId(current => {
+      if (current && active.some(entry => entry.id === current)) {
+        return current;
+      }
+      const fallback = payload.defaultEmployeeId && active.some(entry => entry.id === payload.defaultEmployeeId)
+        ? payload.defaultEmployeeId
+        : active[0]?.id;
+      return fallback ?? "";
+    });
   }, [client]);
+
+  const refreshApprovals = useCallback(async () => {
+    const listParams: { status: "pending"; assignedApproverId?: string } = { status: "pending" };
+    if (approvalMineOnly && approverEmployeeId.trim()) {
+      listParams.assignedApproverId = approverEmployeeId.trim();
+    }
+    const payload = await client.rpc<{ requests: ApprovalInboxItem[] }>("approval.list", listParams).catch(
+      (): { requests: ApprovalInboxItem[] } => ({ requests: [] }),
+    );
+    setApprovals(payload.requests ?? []);
+  }, [approvalMineOnly, approverEmployeeId, client]);
 
   const refreshMemory = useCallback(async () => {
     const payload = await client.rpc<{
@@ -106,6 +132,7 @@ export function useObservePage() {
         refreshRuns(),
         refreshTrajectories(),
         refreshMemory(),
+        refreshEmployeeOptions(),
         refreshApprovals(),
         refreshKpi(),
         refreshTickets(),
@@ -128,7 +155,19 @@ export function useObservePage() {
     } finally {
       setLoading(false);
     }
-  }, [refreshApprovals, refreshKpi, refreshMemory, refreshRuns, refreshTickets, refreshTrajectories]);
+  }, [
+    refreshApprovals,
+    refreshEmployeeOptions,
+    refreshKpi,
+    refreshMemory,
+    refreshRuns,
+    refreshTickets,
+    refreshTrajectories,
+  ]);
+
+  useEffect(() => {
+    void refreshApprovals();
+  }, [approvalMineOnly, approverEmployeeId, refreshApprovals]);
 
   useEffect(() => {
     void refreshAll();
@@ -257,6 +296,11 @@ export function useObservePage() {
     memoryResult,
     approvals,
     approvalResult,
+    approvalMineOnly,
+    setApprovalMineOnly,
+    approverEmployeeId,
+    setApproverEmployeeId,
+    employeeOptions,
     kpiTemplateName,
     kpiEmployeeId,
     kpiMetrics,

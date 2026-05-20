@@ -73,6 +73,22 @@
   font-size: var(--text-xs);
 }
 
+.statusError {
+  color: var(--danger);
+  font-weight: var(--font-weight-semibold);
+}
+
+.statusCancelled {
+  color: var(--muted);
+  font-weight: var(--font-weight-semibold);
+}
+
+.errorMessage {
+  color: var(--danger);
+  font-family: inherit;
+  white-space: pre-wrap;
+}
+
 .pre {
   margin: var(--space-3) 0 0;
   max-height: 200px;

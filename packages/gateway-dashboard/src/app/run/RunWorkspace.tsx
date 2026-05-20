@@ -121,7 +121,7 @@ export function RunWorkspace() {
             onToggleRaw={() => chat.setShowRaw(value => !value)}
             onCancel={chat.cancelActiveRun}
           />
-          <RunTimeline activeRunId={chat.activeRunId} events={events} />
+          <RunTimeline activeRunId={chat.activeRunId || chat.timelineRunId} events={events} />
           <RecentRunsList runs={catalog.runs} onRefresh={() => void catalog.refreshRuns()} />
         </aside>
       </div>
