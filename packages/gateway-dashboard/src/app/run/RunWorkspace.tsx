@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDragonEvents } from "../events/EventsContext.js";
 import { ChatTranscript } from "./components/ChatTranscript.js";
 import { Composer, type ComposerAttachment } from "./components/Composer.js";
@@ -14,6 +14,7 @@ import styles from "./RunWorkspace.module.css";
 
 const DEFAULT_SETTINGS: RunSettings = {
   profileId: "",
+  employeeId: "",
   sessionId: "dashboard",
   model: "",
   thinking: "",
@@ -32,6 +33,22 @@ export function RunWorkspace() {
 
   const chat = useRunChat(settings, selectedProfile);
 
+  useEffect(() => {
+    const defaultId = catalog.employeeCatalog.defaultEmployeeId;
+    if (!defaultId || settings.employeeId) {
+      return;
+    }
+    const employee = catalog.employeeCatalog.employees.find(entry => entry.id === defaultId);
+    if (!employee) {
+      return;
+    }
+    setSettings(current => ({
+      ...current,
+      employeeId: employee.id,
+      profileId: current.profileId || employee.profileId,
+    }));
+  }, [catalog.employeeCatalog, settings.employeeId]);
+
   const handleProfileChange = useCallback(
     (profileId: string) => {
       const profile = catalog.agentConfig.profiles.find(entry => entry.id === profileId);
@@ -44,6 +61,18 @@ export function RunWorkspace() {
       }));
     },
     [catalog.agentConfig.profiles],
+  );
+
+  const handleEmployeeChange = useCallback(
+    (employeeId: string) => {
+      const employee = catalog.employeeCatalog.employees.find(entry => entry.id === employeeId);
+      setSettings(current => ({
+        ...current,
+        employeeId,
+        profileId: employee?.profileId ?? (employeeId ? "" : current.profileId),
+      }));
+    },
+    [catalog.employeeCatalog.employees],
   );
 
   const handleSend = useCallback(
@@ -73,9 +102,11 @@ export function RunWorkspace() {
           <RunSettingsPanel
             settings={settings}
             profiles={catalog.agentConfig.profiles}
+            employees={catalog.employeeCatalog.employees}
             modelSuggestions={catalog.modelSuggestions}
             onChange={patch => setSettings(current => ({ ...current, ...patch }))}
             onProfileChange={handleProfileChange}
+            onEmployeeChange={handleEmployeeChange}
           />
         </main>
 

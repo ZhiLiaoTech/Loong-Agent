@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { GatewayApiError } from "../../api/errors.js";
 import type { GatewayProviderSummary } from "../../api/types.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
-import type { AgentConfigState, GatewayRunRecord } from "./types.js";
+import type { AgentConfigState, EmployeeCatalogState, GatewayRunRecord } from "./types.js";
+
+const EMPTY_EMPLOYEES: EmployeeCatalogState = { employees: [] };
 
 export function useRunCatalog(sessionId: string) {
   const client = useGatewayClient();
   const [agentConfig, setAgentConfig] = useState<AgentConfigState>({ profiles: [] });
+  const [employeeCatalog, setEmployeeCatalog] = useState<EmployeeCatalogState>(EMPTY_EMPLOYEES);
   const [providers, setProviders] = useState<readonly GatewayProviderSummary[]>([]);
   const [runs, setRuns] = useState<readonly GatewayRunRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -27,14 +30,21 @@ export function useRunCatalog(sessionId: string) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [configPayload, providerList] = await Promise.all([
+      const [configPayload, providerList, employeePayload] = await Promise.all([
         client.rpc<AgentConfigState>("agent.config.get").catch((): AgentConfigState => ({ profiles: [] })),
         client.listProviders(),
+        client.rpc<EmployeeCatalogState>("employee.list").catch((): EmployeeCatalogState => EMPTY_EMPLOYEES),
       ]);
       setAgentConfig({
         profiles: configPayload.profiles ?? [],
         ...(configPayload.defaultProfileId
           ? { defaultProfileId: configPayload.defaultProfileId }
+          : {}),
+      });
+      setEmployeeCatalog({
+        employees: (employeePayload.employees ?? []).filter(entry => entry.status === "active"),
+        ...(employeePayload.defaultEmployeeId
+          ? { defaultEmployeeId: employeePayload.defaultEmployeeId }
           : {}),
       });
       setProviders(providerList);
@@ -60,6 +70,7 @@ export function useRunCatalog(sessionId: string) {
 
   return {
     agentConfig,
+    employeeCatalog,
     providers,
     runs,
     modelSuggestions,

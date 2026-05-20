@@ -20,12 +20,15 @@ export function ProfilePreview({
   const model = settings.model.trim() || profile.defaultModel || "—";
   const workspace = settings.workspace.trim() || profile.workspace || "—";
   const thinking = settings.thinking || profile.thinking || "default";
+  const employee = settings.employeeId.trim() || "—";
 
   return (
     <section className={styles.card}>
       <h3 className={styles.title}>{profile.name || profile.id}</h3>
       {profile.description ? <p className={styles.muted}>{profile.description}</p> : null}
       <dl className={styles.kv}>
+        <dt>Employee</dt>
+        <dd>{employee}</dd>
         <dt>Model</dt>
         <dd>{model}</dd>
         <dt>Workspace</dt>

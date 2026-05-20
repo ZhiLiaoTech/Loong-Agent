@@ -257,6 +257,9 @@ export function useRunChat(
       if (selectedProfile?.id) {
         params.profileId = selectedProfile.id;
       }
+      if (settings.employeeId.trim()) {
+        params.employeeId = settings.employeeId.trim();
+      }
       if (selectedProfile?.systemPrompt) {
         params.systemPrompt = selectedProfile.systemPrompt;
       }

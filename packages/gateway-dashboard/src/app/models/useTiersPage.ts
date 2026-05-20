@@ -48,7 +48,7 @@ export function useTiersPage() {
     try {
       const payload = await client.rpc<TierConfigState>("tier.config.save", buildSaveParams(config));
       setConfig(normalizeIncoming(payload));
-      setStatus("Tier config saved. Applies on next turn.");
+      setStatus("分层配置已保存，将在下一轮对话生效。");
     } catch (caught) {
       setError(caught instanceof GatewayApiError ? caught.message : String(caught));
     } finally {

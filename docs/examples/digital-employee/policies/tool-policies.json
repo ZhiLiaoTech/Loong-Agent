@@ -1,0 +1,27 @@
+{
+  "policies": [
+    {
+      "id": "engineer-standard",
+      "description": "开发标准策略",
+      "rules": [
+        { "match": { "toolName": "file_read" }, "risk": "low", "decision": "allow" },
+        { "match": { "toolName": "file_search" }, "risk": "low", "decision": "allow" },
+        { "match": { "toolName": "file_patch" }, "risk": "high", "decision": "approval", "chainId": "write-ops" },
+        { "match": { "toolName": "shell_exec" }, "risk": "critical", "decision": "deny" }
+      ]
+    },
+    {
+      "id": "lead-standard",
+      "rules": [
+        { "match": { "toolName": "file_patch" }, "risk": "medium", "decision": "allow" }
+      ]
+    },
+    {
+      "id": "pm-readonly",
+      "rules": [
+        { "match": { "capability": "write" }, "decision": "deny", "reason": "产品岗禁止写操作" },
+        { "match": { "capability": "read" }, "decision": "allow" }
+      ]
+    }
+  ]
+}

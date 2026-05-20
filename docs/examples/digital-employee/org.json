@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "units": [
+    { "id": "eng", "name": "工程部" },
+    { "id": "product", "name": "产品部" }
+  ],
+  "positions": [
+    { "id": "engineer", "name": "开发工程师", "unitId": "eng", "level": "IC" },
+    { "id": "tech-lead", "name": "技术负责人", "unitId": "eng", "level": "M1" },
+    { "id": "pm", "name": "产品经理", "unitId": "product", "level": "IC" }
+  ],
+  "reporting": [
+    { "employeeId": "dev-01", "managerId": "lead-01" }
+  ],
+  "approvalChains": [
+    {
+      "id": "write-ops",
+      "name": "写操作审批",
+      "steps": [
+        { "scope": "manager", "approverRole": "tech-lead" }
+      ]
+    }
+  ]
+}

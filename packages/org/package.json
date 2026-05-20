@@ -1,5 +1,5 @@
 {
-  "name": "@dragon/gateway",
+  "name": "@dragon/org",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,11 +16,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@dragon/gateway-dashboard": "workspace:*",
     "@dragon/core": "workspace:*",
-    "@dragon/cron": "workspace:*",
-    "@dragon/model-catalog": "workspace:*",
-    "@dragon/org": "workspace:*",
     "@dragon/tools": "workspace:*"
   },
   "devDependencies": {

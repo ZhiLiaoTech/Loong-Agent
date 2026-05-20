@@ -1,4 +1,4 @@
-import type { AgentProfile, RunSettings, ThinkingLevel } from "../types.js";
+import type { AgentProfile, DigitalEmployeeSummary, RunSettings, ThinkingLevel } from "../types.js";
 import styles from "./RunSettingsPanel.module.css";
 
 const THINKING_OPTIONS: { value: ThinkingLevel; label: string }[] = [
@@ -12,22 +12,42 @@ const THINKING_OPTIONS: { value: ThinkingLevel; label: string }[] = [
 export interface RunSettingsPanelProps {
   settings: RunSettings;
   profiles: readonly AgentProfile[];
+  employees: readonly DigitalEmployeeSummary[];
   modelSuggestions: readonly string[];
   onChange: (patch: Partial<RunSettings>) => void;
   onProfileChange: (profileId: string) => void;
+  onEmployeeChange: (employeeId: string) => void;
 }
 
 export function RunSettingsPanel({
   settings,
   profiles,
+  employees,
   modelSuggestions,
   onChange,
   onProfileChange,
+  onEmployeeChange,
 }: RunSettingsPanelProps) {
   return (
     <details className={styles.details}>
       <summary className={styles.summary}>Advanced settings</summary>
       <div className={styles.grid}>
+        {employees.length > 0 ? (
+          <label className={styles.field}>
+            <span>数字员工</span>
+            <select
+              value={settings.employeeId}
+              onChange={event => onEmployeeChange(event.target.value)}
+            >
+              <option value="">未指定</option>
+              {employees.map(employee => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.displayName} ({employee.id})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className={styles.field}>
           <span>Profile</span>
           <select

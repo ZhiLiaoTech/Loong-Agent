@@ -14,6 +14,26 @@ import type {
 import { parseCronSchedule, type DragonCronJob, type DragonCronJobStore, type DragonCronRunner } from "@dragon/cron";
 import type { DragonModelCapabilities, DragonModelStatus } from "@dragon/model-catalog";
 import {
+  buildKpiSnapshot,
+  type ApprovalRegistry,
+  type ApprovalRequest,
+  type ApprovalStatus,
+  type ApprovalStore,
+  type EmployeeRegistry,
+  type EmployeeStore,
+  type GatewayApprovalService,
+  type KpiSnapshot,
+  type KpiTemplateDocument,
+  type KpiTemplateStore,
+  type OrgDocument,
+  type OrgStore,
+  type OrgTicket,
+  type TicketDocument,
+  type TicketStore,
+  type ToolPolicyDocument,
+  type ToolPolicyStore,
+} from "@dragon/org";
+import {
   createToolPermissionEngine,
   createToolRegistry,
   type ToolDefinition,
@@ -54,6 +74,7 @@ export interface GatewayAgentParams {
   model?: string;
   thinking?: DragonThinkingLevel;
   profileId?: string;
+  employeeId?: string;
   systemPrompt?: string;
   toolsEnabled?: boolean;
   memoryEnabled?: boolean;
@@ -290,6 +311,27 @@ export interface GatewayAgentConfigStore {
   save(config: GatewayAgentConfigSaveParams): Promise<GatewayAgentConfig>;
 }
 
+export type GatewayEmployeeSaveParams = EmployeeRegistry;
+
+export type GatewayToolPolicySaveParams = ToolPolicyDocument;
+
+export interface GatewayApprovalListParams {
+  status?: ApprovalStatus;
+}
+
+export interface GatewayApprovalResolveParams {
+  id: string;
+  resolvedBy?: string;
+  note?: string;
+}
+
+export interface GatewayKpiSnapshotParams {
+  templateId: string;
+  employeeId?: string;
+}
+
+export type GatewayTicketUpsertParams = OrgTicket;
+
 export interface GatewayPluginMemoryBackendSummary {
   id: string;
   displayName: string;
@@ -364,6 +406,18 @@ export type GatewayRequest =
   | { type: "model.config.save"; id: string; params: GatewayModelConfigSaveParams }
   | { type: "agent.config.get"; id: string }
   | { type: "agent.config.save"; id: string; params: GatewayAgentConfigSaveParams }
+  | { type: "org.get"; id: string }
+  | { type: "employee.list"; id: string }
+  | { type: "employee.save"; id: string; params: GatewayEmployeeSaveParams }
+  | { type: "policy.tool.get"; id: string }
+  | { type: "policy.tool.save"; id: string; params: GatewayToolPolicySaveParams }
+  | { type: "approval.list"; id: string; params?: GatewayApprovalListParams }
+  | { type: "approval.approve"; id: string; params: GatewayApprovalResolveParams }
+  | { type: "approval.reject"; id: string; params: GatewayApprovalResolveParams }
+  | { type: "ticket.list"; id: string }
+  | { type: "ticket.upsert"; id: string; params: GatewayTicketUpsertParams }
+  | { type: "kpi.template.list"; id: string }
+  | { type: "kpi.snapshot.get"; id: string; params: GatewayKpiSnapshotParams }
   | { type: "tier.config.get"; id: string }
   | { type: "tier.config.save"; id: string; params: GatewayTierConfigSaveParams }
   | { type: "tier.classify"; id: string; params: GatewayTierClassifyParams }
@@ -411,6 +465,13 @@ export interface HttpDragonGatewayOptions {
   providerSummaries?: readonly GatewayProviderSummary[];
   modelConfigStore?: GatewayModelConfigStore;
   agentConfigStore?: GatewayAgentConfigStore;
+  orgStore?: OrgStore;
+  employeeStore?: EmployeeStore;
+  toolPolicyStore?: ToolPolicyStore;
+  approvalService?: GatewayApprovalService;
+  approvalStore?: ApprovalStore;
+  ticketStore?: TicketStore;
+  kpiTemplateStore?: KpiTemplateStore;
   tierConfigStore?: GatewayTierConfigStore;
   /**
    * Notified when a save-tier-config RPC completes successfully. The CLI
@@ -484,6 +545,13 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #providers: readonly GatewayProviderSummary[];
   readonly #modelConfigStore: GatewayModelConfigStore | undefined;
   readonly #agentConfigStore: GatewayAgentConfigStore | undefined;
+  readonly #orgStore: OrgStore | undefined;
+  readonly #employeeStore: EmployeeStore | undefined;
+  readonly #toolPolicyStore: ToolPolicyStore | undefined;
+  readonly #approvalService: GatewayApprovalService | undefined;
+  readonly #approvalStore: ApprovalStore | undefined;
+  readonly #ticketStore: TicketStore | undefined;
+  readonly #kpiTemplateStore: KpiTemplateStore | undefined;
   readonly #tierConfigStore: GatewayTierConfigStore | undefined;
   readonly #onTierConfigChange: ((config: GatewayTierConfig) => void) | undefined;
   readonly #toolRegistry: ToolRegistry;
@@ -512,6 +580,13 @@ export class HttpDragonGateway implements DragonGateway {
     this.#providers = normalizeProviderSummaries(options.providerSummaries ?? []);
     this.#modelConfigStore = options.modelConfigStore;
     this.#agentConfigStore = options.agentConfigStore;
+    this.#orgStore = options.orgStore;
+    this.#employeeStore = options.employeeStore;
+    this.#toolPolicyStore = options.toolPolicyStore;
+    this.#approvalService = options.approvalService;
+    this.#approvalStore = options.approvalStore;
+    this.#ticketStore = options.ticketStore;
+    this.#kpiTemplateStore = options.kpiTemplateStore;
     this.#tierConfigStore = options.tierConfigStore;
     this.#onTierConfigChange = options.onTierConfigChange;
     this.#toolRegistry = options.toolRegistry ?? createToolRegistry([...(options.tools ?? [])]);
@@ -598,7 +673,26 @@ export class HttpDragonGateway implements DragonGateway {
   }
 
   async #resolveAgentParams(params: GatewayAgentParams): Promise<GatewayAgentParams> {
-    return await resolveAgentParamsWithProfile(params, this.#agentConfigStore);
+    let resolved = await resolveAgentParamsWithProfile(params, this.#agentConfigStore);
+    if (params.employeeId?.trim() && this.#employeeStore) {
+      const registry = await this.#employeeStore.load();
+      const employee = registry.employees.find(entry => entry.id === params.employeeId!.trim());
+      if (employee) {
+        resolved = {
+          ...resolved,
+          profileId: resolved.profileId ?? employee.profileId,
+          metadata: {
+            ...(resolved.metadata ?? {}),
+            employeeId: employee.id,
+            employeeDisplayName: employee.displayName,
+            employeePositionId: employee.positionId,
+            employeeUnitId: employee.unitId,
+            ...(employee.managerId ? { employeeManagerId: employee.managerId } : {}),
+          },
+        };
+      }
+    }
+    return resolved;
   }
 
   async #handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -838,6 +932,12 @@ export class HttpDragonGateway implements DragonGateway {
               "providers.list",
               ...(this.#modelConfigStore ? ["model.config.get", "model.config.save"] : []),
               ...(this.#agentConfigStore ? ["agent.config.get", "agent.config.save"] : []),
+              ...(this.#orgStore ? ["org.get"] : []),
+              ...(this.#employeeStore ? ["employee.list", "employee.save"] : []),
+              ...(this.#toolPolicyStore ? ["policy.tool.get", "policy.tool.save"] : []),
+              ...(this.#approvalService ? ["approval.list", "approval.approve", "approval.reject"] : []),
+              ...(this.#ticketStore ? ["ticket.list", "ticket.upsert"] : []),
+              ...(this.#kpiTemplateStore ? ["kpi.template.list", "kpi.snapshot.get"] : []),
               ...(this.#tierConfigStore ? ["tier.config.get", "tier.config.save", "tier.classify"] : []),
               "plugins.list",
               "tools.catalog",
@@ -875,6 +975,42 @@ export class HttpDragonGateway implements DragonGateway {
       }
       if (request.type === "agent.config.save") {
         return { type: "response", id: request.id, ok: true, payload: await this.#saveAgentConfig(request.params) };
+      }
+      if (request.type === "org.get") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#loadOrg() };
+      }
+      if (request.type === "employee.list") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#loadEmployees() };
+      }
+      if (request.type === "employee.save") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#saveEmployees(request.params) };
+      }
+      if (request.type === "policy.tool.get") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#loadToolPolicies() };
+      }
+      if (request.type === "policy.tool.save") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#saveToolPolicies(request.params) };
+      }
+      if (request.type === "approval.list") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#listApprovals(request.params) };
+      }
+      if (request.type === "approval.approve") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#approveRequest(request.params) };
+      }
+      if (request.type === "approval.reject") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#rejectRequest(request.params) };
+      }
+      if (request.type === "ticket.list") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#loadTickets() };
+      }
+      if (request.type === "ticket.upsert") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#upsertTicket(request.params) };
+      }
+      if (request.type === "kpi.template.list") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#loadKpiTemplates() };
+      }
+      if (request.type === "kpi.snapshot.get") {
+        return { type: "response", id: request.id, ok: true, payload: await this.#loadKpiSnapshot(request.params) };
       }
       if (request.type === "tier.config.get") {
         return { type: "response", id: request.id, ok: true, payload: await this.#loadTierConfig() };
@@ -1366,6 +1502,114 @@ export class HttpDragonGateway implements DragonGateway {
     return sanitizeAgentConfig(await this.#agentConfigStore.save(params));
   }
 
+  async #loadOrg(): Promise<OrgDocument> {
+    if (!this.#orgStore) {
+      throw new GatewayHttpError(404, "Organization store is not available.");
+    }
+    return await this.#orgStore.load();
+  }
+
+  async #loadEmployees(): Promise<EmployeeRegistry> {
+    if (!this.#employeeStore) {
+      throw new GatewayHttpError(404, "Employee store is not available.");
+    }
+    return await this.#employeeStore.load();
+  }
+
+  async #saveEmployees(params: GatewayEmployeeSaveParams): Promise<EmployeeRegistry> {
+    if (!this.#employeeStore) {
+      throw new GatewayHttpError(404, "Employee store is not available.");
+    }
+    return await this.#employeeStore.save(params);
+  }
+
+  async #loadToolPolicies(): Promise<ToolPolicyDocument> {
+    if (!this.#toolPolicyStore) {
+      throw new GatewayHttpError(404, "Tool policy store is not available.");
+    }
+    return await this.#toolPolicyStore.load();
+  }
+
+  async #saveToolPolicies(params: GatewayToolPolicySaveParams): Promise<ToolPolicyDocument> {
+    if (!this.#toolPolicyStore) {
+      throw new GatewayHttpError(404, "Tool policy store is not available.");
+    }
+    return await this.#toolPolicyStore.save(params);
+  }
+
+  async #listApprovals(params?: GatewayApprovalListParams): Promise<ApprovalRegistry> {
+    if (!this.#approvalService) {
+      throw new GatewayHttpError(404, "Approval service is not available.");
+    }
+    return await this.#approvalService.list(params?.status);
+  }
+
+  async #approveRequest(params: GatewayApprovalResolveParams): Promise<ApprovalRequest> {
+    if (!this.#approvalService) {
+      throw new GatewayHttpError(404, "Approval service is not available.");
+    }
+    return await this.#approvalService.approve(params.id, params.resolvedBy, params.note);
+  }
+
+  async #rejectRequest(params: GatewayApprovalResolveParams): Promise<ApprovalRequest> {
+    if (!this.#approvalService) {
+      throw new GatewayHttpError(404, "Approval service is not available.");
+    }
+    return await this.#approvalService.reject(params.id, params.resolvedBy, params.note);
+  }
+
+  async #loadTickets(): Promise<TicketDocument> {
+    if (!this.#ticketStore) {
+      throw new GatewayHttpError(404, "Ticket store is not available.");
+    }
+    return await this.#ticketStore.load();
+  }
+
+  async #upsertTicket(params: GatewayTicketUpsertParams): Promise<TicketDocument> {
+    if (!this.#ticketStore) {
+      throw new GatewayHttpError(404, "Ticket store is not available.");
+    }
+    const registry = await this.#ticketStore.load();
+    const now = new Date().toISOString();
+    const nextTicket: OrgTicket = {
+      ...params,
+      updatedAt: now,
+      createdAt: params.createdAt || now,
+    };
+    const tickets = registry.tickets.some(ticket => ticket.id === nextTicket.id)
+      ? registry.tickets.map(ticket => (ticket.id === nextTicket.id ? nextTicket : ticket))
+      : [...registry.tickets, nextTicket];
+    return await this.#ticketStore.save({ tickets });
+  }
+
+  async #loadKpiTemplates(): Promise<KpiTemplateDocument> {
+    if (!this.#kpiTemplateStore) {
+      throw new GatewayHttpError(404, "KPI template store is not available.");
+    }
+    return await this.#kpiTemplateStore.load();
+  }
+
+  async #loadKpiSnapshot(params: GatewayKpiSnapshotParams): Promise<KpiSnapshot> {
+    if (!this.#kpiTemplateStore || !this.#ticketStore) {
+      throw new GatewayHttpError(404, "KPI snapshot requires ticket and KPI template stores.");
+    }
+    const [templates, tickets, approvals] = await Promise.all([
+      this.#kpiTemplateStore.load(),
+      this.#ticketStore.load(),
+      this.#approvalStore ? this.#approvalStore.load() : Promise.resolve({ requests: [] }),
+    ]);
+    const template = templates.templates.find(entry => entry.id === params.templateId);
+    if (!template) {
+      throw new GatewayHttpError(404, `KPI template "${params.templateId}" was not found.`);
+    }
+    return buildKpiSnapshot({
+      template,
+      tickets,
+      approvals,
+      ...(params.employeeId ? { employeeId: params.employeeId } : {}),
+    });
+  }
+
   async #loadTierConfig(): Promise<GatewayTierConfig> {
     if (!this.#tierConfigStore) {
       throw new GatewayHttpError(404, "Tier configuration store is not available.");
@@ -1653,6 +1897,70 @@ function parseGatewayRequest(value: unknown): GatewayRequest {
       params: parseAgentConfigSaveParams(value.params),
     };
   }
+  if (value.type === "org.get") {
+    return { type: "org.get", id: value.id };
+  }
+  if (value.type === "employee.list") {
+    return { type: "employee.list", id: value.id };
+  }
+  if (value.type === "employee.save") {
+    return {
+      type: "employee.save",
+      id: value.id,
+      params: parseEmployeeSaveParams(value.params),
+    };
+  }
+  if (value.type === "policy.tool.get") {
+    return { type: "policy.tool.get", id: value.id };
+  }
+  if (value.type === "policy.tool.save") {
+    return {
+      type: "policy.tool.save",
+      id: value.id,
+      params: parseToolPolicySaveParams(value.params),
+    };
+  }
+  if (value.type === "approval.list") {
+    return {
+      type: "approval.list",
+      id: value.id,
+      ...(value.params !== undefined ? { params: parseApprovalListParams(value.params) } : {}),
+    };
+  }
+  if (value.type === "approval.approve") {
+    return {
+      type: "approval.approve",
+      id: value.id,
+      params: parseApprovalResolveParams(value.params),
+    };
+  }
+  if (value.type === "approval.reject") {
+    return {
+      type: "approval.reject",
+      id: value.id,
+      params: parseApprovalResolveParams(value.params),
+    };
+  }
+  if (value.type === "ticket.list") {
+    return { type: "ticket.list", id: value.id };
+  }
+  if (value.type === "ticket.upsert") {
+    return {
+      type: "ticket.upsert",
+      id: value.id,
+      params: parseTicketUpsertParams(value.params),
+    };
+  }
+  if (value.type === "kpi.template.list") {
+    return { type: "kpi.template.list", id: value.id };
+  }
+  if (value.type === "kpi.snapshot.get") {
+    return {
+      type: "kpi.snapshot.get",
+      id: value.id,
+      params: parseKpiSnapshotParams(value.params),
+    };
+  }
   if (value.type === "tier.config.get") {
     return { type: "tier.config.get", id: value.id };
   }
@@ -1871,6 +2179,119 @@ function parseAgentConfigSaveParams(value: unknown): GatewayAgentConfigSaveParam
   };
   if (typeof value.defaultProfileId === "string" && value.defaultProfileId.trim()) {
     params.defaultProfileId = normalizeShortText(value.defaultProfileId, "defaultProfileId", 120);
+  }
+  return params;
+}
+
+function parseEmployeeSaveParams(value: unknown): GatewayEmployeeSaveParams {
+  if (!isRecord(value) || !Array.isArray(value.employees)) {
+    badRequest("employee.save requires params.employees.");
+  }
+  const params: GatewayEmployeeSaveParams = {
+    employees: value.employees as GatewayEmployeeSaveParams["employees"],
+  };
+  if (typeof value.defaultEmployeeId === "string" && value.defaultEmployeeId.trim()) {
+    params.defaultEmployeeId = normalizeShortText(value.defaultEmployeeId, "defaultEmployeeId", 120);
+  }
+  return params;
+}
+
+function parseToolPolicySaveParams(value: unknown): GatewayToolPolicySaveParams {
+  if (!isRecord(value) || !Array.isArray(value.policies)) {
+    badRequest("policy.tool.save requires params.policies.");
+  }
+  return {
+    policies: value.policies as GatewayToolPolicySaveParams["policies"],
+  };
+}
+
+function parseApprovalListParams(value: unknown): GatewayApprovalListParams {
+  if (value === undefined) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    badRequest("approval.list params must be an object.");
+  }
+  const status = value.status;
+  if (status === undefined) {
+    return {};
+  }
+  if (status !== "pending" && status !== "approved" && status !== "rejected" && status !== "expired") {
+    badRequest("approval.list status is invalid.");
+  }
+  return { status };
+}
+
+function parseTicketUpsertParams(value: unknown): GatewayTicketUpsertParams {
+  if (!isRecord(value)) {
+    badRequest("ticket.upsert params must be an object.");
+  }
+  const status = value.status;
+  if (
+    status !== "open"
+    && status !== "in_progress"
+    && status !== "blocked"
+    && status !== "done"
+    && status !== "cancelled"
+  ) {
+    badRequest("ticket.upsert status is invalid.");
+  }
+  if (typeof value.id !== "string" || !value.id.trim()) {
+    badRequest("ticket.upsert requires params.id.");
+  }
+  if (typeof value.title !== "string" || !value.title.trim()) {
+    badRequest("ticket.upsert requires params.title.");
+  }
+  const ticket: GatewayTicketUpsertParams = {
+    id: normalizeShortText(value.id, "ticketId", 120),
+    title: normalizeShortText(value.title, "ticketTitle", 240),
+    status,
+    createdAt: typeof value.createdAt === "string" ? value.createdAt : new Date().toISOString(),
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(),
+  };
+  if (typeof value.assigneeEmployeeId === "string" && value.assigneeEmployeeId.trim()) {
+    ticket.assigneeEmployeeId = normalizeShortText(value.assigneeEmployeeId, "assigneeEmployeeId", 120);
+  }
+  if (typeof value.createdByEmployeeId === "string" && value.createdByEmployeeId.trim()) {
+    ticket.createdByEmployeeId = normalizeShortText(value.createdByEmployeeId, "createdByEmployeeId", 120);
+  }
+  if (typeof value.runId === "string" && value.runId.trim()) {
+    ticket.runId = normalizeShortText(value.runId, "runId", 120);
+  }
+  if (typeof value.toolName === "string" && value.toolName.trim()) {
+    ticket.toolName = normalizeShortText(value.toolName, "toolName", 120);
+  }
+  if (typeof value.description === "string" && value.description.trim()) {
+    ticket.description = normalizeShortText(value.description, "description", 2000);
+  }
+  return ticket;
+}
+
+function parseKpiSnapshotParams(value: unknown): GatewayKpiSnapshotParams {
+  if (!isRecord(value) || typeof value.templateId !== "string" || !value.templateId.trim()) {
+    badRequest("kpi.snapshot.get requires params.templateId.");
+  }
+  const params: GatewayKpiSnapshotParams = {
+    templateId: normalizeShortText(value.templateId, "templateId", 120),
+  };
+  if (typeof value.employeeId === "string" && value.employeeId.trim()) {
+    params.employeeId = normalizeShortText(value.employeeId, "employeeId", 120);
+  }
+  return params;
+}
+
+function parseApprovalResolveParams(value: unknown): GatewayApprovalResolveParams {
+  if (!isRecord(value) || typeof value.id !== "string" || !value.id.trim()) {
+    badRequest("approval resolve requires params.id.");
+  }
+  const params: GatewayApprovalResolveParams = {
+    id: normalizeShortText(value.id, "approvalId", 120),
+  };
+  if (typeof value.resolvedBy === "string" && value.resolvedBy.trim()) {
+    params.resolvedBy = normalizeShortText(value.resolvedBy, "resolvedBy", 120);
+  }
+  if (typeof value.note === "string" && value.note.trim()) {
+    params.note = normalizeShortText(value.note, "note", 500);
   }
   return params;
 }
@@ -2326,6 +2747,9 @@ function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
   }
   if (typeof value.profileId === "string" && value.profileId.trim()) {
     params.profileId = normalizeShortText(value.profileId, "profileId", 200);
+  }
+  if (typeof value.employeeId === "string" && value.employeeId.trim()) {
+    params.employeeId = normalizeShortText(value.employeeId, "employeeId", 200);
   }
   if (typeof value.systemPrompt === "string" && value.systemPrompt.trim()) {
     params.systemPrompt = normalizeBoundedText(value.systemPrompt, "systemPrompt", 16_000);

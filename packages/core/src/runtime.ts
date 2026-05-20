@@ -67,6 +67,12 @@ export interface DragonRuntimeOptions {
   /** Optional multi-tier routing policy. When `enabled: false` or undefined,
    * the runtime behaves as if there were no tier classifier (legacy mode). */
   tierConfig?: ModelTierConfig;
+  /** Optional async hook to refine tool permission (e.g. digital-employee org policies). */
+  permissionEvaluator?: (
+    tool: ToolDefinition,
+    invocation: ToolInvocation,
+    baseline: ToolPermissionResult,
+  ) => Promise<ToolPermissionResult>;
 }
 
 interface ModelAttemptFailure {
@@ -95,6 +101,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   readonly #maxContextChars: number;
   readonly #lifecycleHookTimeoutMs: number;
   readonly #denyAskWithoutHandler: boolean;
+  readonly #permissionEvaluator: DragonRuntimeOptions["permissionEvaluator"];
   #tierConfig: ModelTierConfig | undefined;
   readonly #maxToolResultChars = 64_000;
   readonly #listeners = new Set<(event: DragonEvent) => void>();
@@ -116,6 +123,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#maxContextChars = options.maxContextChars ?? 12_000;
     this.#lifecycleHookTimeoutMs = 500;
     this.#denyAskWithoutHandler = options.denyAskWithoutHandler ?? true;
+    this.#permissionEvaluator = options.permissionEvaluator;
     this.#tierConfig = options.tierConfig;
   }
 
@@ -658,12 +666,11 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     if (input.workspace !== undefined) {
       Object.assign(invocation, { workspace: input.workspace });
     }
-    const permission = await this.#resolvePermission(
-      tool,
-      invocation,
-      this.#permissionEngine.decide(tool, invocation),
-      runId,
-    );
+    let baselinePermission = this.#permissionEngine.decide(tool, invocation);
+    if (this.#permissionEvaluator) {
+      baselinePermission = await this.#permissionEvaluator(tool, invocation, baselinePermission);
+    }
+    const permission = await this.#resolvePermission(tool, invocation, baselinePermission, runId);
     if (permission.decision !== "allow") {
       this.#emit({
         type: "tool",
@@ -968,6 +975,9 @@ function toPermissionRequest(
   }
   if (tool.capabilities !== undefined) {
     request.capabilities = [...tool.capabilities];
+  }
+  if (invocation.metadata !== undefined) {
+    request.metadata = { ...invocation.metadata };
   }
   return request;
 }

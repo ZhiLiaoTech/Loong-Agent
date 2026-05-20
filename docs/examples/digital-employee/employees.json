@@ -1,0 +1,35 @@
+{
+  "defaultEmployeeId": "dev-01",
+  "employees": [
+    {
+      "id": "dev-01",
+      "displayName": "开发-小龙",
+      "profileId": "dev",
+      "positionId": "engineer",
+      "unitId": "eng",
+      "managerId": "lead-01",
+      "status": "active",
+      "toolPolicyId": "engineer-standard",
+      "kpiTemplateId": "engineer-delivery"
+    },
+    {
+      "id": "lead-01",
+      "displayName": "负责人-大龙",
+      "profileId": "dev",
+      "positionId": "tech-lead",
+      "unitId": "eng",
+      "status": "active",
+      "toolPolicyId": "lead-standard",
+      "kpiTemplateId": "lead-oversight"
+    },
+    {
+      "id": "pm-01",
+      "displayName": "产品-小虎",
+      "profileId": "pm",
+      "positionId": "pm",
+      "unitId": "product",
+      "status": "active",
+      "toolPolicyId": "pm-readonly"
+    }
+  ]
+}

@@ -19,6 +19,25 @@ import {
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
 import { createRuntimeDelegationTool } from "@dragon/delegation";
 import {
+  createFileApprovalStore,
+  createFileEmployeeStore,
+  createFileKpiTemplateStore,
+  createFileOrgStore,
+  createFileTicketStore,
+  createFileToolPolicyStore,
+  createGatewayApprovalService,
+  createTicketLifecycleHook,
+  defaultApprovalConfigPath,
+  defaultEmployeeConfigPath,
+  defaultKpiTemplateConfigPath,
+  defaultOrgConfigPath,
+  defaultTicketConfigPath,
+  defaultToolPolicyConfigPath,
+  evaluateOrgAwarePermission,
+  type EmployeeStore,
+  type ToolPolicyStore,
+} from "@dragon/org";
+import {
   createHttpGateway,
   type GatewayAgentConfig,
   type GatewayAgentConfigSaveParams,
@@ -330,6 +349,13 @@ async function runGateway(args: string[]): Promise<void> {
       ...(parsed.config.sharedSecret !== undefined ? { sharedSecret: parsed.config.sharedSecret } : {}),
     }),
   });
+  const orgStore = createFileOrgStore(defaultOrgConfigPath());
+  const employeeStore = createFileEmployeeStore(defaultEmployeeConfigPath());
+  const toolPolicyStore = createFileToolPolicyStore(defaultToolPolicyConfigPath());
+  const approvalStore = createFileApprovalStore(defaultApprovalConfigPath());
+  const approvalService = createGatewayApprovalService({ store: approvalStore });
+  const ticketStore = createFileTicketStore(defaultTicketConfigPath());
+  const kpiTemplateStore = createFileKpiTemplateStore(defaultKpiTemplateConfigPath());
   const runtimeBundle = await createRuntime({
     mode: "agent",
     allowWrite: parsed.allowWrite,
@@ -343,6 +369,10 @@ async function runGateway(args: string[]): Promise<void> {
     providers: builtinProviders.providers,
     ...(builtinProviders.defaultProviderId ? { defaultProviderId: builtinProviders.defaultProviderId } : {}),
     tierConfig: initialTierConfig,
+    orgStores: { employeeStore, toolPolicyStore },
+    permissionHandler: approvalService.handler,
+    denyAskWithoutHandler: true,
+    ticketLifecycleHook: createTicketLifecycleHook({ ticketStore }),
   });
   const gateway = createHttpGateway({
     runtime: runtimeBundle.runtime,
@@ -353,6 +383,13 @@ async function runGateway(args: string[]): Promise<void> {
     providerSummaries: summarizeProviders(runtimeBundle.providers),
     modelConfigStore: createModelConfigStore(modelConfigPath),
     agentConfigStore: createAgentConfigStore(agentConfigPath),
+    orgStore,
+    employeeStore,
+    toolPolicyStore,
+    approvalService,
+    approvalStore,
+    ticketStore,
+    kpiTemplateStore,
     tierConfigStore: createTierConfigStore(tierConfigPath),
     onTierConfigChange: (saved) => {
       const next = normalizeTierConfig(saved);
@@ -425,7 +462,13 @@ interface RuntimeFactoryOptions {
   providers?: ModelProvider[];
   defaultProviderId?: string;
   permissionHandler?: DragonPermissionHandler;
+  denyAskWithoutHandler?: boolean;
   tierConfig?: ModelTierConfig;
+  orgStores?: {
+    employeeStore: EmployeeStore;
+    toolPolicyStore: ToolPolicyStore;
+  };
+  ticketLifecycleHook?: DragonLifecycleHook;
 }
 
 interface RuntimeFactoryResult {
@@ -469,6 +512,7 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
     const lifecycleHooks = [
       ...pluginLifecycleHooks,
       ...(memoryCandidateHook ? [memoryCandidateHook] : []),
+      ...(options.ticketLifecycleHook ? [options.ticketLifecycleHook] : []),
     ];
     const trajectoryStore = options.trajectoryStore
       ?? (options.mode === "agent" && !options.noSession
@@ -548,7 +592,7 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
               "Summarize findings clearly and mention any tool errors.",
             ].filter(Boolean).join("\n"),
             ...(options.permissionHandler ? { permissionHandler: options.permissionHandler } : {}),
-            denyAskWithoutHandler: true,
+            denyAskWithoutHandler: options.denyAskWithoutHandler ?? true,
           }
         : {}),
     };
@@ -560,6 +604,20 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
       ...runtimeOptions,
       ...(defaultProvider?.defaultModel !== undefined ? { defaultModel: defaultProvider.defaultModel } : {}),
       ...(options.tierConfig !== undefined ? { tierConfig: options.tierConfig } : {}),
+      ...(options.orgStores
+        ? {
+            permissionEvaluator: async (tool, invocation, baseline) =>
+              evaluateOrgAwarePermission(
+                {
+                  ...(permissionEngine ? { baseline: permissionEngine } : {}),
+                  getEmployees: () => options.orgStores!.employeeStore.load(),
+                  getToolPolicies: () => options.orgStores!.toolPolicyStore.load(),
+                },
+                tool,
+                invocation,
+              ),
+          }
+        : {}),
     };
 
     runtime = createDragonRuntime(runtimeConfig);

@@ -21,4 +21,26 @@ export interface MemoryReviewState {
   canReject: boolean;
 }
 
+export interface KpiMetricView {
+  id: string;
+  name: string;
+  value: number;
+}
+
+export interface ApprovalInboxItem {
+  id: string;
+  status: "pending" | "approved" | "rejected" | "expired";
+  chainId: string;
+  runId: string;
+  toolCallId: string;
+  toolName: string;
+  sessionId: string;
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
+  employeeId?: string;
+  employeeDisplayName?: string;
+  inputSummary?: string;
+}
+
 export type { GatewayRunRecord };

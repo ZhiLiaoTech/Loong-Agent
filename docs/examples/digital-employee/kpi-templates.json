@@ -1,0 +1,21 @@
+{
+  "templates": [
+    {
+      "id": "engineer-delivery",
+      "name": "开发交付 KPI",
+      "metrics": [
+        { "id": "open-tickets", "name": "进行中工单", "source": "tickets.open" },
+        { "id": "done-tickets", "name": "已完成工单", "source": "tickets.done" },
+        { "id": "pending-approvals", "name": "待审批", "source": "approvals.pending" }
+      ]
+    },
+    {
+      "id": "lead-oversight",
+      "name": "负责人巡检 KPI",
+      "metrics": [
+        { "id": "team-open", "name": "团队 open 工单", "source": "tickets.open" },
+        { "id": "completed-runs", "name": "完成 run 工单", "source": "runs.completed" }
+      ]
+    }
+  ]
+}

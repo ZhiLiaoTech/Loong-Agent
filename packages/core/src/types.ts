@@ -175,6 +175,7 @@ export interface DragonPermissionRequest {
   sessionId: string;
   workspace?: string;
   capabilities?: readonly string[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface DragonPermissionResponse {

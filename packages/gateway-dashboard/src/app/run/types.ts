@@ -10,10 +10,25 @@ export interface ChatTurn {
 
 export interface RunSettings {
   profileId: string;
+  employeeId: string;
   sessionId: string;
   model: string;
   thinking: ThinkingLevel;
   workspace: string;
+}
+
+export interface DigitalEmployeeSummary {
+  id: string;
+  displayName: string;
+  profileId: string;
+  positionId: string;
+  unitId: string;
+  status: "active" | "inactive";
+}
+
+export interface EmployeeCatalogState {
+  employees: readonly DigitalEmployeeSummary[];
+  defaultEmployeeId?: string;
 }
 
 export interface AgentProfile {

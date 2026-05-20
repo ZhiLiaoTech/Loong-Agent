@@ -1,5 +1,7 @@
 import { useDragonEvents } from "../events/EventsContext.js";
 import { EventsFeed } from "./components/EventsFeed.js";
+import { ApprovalInboxPanel } from "./components/ApprovalInboxPanel.js";
+import { KpiSnapshotPanel } from "./components/KpiSnapshotPanel.js";
 import { MemoryCandidatesPanel } from "./components/MemoryCandidatesPanel.js";
 import { RunsObserveTable } from "./components/RunsObserveTable.js";
 import { TrajectoriesSection } from "./components/TrajectoriesSection.js";
@@ -43,8 +45,24 @@ export function ObserveWorkspace() {
         onCancel={runId => void page.cancelRun(runId)}
       />
 
+      <KpiSnapshotPanel
+        templateName={page.kpiTemplateName}
+        employeeId={page.kpiEmployeeId}
+        metrics={page.kpiMetrics}
+        loading={page.loading}
+        onRefresh={() => void page.refreshKpi()}
+      />
+
       <div className={styles.grid}>
         <EventsFeed events={events} sseStatus={sseStatus} onReconnect={reconnect} />
+        <ApprovalInboxPanel
+          approvals={page.approvals}
+          result={page.approvalResult}
+          loading={page.loading}
+          onRefresh={() => void page.refreshApprovals()}
+          onApprove={id => void page.approveRequest(id)}
+          onReject={id => void page.rejectRequest(id)}
+        />
         <MemoryCandidatesPanel
           candidates={page.memoryCandidates}
           review={page.memoryReview}

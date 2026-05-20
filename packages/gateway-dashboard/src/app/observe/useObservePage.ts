@@ -3,7 +3,13 @@ import { GatewayApiError } from "../../api/errors.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
 import { useDragonEvents } from "../events/EventsContext.js";
 import type { GatewayRunRecord } from "../run/types.js";
-import type { MemoryCandidate, MemoryReviewState, TrajectorySummary } from "./types.js";
+import type {
+  ApprovalInboxItem,
+  KpiMetricView,
+  MemoryCandidate,
+  MemoryReviewState,
+  TrajectorySummary,
+} from "./types.js";
 
 const DEFAULT_SESSION = "dashboard";
 
@@ -19,6 +25,11 @@ export function useObservePage() {
     canReject: false,
   });
   const [memoryResult, setMemoryResult] = useState<string | null>(null);
+  const [approvals, setApprovals] = useState<readonly ApprovalInboxItem[]>([]);
+  const [approvalResult, setApprovalResult] = useState<string | null>(null);
+  const [kpiTemplateName, setKpiTemplateName] = useState("");
+  const [kpiEmployeeId, setKpiEmployeeId] = useState("");
+  const [kpiMetrics, setKpiMetrics] = useState<readonly KpiMetricView[]>([]);
   const [trajectoryDetail, setTrajectoryDetail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,6 +48,39 @@ export function useObservePage() {
     setTrajectories(payload.trajectories ?? []);
   }, [client, sessionId]);
 
+  const refreshKpi = useCallback(async () => {
+    const [employeesPayload, templatesPayload] = await Promise.all([
+      client.rpc<{ employees: Array<{ id: string; kpiTemplateId?: string }>; defaultEmployeeId?: string }>("employee.list").catch(() => ({ employees: [] })),
+      client.rpc<{ templates: Array<{ id: string; name: string }> }>("kpi.template.list").catch(() => ({ templates: [] })),
+    ]);
+    const employees = employeesPayload.employees ?? [];
+    const defaultId = employeesPayload.defaultEmployeeId;
+    const employee = employees.find(entry => entry.id === defaultId)
+      ?? employees.find(entry => entry.kpiTemplateId)
+      ?? employees[0];
+    if (!employee?.kpiTemplateId) {
+      setKpiTemplateName("");
+      setKpiEmployeeId(employee?.id ?? "");
+      setKpiMetrics([]);
+      return;
+    }
+    const template = (templatesPayload.templates ?? []).find(entry => entry.id === employee.kpiTemplateId);
+    const snapshot = await client.rpc<{ metrics: KpiMetricView[]; templateId: string }>("kpi.snapshot.get", {
+      templateId: employee.kpiTemplateId,
+      employeeId: employee.id,
+    }).catch(() => ({ metrics: [], templateId: employee.kpiTemplateId }));
+    setKpiTemplateName(template?.name ?? employee.kpiTemplateId);
+    setKpiEmployeeId(employee.id);
+    setKpiMetrics(snapshot.metrics ?? []);
+  }, [client]);
+
+  const refreshApprovals = useCallback(async () => {
+    const payload = await client.rpc<{ requests: ApprovalInboxItem[] }>("approval.list", {
+      status: "pending",
+    }).catch((): { requests: ApprovalInboxItem[] } => ({ requests: [] }));
+    setApprovals(payload.requests ?? []);
+  }, [client]);
+
   const refreshMemory = useCallback(async () => {
     const payload = await client.rpc<{
       output?: { candidates?: MemoryCandidate[] };
@@ -54,6 +98,8 @@ export function useObservePage() {
         refreshRuns(),
         refreshTrajectories(),
         refreshMemory(),
+        refreshApprovals(),
+        refreshKpi(),
       ]);
     } catch (caught) {
       const message = caught instanceof GatewayApiError ? caught.message : String(caught);
@@ -73,7 +119,7 @@ export function useObservePage() {
     } finally {
       setLoading(false);
     }
-  }, [refreshMemory, refreshRuns, refreshTrajectories]);
+  }, [refreshApprovals, refreshKpi, refreshMemory, refreshRuns, refreshTrajectories]);
 
   useEffect(() => {
     void refreshAll();
@@ -149,6 +195,30 @@ export function useObservePage() {
     }
   }, [client, refreshMemory]);
 
+  const approveRequest = useCallback(async (id: string) => {
+    setApprovalResult("Approving…");
+    try {
+      await client.rpc("approval.approve", { id, resolvedBy: "dashboard" });
+      setApprovalResult(`Approved ${id}`);
+      await refreshApprovals();
+    } catch (caught) {
+      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      setApprovalResult(message);
+    }
+  }, [client, refreshApprovals]);
+
+  const rejectRequest = useCallback(async (id: string) => {
+    setApprovalResult("Rejecting…");
+    try {
+      await client.rpc("approval.reject", { id, resolvedBy: "dashboard", note: "Rejected from dashboard." });
+      setApprovalResult(`Rejected ${id}`);
+      await refreshApprovals();
+    } catch (caught) {
+      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      setApprovalResult(message);
+    }
+  }, [client, refreshApprovals]);
+
   const rejectMemory = useCallback(async (id: string) => {
     setMemoryResult("Rejecting…");
     try {
@@ -176,6 +246,11 @@ export function useObservePage() {
     memoryCandidates,
     memoryReview,
     memoryResult,
+    approvals,
+    approvalResult,
+    kpiTemplateName,
+    kpiEmployeeId,
+    kpiMetrics,
     trajectoryDetail,
     error,
     loading,
@@ -184,9 +259,13 @@ export function useObservePage() {
     refreshRuns,
     refreshTrajectories,
     refreshMemory,
+    refreshApprovals,
+    refreshKpi,
     cancelRun,
     loadTrajectory,
     promoteMemory,
     rejectMemory,
+    approveRequest,
+    rejectRequest,
   };
 }
