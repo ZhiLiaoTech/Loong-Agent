@@ -2,6 +2,10 @@ import { useEffect, useRef } from "react";
 import type { ChatTurn } from "../types.js";
 import styles from "./ChatTranscript.module.css";
 
+function chatRolePrefix(role: ChatTurn["role"]): string {
+  return role === "assistant" ? "🤖" : "我";
+}
+
 export function ChatTranscript({ turns }: { turns: readonly ChatTurn[] }) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -23,8 +27,10 @@ export function ChatTranscript({ turns }: { turns: readonly ChatTurn[] }) {
                 : `${styles.bubble} ${styles.assistant}${turn.streaming ? ` ${styles.streaming}` : ""}${turn.outcome ? ` ${styles[turn.outcome]}` : ""}`
             }
           >
-            <div className={styles.meta}>{turn.role}</div>
-            {turn.text ? <div className={styles.text}>{turn.text}</div> : null}
+            <div className={styles.contentLine}>
+              <span className={styles.meta}>{chatRolePrefix(turn.role)}：</span>
+              {turn.text ? <span className={styles.text}>{turn.text}</span> : null}
+            </div>
             {turn.errorDetail ? (
               <p className={styles.errorDetail} role="alert">
                 {turn.errorDetail}

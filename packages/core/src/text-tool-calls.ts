@@ -34,17 +34,18 @@ export function extractTextToolCalls(text: string): ModelToolCall[] {
     if (!rawName) {
       continue;
     }
-    const toolName = TOOL_NAME_ALIASES[rawName] ?? rawName;
+    const rawToolName = TOOL_NAME_ALIASES[rawName] ?? rawName;
     const args = parseInnerToolFields(inner);
     if (!Object.keys(args).length) {
       continue;
     }
+    const { name: toolName, args: normalizedArgs } = normalizeExtractedToolCall(rawToolName, args);
     calls.push({
       id: `text-tool-${index}-${randomBytes(4).toString("hex")}`,
       type: "function",
       function: {
         name: toolName,
-        arguments: JSON.stringify(args),
+        arguments: JSON.stringify(normalizedArgs),
       },
     });
     index += 1;
@@ -69,6 +70,52 @@ function parseInnerToolFields(inner: string): Record<string, string> {
     }
   }
   return fields;
+}
+
+/** Map common mistaken bash listings to file_read. */
+function normalizeExtractedToolCall(
+  toolName: string,
+  args: Record<string, string>,
+): { name: string; args: Record<string, string> } {
+  if (toolName !== "shell_exec" || !args.command) {
+    return { name: toolName, args };
+  }
+  const command = args.command.trim();
+  if (/^(?:ls|dir)$/i.test(command)) {
+    return { name: "file_read", args: { path: "." } };
+  }
+  if (/^(?:ls|dir)\s+-[a-zA-Z]+\s*$/i.test(command)) {
+    return { name: "file_read", args: { path: "." } };
+  }
+  const flagsThenPath = /^(?:ls|dir)((?:\s+-[a-zA-Z]+)+)\s+(\S+)\s*$/i.exec(command);
+  const withPath = flagsThenPath ?? /^(?:ls|dir)\s+(\S+)\s*$/i.exec(command);
+  if (!withPath) {
+    return { name: toolName, args };
+  }
+  const arg = flagsThenPath ? (withPath[2] ?? ".") : (withPath[1] ?? ".");
+  if (arg.startsWith("-")) {
+    return { name: toolName, args };
+  }
+  let target = arg;
+  if (target === "/workspace" || target === "/workspace/") {
+    target = ".";
+  }
+  return { name: "file_read", args: { path: target } };
+}
+
+export function appendWorkspaceToolGuidance(systemPrompt: string, workspace?: string): string {
+  const root = workspace?.trim();
+  if (root) {
+    return `${systemPrompt}\n\nTooling: workspace root is "${root}" (there is no /workspace mount). List files with file_read on "." or a relative path. shell_exec only allows read-only git, ripgrep, and version checks — do not use bash/XML for ls, find, or pwd.`;
+  }
+  return `${systemPrompt}\n\nTooling: no workspace is configured for this turn — do not assume /workspace exists. Ask the user to set a workspace or use file_read only after a workspace path is provided. shell_exec only allows read-only git, ripgrep, and version checks — do not use bash/XML for ls, find, or pwd.`;
+}
+
+/** Prefer RPC final text; never fall back to unstripped tool XML. */
+export function pickAssistantDisplayText(rpcText: string, streamText: string): string {
+  const rpc = stripTextToolBlocks(rpcText).trim();
+  const stream = stripTextToolBlocks(streamText).trim();
+  return rpc || stream;
 }
 
 export function augmentResponseWithTextToolCalls(

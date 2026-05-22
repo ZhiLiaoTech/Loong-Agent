@@ -83,6 +83,11 @@
   font-weight: var(--font-weight-semibold);
 }
 
+.statusTimeout {
+  color: var(--warning, #b45309);
+  font-weight: var(--font-weight-semibold);
+}
+
 .errorMessage {
   color: var(--danger);
   font-family: inherit;

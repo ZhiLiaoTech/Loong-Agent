@@ -22,14 +22,29 @@
       activeRunId: "",
       expectingRun: false,
       streamBuffer: "",
+      pendingRpcAssistant: "",
       receivedStreamDelta: false,
       pendingRunFailure: null,
+      lifecycleEnded: false,
+      rpcSettled: false,
+      runFinalized: false,
       runFinalizeTimer: 0,
       chatTurns: [],
     };
 
     const MAX_CHAT_TURNS = 80;
     const RUN_FINALIZE_TIMEOUT_MS = 30_000;
+    const XML_TOOL_BLOCK = /<([a-z][a-z0-9_]*)\s*>([\s\S]*?)<\/\1>/gi;
+
+    function stripTextToolBlocks(text) {
+      return String(text || "").replace(XML_TOOL_BLOCK, "").trim();
+    }
+
+    function pickAssistantDisplayText(rpcText, streamText) {
+      const rpc = stripTextToolBlocks(rpcText);
+      const stream = stripTextToolBlocks(streamText);
+      return rpc || stream;
+    }
 
     const $ = (id) => document.getElementById(id);
 
@@ -207,6 +222,10 @@
       state.expectingRun = true;
       state.activeRunId = "";
       state.streamBuffer = "";
+      state.pendingRpcAssistant = "";
+      state.lifecycleEnded = false;
+      state.rpcSettled = false;
+      state.runFinalized = false;
       state.receivedStreamDelta = false;
       state.pendingRunFailure = null;
       clearRunFinalizeTimer();
@@ -223,7 +242,8 @@
           source: "web",
           metadata: { source: "dashboard" },
         };
-        if (profile?.id) params.profileId = profile.id;
+        const profileId = ($("runProfile")?.value || "").trim() || profile?.id || "";
+        if (profileId) params.profileId = profileId;
         const employeeId = $("runEmployee")?.value?.trim() || "";
         if (employeeId) {
           params.employeeId = employeeId;
@@ -244,6 +264,9 @@
         const payload = await rpc("agent", params);
         const result = payload.result;
         const assistant = [...(result?.messages || [])].reverse().find(message => message.role === "assistant");
+        state.pendingRpcAssistant = assistant?.content || "";
+        state.rpcSettled = true;
+        state.lifecycleEnded = true;
         const failure = result?.status === "error" || result?.status === "cancelled"
           ? { phase: result.status, message: result.error }
           : null;
@@ -254,10 +277,11 @@
           bindActiveRun(result.runId);
           scheduleRunFinalizeFallback(result.runId);
           if (failure && !state.receivedStreamDelta && !assistant?.content) {
-            completeRun("", failure);
+            tryFinalizeRun(failure, true);
           }
+          tryFinalizeRun(failure);
         } else {
-          completeRun(assistant?.content || state.streamBuffer || "", failure);
+          tryFinalizeRun(failure, true);
         }
         $("runOutput").textContent = JSON.stringify(payload.result, null, 2);
         $("message").value = "";
@@ -625,8 +649,11 @@
       if (!employeeId) return;
       const employee = (state.employeeCatalog.employees || []).find(entry => entry.id === employeeId);
       if (employee?.profileId && $("runProfile")) {
-        $("runProfile").value = employee.profileId;
-        applySelectedAgentProfile();
+        const exists = (state.agentConfig.profiles || []).some(entry => entry.id === employee.profileId);
+        if (exists) {
+          $("runProfile").value = employee.profileId;
+          applySelectedAgentProfile();
+        }
       }
     }
 
@@ -901,9 +928,13 @@
         const suffix = state.agentConfig.defaultProfileId === profile.id ? " *" : "";
         return "<option value='" + escapeHtml(profile.id || "") + "'>" + escapeHtml((profile.name || profile.id || "") + suffix) + "</option>";
       }).join("");
-      if (state.agentConfig.defaultProfileId && !$("runProfile").value) {
-        $("runProfile").value = state.agentConfig.defaultProfileId;
-        applySelectedAgentProfile();
+      if (!$("runProfile").value) {
+        const autoProfileId = state.agentConfig.defaultProfileId
+          || (profiles.length === 1 ? profiles[0]?.id : "");
+        if (autoProfileId) {
+          $("runProfile").value = autoProfileId;
+          applySelectedAgentProfile();
+        }
       }
       $("agentProfilesBody").innerHTML = profiles.map(profile => {
         const meta = [
@@ -1111,19 +1142,40 @@
       }
     }
 
+    function replaceAssistant(text) {
+      if (!text) return;
+      const last = state.chatTurns[state.chatTurns.length - 1];
+      if (last?.role === "assistant" && last.streaming) {
+        last.text = text;
+      } else {
+        state.chatTurns.push({ role: "assistant", text, streaming: true });
+      }
+      trimChatTurns();
+      renderChatTranscript();
+    }
+
     function completeRun(text, failure) {
+      if (state.runFinalized) return;
+      state.runFinalized = true;
       clearRunFinalizeTimer();
       const resolvedFailure = failure ?? state.pendingRunFailure ?? null;
       const last = state.chatTurns[state.chatTurns.length - 1];
-      const body = last?.role === "assistant"
-        ? (text || last.text || state.streamBuffer || "")
-        : (text || state.streamBuffer || "");
+      const body = (text || stripTextToolBlocks(last?.text || "")).trim();
       finalizeAssistant(body, resolvedFailure);
       state.pendingRunFailure = null;
       state.streamBuffer = "";
+      state.pendingRpcAssistant = "";
       state.receivedStreamDelta = false;
+      state.lifecycleEnded = false;
+      state.rpcSettled = false;
       state.activeRunId = "";
       state.expectingRun = false;
+    }
+
+    function tryFinalizeRun(failure, force) {
+      if (state.runFinalized) return;
+      if (!force && (!state.lifecycleEnded || !state.rpcSettled)) return;
+      completeRun(pickAssistantDisplayText(state.pendingRpcAssistant, state.streamBuffer), failure);
     }
 
     function scheduleRunFinalizeFallback(runId) {
@@ -1133,9 +1185,7 @@
         if (state.activeRunId !== runId) {
           return;
         }
-        const last = state.chatTurns[state.chatTurns.length - 1];
-        const body = last?.role === "assistant" ? (last.text || state.streamBuffer || "") : state.streamBuffer || "";
-        completeRun(body, state.pendingRunFailure);
+        tryFinalizeRun(state.pendingRunFailure, true);
       }, RUN_FINALIZE_TIMEOUT_MS);
     }
 
@@ -1147,24 +1197,24 @@
         state.streamBuffer += ev.text;
         appendChatDelta(ev.text);
       }
+      if (ev.type === "assistant_replace" && ev.text && state.activeRunId && ev.runId === state.activeRunId) {
+        state.streamBuffer = ev.text;
+        replaceAssistant(ev.text);
+      }
       if (
         ev.type === "lifecycle"
         && state.activeRunId
         && ev.runId === state.activeRunId
         && ["end", "error", "cancelled"].includes(ev.phase)
       ) {
-        const last = state.chatTurns[state.chatTurns.length - 1];
         const failure = ev.phase === "error" || ev.phase === "cancelled"
           ? { phase: ev.phase, message: ev.message }
           : null;
         if (failure) {
           state.pendingRunFailure = null;
         }
-        if (last?.role === "assistant") {
-          completeRun(last.text || state.streamBuffer || "", failure);
-        } else {
-          completeRun("", failure);
-        }
+        state.lifecycleEnded = true;
+        tryFinalizeRun(failure);
       }
     }
 
@@ -1190,17 +1240,17 @@
       }
       el.innerHTML = state.chatTurns.map(turn => {
         const role = turn.role === "user" ? "user" : "assistant";
+        const label = role === "assistant" ? "🤖" : "我";
         const streaming = turn.streaming ? " streaming" : "";
         const outcome = turn.outcome ? " chat-" + turn.outcome : "";
         const failureHtml = turn.errorDetail
           ? "<p class='chat-error-detail' role='alert'>" + escapeHtml(turn.errorDetail) + "</p>"
           : "";
         const textHtml = turn.text
-          ? "<div class='chat-text'>" + escapeHtml(turn.text) + "</div>"
+          ? "<span class='chat-text'>" + escapeHtml(turn.text) + "</span>"
           : "";
         return "<div class='chat-bubble " + role + outcome + streaming + "'>" +
-          "<div class='chat-meta'>" + escapeHtml(role) + "</div>" +
-          textHtml +
+          "<div class='chat-line'><span class='chat-meta'>" + escapeHtml(label) + "：</span>" + textHtml + "</div>" +
           failureHtml +
         "</div>";
       }).join("");

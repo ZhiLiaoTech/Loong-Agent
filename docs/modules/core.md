@@ -32,23 +32,29 @@ runTurn
   ├─ loadSession(history)
   ├─ contextProviders → composeSystemPrompt
   ├─ completeModelWithFallback (provider 链)
-  └─ while toolCalls && iterations < maxToolIterations (默认 4)
+  └─ while toolCalls && iterations < maxToolIterations (默认 20)
         ├─ for each toolCall (串行)
         │     ├─ permissionEngine.evaluate
         │     ├─ permissionHandler (可选)
         │     └─ tool.invoke → modelMessages.push(tool result)
         └─ completeModelWithFallback again
   ├─ persist session + trajectory
-  └─ lifecycle:end | error | cancelled
+  └─ lifecycle:end | error | cancelled | timeout (result.status)
 ```
 
-### 3.2 依赖
+### 3.2 模型超时
+
+- 默认 **300s**（`DEFAULT_MODEL_TIMEOUT_MS = 300_000`），每次 `provider.complete` 共享合并后的 `AbortSignal`。
+- `createDragonRuntime({ modelTimeoutMs })` 可覆盖；`0` 表示禁用超时。
+- 超时后 `DragonTurnResult.status === "timeout"`，并中止进行中的模型 HTTP 请求。
+
+### 3.3 依赖
 
 - `@dragon/providers` — `ProviderRegistry`、`ModelProvider.complete`
 - `@dragon/tools` — `ToolRegistry`、`ToolPermissionEngine`
 - `@dragon/security` — `isSensitiveKey`（权限/事件摘要）
 
-### 3.3 设计模式
+### 3.4 设计模式
 
 | 模式 | 应用 |
 |------|------|
@@ -60,7 +66,7 @@ runTurn
 
 ### 3.4 关键常量
 
-- `maxToolIterations`: 4
+- `maxToolIterations`: 20
 - `maxContextChars`: 12_000
 - `maxToolResultChars`: 64_000
 - `lifecycleHookTimeoutMs`: 500

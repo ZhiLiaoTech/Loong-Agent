@@ -6,8 +6,8 @@ export interface ChatTurn {
   role: "user" | "assistant";
   text: string;
   streaming: boolean;
-  /** Set when the run ended in error or was cancelled. */
-  outcome?: "error" | "cancelled";
+  /** Set when the run ended in error, was cancelled, or timed out. */
+  outcome?: "error" | "cancelled" | "timeout";
   /** Human-readable failure reason shown below the assistant text. */
   errorDetail?: string;
 }

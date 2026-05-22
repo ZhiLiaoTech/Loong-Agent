@@ -16,7 +16,16 @@ import {
   type ModelTierConfig,
   type TierDecision,
 } from "./tiers.js";
-import { augmentResponseWithTextToolCalls } from "./text-tool-calls.js";
+import {
+  appendWorkspaceToolGuidance,
+  augmentResponseWithTextToolCalls,
+  stripTextToolBlocks,
+} from "./text-tool-calls.js";
+import {
+  DEFAULT_MODEL_TIMEOUT_MS,
+  createModelTurnAbort,
+  resolveTurnFailureStatus,
+} from "./model-timeout.js";
 import type {
   ToolDefinition,
   ToolInvocation,
@@ -74,6 +83,8 @@ export interface DragonRuntimeOptions {
     invocation: ToolInvocation,
     baseline: ToolPermissionResult,
   ) => Promise<ToolPermissionResult>;
+  /** Per model HTTP request timeout in ms (default 300_000). Set 0 to disable. */
+  modelTimeoutMs?: number;
 }
 
 interface ModelAttemptFailure {
@@ -103,6 +114,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   readonly #lifecycleHookTimeoutMs: number;
   readonly #denyAskWithoutHandler: boolean;
   readonly #permissionEvaluator: DragonRuntimeOptions["permissionEvaluator"];
+  readonly #modelTimeoutMs: number;
   #tierConfig: ModelTierConfig | undefined;
   readonly #maxToolResultChars = 64_000;
   readonly #listeners = new Set<(event: DragonEvent) => void>();
@@ -120,11 +132,12 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#defaultModel = options.defaultModel;
     this.#modelFallbacks = normalizeModelRefs(options.modelFallbacks ?? []);
     this.#systemPrompt = options.systemPrompt ?? "You are Dragon, a TypeScript-native local-first agent.";
-    this.#maxToolIterations = options.maxToolIterations ?? 4;
+    this.#maxToolIterations = options.maxToolIterations ?? 20;
     this.#maxContextChars = options.maxContextChars ?? 12_000;
     this.#lifecycleHookTimeoutMs = 500;
     this.#denyAskWithoutHandler = options.denyAskWithoutHandler ?? true;
     this.#permissionEvaluator = options.permissionEvaluator;
+    this.#modelTimeoutMs = options.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
     this.#tierConfig = options.tierConfig;
   }
 
@@ -198,9 +211,11 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       }
     }
     const turnMaxContextChars = tierAdjustedMaxContextChars ?? this.#maxContextChars;
+    const turnAbort = createModelTurnAbort(input.signal, this.#modelTimeoutMs);
+    const activeInput: DragonTurnInput = { ...input, signal: turnAbort.signal };
 
     try {
-      if (input.signal?.aborted) {
+      if (activeInput.signal?.aborted) {
         throw new DragonCancelledError("Turn was cancelled before it started.");
       }
 
@@ -210,30 +225,38 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         runId,
         metadata: toLifecycleMetadata(input, tierDecision, turnMaxContextChars),
       });
-      await this.#notifyLifecycleHooks("start", input, runId, createdAt);
-      const history = input.history ?? await this.#loadSessionMessages(input.sessionId);
-      const contextItems = await this.#buildContextItems(input, history, runId, createdAt);
+      await this.#notifyLifecycleHooks("start", activeInput, runId, createdAt);
+      const history = activeInput.history ?? await this.#loadSessionMessages(activeInput.sessionId);
+      const contextItems = await this.#buildContextItems(activeInput, history, runId, createdAt);
 
-      const effectiveSystemPrompt = input.systemPrompt?.trim()
-        ? `${this.#systemPrompt}\n\n${input.systemPrompt.trim()}`
-        : this.#systemPrompt;
-      const userContent = buildUserMessageContent(input.message, resolvedAttachments);
+      const effectiveSystemPrompt = appendWorkspaceToolGuidance(
+        activeInput.systemPrompt?.trim()
+          ? `${this.#systemPrompt}\n\n${activeInput.systemPrompt.trim()}`
+          : this.#systemPrompt,
+        activeInput.workspace,
+      );
+      const userContent = buildUserMessageContent(activeInput.message, resolvedAttachments);
       const modelMessages: ModelMessage[] = [
         { role: "system", content: composeSystemPrompt(effectiveSystemPrompt, contextItems, turnMaxContextChars) },
         ...toModelHistory(history),
         { role: "user", content: userContent },
       ];
 
-      const modelRefs = modelAttemptRefs(input.model, this.#defaultModel, input.modelFallbacks, this.#modelFallbacks);
-      let completion = await this.#completeModelWithFallback(modelRefs, modelMessages, input, runId);
-      let providerResponse = augmentResponseWithTextToolCalls(completion.response, input.toolsEnabled);
+      const modelRefs = modelAttemptRefs(activeInput.model, this.#defaultModel, activeInput.modelFallbacks, this.#modelFallbacks);
+      let completion = await this.#completeModelWithFallback(modelRefs, modelMessages, activeInput, runId);
+      let providerResponse = augmentResponseWithTextToolCalls(completion.response, activeInput.toolsEnabled);
       let resolution = completion.resolution;
       let fallbackFailures = completion.failures;
       if (providerResponse.textToolCallsExtracted && providerResponse.streamedText) {
-        this.#emit({ type: "assistant_delta", runId, text: "\n\n[正在执行工具调用…]\n" });
+        const cleaned = stripTextToolBlocks(completion.response.text ?? "");
+        this.#emit({
+          type: "assistant_replace",
+          runId,
+          text: cleaned.length > 0 ? `${cleaned}\n\n[正在执行工具调用…]\n` : "[正在执行工具调用…]\n",
+        });
       }
 
-      if (input.signal?.aborted) {
+      if (activeInput.signal?.aborted) {
         throw new DragonCancelledError("Turn was cancelled.");
       }
 
@@ -254,7 +277,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         modelMessages.push(assistantTurn);
 
         const toolCalls = providerResponse.toolCalls;
-        if (input.toolsEnabled === false) {
+        if (activeInput.toolsEnabled === false) {
           for (const toolCall of toolCalls) {
             modelMessages.push({
               role: "tool",
@@ -267,7 +290,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
             });
           }
         } else if (canRunToolCallsInParallel(toolCalls, this.#toolRegistry)) {
-          const toolResults = await Promise.all(toolCalls.map(toolCall => this.#runToolCall(toolCall, input, runId)));
+          const toolResults = await Promise.all(toolCalls.map(toolCall => this.#runToolCall(toolCall, activeInput, runId)));
           for (const [index, toolResult] of toolResults.entries()) {
             modelMessages.push({
               role: "tool",
@@ -277,7 +300,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
           }
         } else {
           for (const toolCall of toolCalls) {
-            const toolResult = await this.#runToolCall(toolCall, input, runId);
+            const toolResult = await this.#runToolCall(toolCall, activeInput, runId);
             modelMessages.push({
               role: "tool",
               content: toolResult.content,
@@ -286,8 +309,8 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
           }
         }
 
-        completion = await this.#completeModelWithFallback(modelRefs, modelMessages, input, runId);
-        providerResponse = augmentResponseWithTextToolCalls(completion.response, input.toolsEnabled);
+        completion = await this.#completeModelWithFallback(modelRefs, modelMessages, activeInput, runId);
+        providerResponse = augmentResponseWithTextToolCalls(completion.response, activeInput.toolsEnabled);
         resolution = completion.resolution;
         fallbackFailures = completion.failures;
       }
@@ -297,8 +320,12 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       }
 
       const assistantText = providerResponse.text ?? "";
-      if (assistantText && !providerResponse.streamedText) {
-        this.#emit({ type: "assistant_delta", runId, text: assistantText });
+      if (assistantText) {
+        if (providerResponse.streamedText) {
+          this.#emit({ type: "assistant_replace", runId, text: assistantText });
+        } else {
+          this.#emit({ type: "assistant_delta", runId, text: assistantText });
+        }
       }
       const assistantMetadata: Record<string, unknown> = {
         providerId: resolution.provider.id,
@@ -329,15 +356,15 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         result.usage = usage;
       }
 
-      await this.#persistTurn(input, result, createdAt);
+      await this.#persistTurn(activeInput, result, createdAt);
       const completedAt = new Date().toISOString();
       this.#emit({ type: "lifecycle", phase: "end", runId });
-      await this.#notifyLifecycleHooks("end", input, runId, createdAt, completedAt, result);
-      await this.#tryPersistTrajectory(input, result, createdAt, completedAt);
+      await this.#notifyLifecycleHooks("end", activeInput, runId, createdAt, completedAt, result);
+      await this.#tryPersistTrajectory(activeInput, result, createdAt, completedAt);
       return result;
     } catch (error) {
       const errorDetails = errorToDetails(error);
-      const status = error instanceof DragonCancelledError || input.signal?.aborted ? "cancelled" : "error";
+      const status = resolveTurnFailureStatus(error, input.signal, turnAbort);
       const result: DragonTurnResult = {
         runId,
         status,
@@ -345,7 +372,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         error: errorDetails.message,
       };
       if (!(error instanceof DragonPersistenceError)) {
-        await this.#tryPersistTurn(input, result, createdAt);
+        await this.#tryPersistTurn(activeInput, result, createdAt);
       }
       const lifecycleEvent: DragonEvent = {
         type: "lifecycle",
@@ -359,10 +386,11 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       this.#emit(lifecycleEvent);
       const completedAt = new Date().toISOString();
       const hookPhase = lifecycleEvent.phase === "cancelled" ? "cancelled" : "error";
-      await this.#notifyLifecycleHooks(hookPhase, input, runId, createdAt, completedAt, result);
-      await this.#tryPersistTrajectory(input, result, createdAt, completedAt);
+      await this.#notifyLifecycleHooks(hookPhase, activeInput, runId, createdAt, completedAt, result);
+      await this.#tryPersistTrajectory(activeInput, result, createdAt, completedAt);
       return result;
     } finally {
+      turnAbort.dispose();
       this.#eventCollectors.delete(runId);
     }
   }

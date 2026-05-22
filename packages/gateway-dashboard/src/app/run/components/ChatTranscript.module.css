@@ -47,19 +47,26 @@
   50% { opacity: 0; }
 }
 
+.contentLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0;
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+}
+
 .meta {
+  flex-shrink: 0;
   font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--muted);
-  margin-bottom: var(--space-1);
 }
 
 .text {
+  flex: 1;
+  min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: var(--text-sm);
-  line-height: var(--line-height-normal);
 }
 
 .errorDetail {

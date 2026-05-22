@@ -708,7 +708,8 @@ export class HttpDragonGateway implements DragonGateway {
       resolved = mergeEmployeeIntoAgentParams(resolved, employee);
     }
 
-    return resolved;
+    // Profile fields (workspace, model, …) must merge after profileId is set by employee routing.
+    return resolveAgentParamsWithProfile(resolved, this.#agentConfigStore);
   }
 
   async #handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {

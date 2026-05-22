@@ -201,7 +201,7 @@ export function Composer({ disabled, onSend }: ComposerProps) {
         onChange={event => setMessage(event.target.value)}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
-        placeholder="Ask Dragon…  (drag .docx/.pdf/.xlsx/.png… here or paste an image)"
+        placeholder="(drag .docx/.pdf/.xlsx/.png… here or paste an image)"
         rows={3}
         disabled={disabled}
       />
@@ -227,26 +227,38 @@ export function Composer({ disabled, onSend }: ComposerProps) {
       {error ? <div className={styles.attachmentError}>{error}</div> : null}
       <div className={styles.actions}>
         <span className={styles.hint}>Enter to send · Shift+Enter for newline · paste image to attach</span>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className={styles.fileInput}
-          onChange={onFileChange}
-          accept=".md,.markdown,.txt,.log,.csv,.tsv,.html,.htm,.css,.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.json,.jsonl,.yaml,.yml,.xml,.rs,.go,.rb,.sh,.sql,.png,.jpg,.jpeg,.webp,.gif,.pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.rtf,image/*,text/*,application/json,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf"
-        />
-        <button
-          type="button"
-          className={styles.attachBtn}
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled || attachments.length >= MAX_ATTACHMENTS}
-          title="Attach file"
-        >
-          Attach
-        </button>
-        <button type="submit" className={styles.sendBtn} disabled={disabled || !hasContent}>
-          Send
-        </button>
+        <div className={styles.actionButtons}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className={styles.fileInput}
+            onChange={onFileChange}
+            accept=".md,.markdown,.txt,.log,.csv,.tsv,.html,.htm,.css,.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.json,.jsonl,.yaml,.yml,.xml,.rs,.go,.rb,.sh,.sql,.png,.jpg,.jpeg,.webp,.gif,.pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.rtf,image/*,text/*,application/json,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/rtf"
+          />
+          <button
+            type="button"
+            className={styles.attachBtn}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || attachments.length >= MAX_ATTACHMENTS}
+            title="Attach file"
+            aria-label="Attach file"
+          >
+            <svg className={styles.attachIcon} viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M16.5 6.5v8.75a4.75 4.75 0 0 1-9.5 0V7.25a3.25 3.25 0 0 1 6.5 0v8.5a2.25 2.25 0 0 1-4.5 0V8"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <button type="submit" className={styles.sendBtn} disabled={disabled || !hasContent}>
+            Send
+          </button>
+        </div>
       </div>
     </form>
   );

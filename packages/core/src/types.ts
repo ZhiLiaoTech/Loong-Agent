@@ -209,6 +209,7 @@ export type DragonEvent =
       metadata?: Record<string, unknown>;
     }
   | { type: "assistant_delta"; runId: string; text: string }
+  | { type: "assistant_replace"; runId: string; text: string }
   | {
       type: "permission";
       runId: string;

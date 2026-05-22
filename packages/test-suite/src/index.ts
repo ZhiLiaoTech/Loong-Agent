@@ -10,12 +10,14 @@ import { promisify } from "node:util";
 import { createGatewayWebhookChannelTarget, parseSlackWebhook, parseTelegramWebhook, toGatewayWebhookPayload } from "@dragon/channels";
 import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
 import {
+  appendWorkspaceToolGuidance,
   augmentResponseWithTextToolCalls,
   classifyTierHeuristic,
   createDragonRuntime,
   decideTier,
   extractTextToolCalls,
   normalizeTierConfig,
+  pickAssistantDisplayText,
 } from "@dragon/core";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
 import {
@@ -2255,8 +2257,29 @@ async function testTextToolCallExtraction(): Promise<void> {
 
   const bash = extractTextToolCalls("<bash>ls -la</bash>");
   assert(bash.length === 1, "bash block should parse");
-  assert(bash[0]?.function?.name === "shell_exec", "bash should alias to shell_exec");
-  assert(JSON.parse(bash[0]?.function?.arguments ?? "{}").command === "ls -la", "bash body should become command");
+  assert(bash[0]?.function?.name === "file_read", "ls bash should rewrite to file_read");
+  assert(JSON.parse(bash[0]?.function?.arguments ?? "{}").path === ".", "ls -la should list workspace root");
+
+  const workspaceLs = extractTextToolCalls("<bash>ls /workspace/</bash>");
+  assert(workspaceLs[0]?.function?.name === "file_read", "/workspace ls should map to file_read");
+  assert(JSON.parse(workspaceLs[0]?.function?.arguments ?? "{}").path === ".", "/workspace should normalize to .");
+
+  const lsWithFlagsPath = extractTextToolCalls("<bash>ls -la src</bash>");
+  assert(lsWithFlagsPath[0]?.function?.name === "file_read", "ls -la <path> should rewrite to file_read");
+  assert(JSON.parse(lsWithFlagsPath[0]?.function?.arguments ?? "{}").path === "src", "ls flags + path should keep path");
+
+  assert(
+    pickAssistantDisplayText("<bash>ls</bash>", "") === "",
+    "pure XML rpc text should not fall back to raw XML",
+  );
+  assert(
+    pickAssistantDisplayText("done", "<bash>x</bash>") === "done",
+    "rpc text should win over stream XML",
+  );
+  assert(
+    appendWorkspaceToolGuidance("base", "").includes("no workspace"),
+    "missing workspace should add guidance",
+  );
 
   const augmented = augmentResponseWithTextToolCalls({
     id: "test-augment",

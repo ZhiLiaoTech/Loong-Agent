@@ -72,6 +72,19 @@ Dashboard HTML 由独立包 `@dragon/gateway-dashboard` 构建（`dist/index.htm
 - `cronStore`、`cronRunner`
 - `sharedSecret`（可选）、`host`、`port`
 
+### 4.1 模型超时配置
+
+Gateway 启动时由 CLI 解析并注入 Runtime（默认 **300s**）。优先级：**CLI 参数 > 环境变量 > `.dragon/config/gateway.json`**。
+
+| 方式 | 示例 |
+|------|------|
+| 配置文件 | `.dragon/config/gateway.json` → `{ "modelTimeoutMs": 300000 }` |
+| 环境变量 | `DRAGON_MODEL_TIMEOUT_MS=300000` |
+| CLI | `dragon gateway --model-timeout-sec 300` 或 `--model-timeout-ms 300000` |
+| 自定义路径 | `DRAGON_GATEWAY_CONFIG=/path/to/gateway.json` |
+
+启动日志会打印 `Dragon model timeout: 300s`。
+
 ## 5. Code Review
 
 ### 5.1 优点

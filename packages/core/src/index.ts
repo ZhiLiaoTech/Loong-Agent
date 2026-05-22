@@ -31,6 +31,13 @@ export {
   type DragonRuntimeOptions,
 } from "./runtime.js";
 export {
+  DEFAULT_MODEL_TIMEOUT_MS,
+  DragonModelTimeoutError,
+  createModelTurnAbort,
+  resolveTurnFailureStatus,
+  type ModelTurnAbortHandle,
+} from "./model-timeout.js";
+export {
   TIER_DEFAULTS,
   classifyTierHeuristic,
   decideTier,
@@ -45,8 +52,10 @@ export {
   type TierDecision,
 } from "./tiers.js";
 export {
+  appendWorkspaceToolGuidance,
   augmentResponseWithTextToolCalls,
   extractTextToolCalls,
+  pickAssistantDisplayText,
   stripTextToolBlocks,
   type AugmentedModelResponse,
 } from "./text-tool-calls.js";

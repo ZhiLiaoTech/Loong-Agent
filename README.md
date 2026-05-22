@@ -1,192 +1,198 @@
-# Dragon (Qianlong / 潜龙)  潜龙在渊，智驭八方
+<div align="center">
 
-Dragon is a TypeScript-native, local-first agent framework.
+<img src="docs/images/banner.png" alt="Dragon — Chinese dragon banner" width="100%" />
 
-It aims to combine:
+<br />
 
-- OpenClaw's gateway, plugin, session, and local-first architecture.
-- Hermes Agent's self-improving skills, memory, provider routing, and trajectory ideas.
-- Claude Code's coding-agent interaction model, permission experience, and engineering workflow.
+<img src="docs/images/logo.png" alt="Dragon logo — traditional Chinese dragon" width="160" />
 
-Dragon does not mix Python into the runtime. Hermes concepts are reimplemented
-in TypeScript where they fit the framework.
+# Dragon · 潜龙
 
-## Initial Packages
+🐉 **潜龙在渊，智驭八方** — TypeScript-native, local-first agent framework
 
-- `@dragon/core`: agent turn runtime, lifecycle events, sessions, queues.
-- `@dragon/gateway`: WebSocket/HTTP control plane.
-- `@dragon/channels`: chat-channel webhook adapters and Gateway delivery
-  targets.
-- `@dragon/tools`: tool registry, permissions, and built-in tool contracts.
-- `@dragon/security`: shared sensitive-key detection and secret redaction
-  helpers.
-- `@dragon/providers`: model provider routing contracts.
-- `@dragon/model-catalog`: provider-scoped model metadata and model reference
-  lookup helpers.
-- `@dragon/memory`: Markdown, SQLite, and search memory contracts.
-- `@dragon/skills`: `SKILL.md` runtime and skill authoring contracts.
-- `@dragon/cron`: cron schedule parsing, file-backed jobs, runner, and Gateway
-  webhook delivery targets.
-- `@dragon/delegation`: multi-agent task planning, dependency-aware runner,
-  Dragon runtime executor, and agent-facing `delegation_run` tool.
-- `@dragon/plugin-sdk`: public plugin API.
-- `@dragon/plugin-openai-compatible`: reference OpenAI-compatible provider plugin.
-- `@dragon/plugin-openrouter-compatible`: reference OpenRouter provider plugin.
-- `@dragon/plugin-anthropic-compatible`: reference Anthropic Messages API provider plugin with tool-use translation.
-- `@dragon/plugin-git-tools`: reference read-only Git inspection tool plugin.
-- `@dragon/test-suite`: TypeScript regression tests for high-risk runtime flows.
-- `@dragon/cli`: command-line entrypoint.
+<p align="center">
+  <a href="./README.zh_CN.md">简体中文</a> |
+  <strong>English</strong>
+</p>
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-[docs/REUSE_PLAN.md](docs/REUSE_PLAN.md) for the implementation plan.
-See [docs/TECHNICAL_ARCHITECTURE.md](docs/TECHNICAL_ARCHITECTURE.md) and
-[docs/modules/README.md](docs/modules/README.md) for the overall technical design
-and per-module technical specifications with code review notes.
-See [docs/PLUGINS.md](docs/PLUGINS.md) for the plugin authoring and loading
-notes.
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for local Gateway smoke testing
-and Docker Compose deployment testing.
+<p align="center">
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-D4AF37?style=flat-square" alt="license">
+  </a><!--
+  --><a href="https://www.typescriptlang.org/">
+    <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="typescript">
+  </a><!--
+  --><a href="https://pnpm.io/">
+    <img src="https://img.shields.io/badge/pnpm-10.11-F69220?style=flat-square&logo=pnpm&logoColor=white" alt="pnpm">
+  </a><!--
+  --><img src="https://img.shields.io/badge/architecture-local--first-C41E3A?style=flat-square" alt="local-first"><!--
+  --><img src="https://img.shields.io/badge/runtime-no%20Python-2E8B57?style=flat-square" alt="no python runtime">
+</p>
 
-## Current CLI Shape
+<p align="center">
+  <a href="#-about">About</a> •
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-packages">Packages</a> •
+  <a href="#-cli">CLI</a> •
+  <a href="#-gateway">Gateway</a> •
+  <a href="#-documentation">Docs</a> •
+  <a href="#-verification">Verify</a>
+</p>
+
+</div>
+
+---
+
+## 📝 About
+
+Dragon (**Qianlong / 潜龙**) is a **TypeScript-native, local-first** agent framework. The dragon in our name is the **Chinese dragon (中国龙)** — a symbol of wisdom, adaptability, and command from the depths (*潜龙在渊*).
+
+Dragon aims to combine:
+
+| Source | What we take |
+|--------|----------------|
+| **OpenClaw** | Gateway, plugins, sessions, local-first architecture |
+| **Hermes Agent** | Self-improving skills, memory, provider routing, trajectories |
+| **Claude Code** | Coding-agent interaction, permissions, engineering workflow |
+
+Hermes concepts are **reimplemented in TypeScript** where they fit — no Python in the runtime.
+
+> [!TIP]
+> Deep dives: [Architecture](docs/ARCHITECTURE.md) · [Technical architecture](docs/TECHNICAL_ARCHITECTURE.md) · [Modules](docs/modules/README.md) · [Plugins](docs/PLUGINS.md) · [Deployment](docs/DEPLOYMENT.md)
+
+---
+
+## 🚀 Quick Start
 
 ```bash
-dragon chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--model-fallback <ref>] [--plugin-root <path>] <message>
-dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--model <ref>] [--model-fallback <ref>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] <message>
-dragon gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>]
-dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] [--once] [--interval-ms <ms>]
+# Install dependencies
+corepack pnpm install
+
+# Build & verify
+corepack pnpm check
+corepack pnpm build
+corepack pnpm test
+
+# Chat once
+dragon chat "Hello from the depths."
+
+# Agent with tools (interactive write approval by default)
+dragon agent "Summarize this repository."
+
+# Local gateway + dashboard
+dragon gateway
 ```
 
-`dragon agent` can read/search workspace files, run a conservative read-only
-shell allowlist, run the same read-only allowlist through `sandbox_exec` local,
-Docker, or SSH backends, inspect bounded HTTP(S) page snapshots with
-`browser_snapshot` including links and form structure, submit basic GET/POST
-HTML forms with `browser_form_submit`, and use `file_patch` for exact text
-replacements. Write tools ask for approval in an interactive terminal;
-`--allow-write` skips that prompt.
-`sandbox_exec` keeps the default `inspect` profile narrow and supports explicit
-`versions`, `git-read`, `search-read`, and `repo-read` profiles for broader
-read-only sandbox inspection.
-`dragon agent /skills`, `dragon agent /skills <query>`, and
-`dragon agent /skills load <name>` run locally against configured skill roots
-without requiring a model provider.
+Open `http://127.0.0.1:17357/` after `dragon gateway` (default port `17357`; override with `--port`).
 
-`dragon gateway` starts the local HTTP/WebSocket control plane and serves a
-minimal dashboard at `/`. The first API endpoints are `GET /health`,
-`GET /events`, `GET /ws`, `POST /channels/webhook`, and `POST /rpc` for
-`connect`, `health`, `agent`, `run.status`, `run.cancel`, `runs.list`,
-`providers.list`, `model.config.get`, `model.config.save`,
-`agent.config.get`, `agent.config.save`, `plugins.list`, `tools.catalog`,
-`tool.invoke`,
-`memory.candidates.list`, `memory.candidate.promote`,
-`memory.candidate.reject`, `trajectory.list`, `trajectory.get`,
-`cron.jobs.list`, `cron.job.upsert`, `cron.job.remove`, and `cron.tick`
-requests.
-`GET /events` is a Server-Sent Events stream and `GET /ws` is a WebSocket
-RPC/event stream; both support `sessionId` / `runId` query filters.
-`POST /channels/webhook` is the first selected chat-channel surface: it accepts
-a simple authenticated JSON body with `sessionId`, `message`, optional
-`channel`, `userId`, `threadId`, `workspace`, `model`, and metadata, then
-routes the message through the same agent lane and event pipeline.
-`@dragon/channels` provides Telegram and Slack webhook adapters that normalize
-platform payloads into this Gateway webhook body, plus a reusable Gateway
-webhook delivery target for chat-channel bridges.
-`@dragon/cron` can compute next runs for five-field cron expressions, persist
-jobs in a JSON store, run due jobs with a bounded runner, and deliver scheduled
-jobs to this webhook surface with `channel: "cron"`.
-`dragon cron --once` runs due jobs once for system schedulers; without
-`--once`, it starts a local long-running cron runner.
-`dragon gateway` also starts a local cron runner by default, backed by
-`.dragon/cron/jobs.json` or `--cron-jobs <path>`.
-`@dragon/delegation` provides dependency-aware delegated task plans and a
-bounded concurrent runner. Its runtime executor can run delegated tasks through
-any `DragonAgentRuntime`, preserving dependency summaries for downstream
-tasks. In `dragon agent`, the bounded `delegation_run` tool exposes that runner
-to the model for independent or dependency-ordered subtasks.
-OpenAI-compatible and Anthropic-compatible providers can emit true text deltas
-into those streams through Dragon `assistant_delta` events.
-The dashboard is organized into five minimal workspaces: Run, Models, Agents,
-Observe, and System. Run is the default console, Models manages provider
-configuration, Agents manages reusable profiles, Observe groups runs/events/
-trajectory/memory review, and System groups gateway health, plugins, tools, and
-cron jobs.
+---
 
-Plugins can be loaded from `.dragon/plugins`, `DRAGON_PLUGIN_ROOTS`, or
-`--plugin-root <path>`. A plugin root can be either one plugin directory or a
-directory containing plugin directories. Tool plugins are available in agent and
-gateway mode; tools that declare `permission: "allow"` can run without an
-interactive prompt, `permission: "deny"` is always refused, and omitted
-permission defaults to ask. An ask decision is skipped when no interactive or
-installed permission handler is available.
+## 📦 Packages
 
-Model refs with a registered provider prefix, such as `openai:gpt-4o` or
-`anthropic:claude-sonnet-4-5`, route explicitly to that provider. Use this form
-with `--model <ref>`, `DRAGON_MODEL`, or the dashboard Model field when a model
-name such as `owner/model` collides with a loaded provider id.
-Model provider config can be edited in the dashboard Models tab. It persists to
-`.dragon/config/providers.json` by default, or to `DRAGON_MODEL_CONFIG` when
-set. The dashboard never returns raw API keys from `model.config.get` or
-`model.config.save`; saved provider changes apply on the next CLI/Gateway
-start.
-Agent profiles can be edited in the dashboard Agents tab. They persist to
-`.dragon/config/agents.json` by default, or to `DRAGON_AGENT_CONFIG` when set.
-A selected profile can apply a default model, workspace, thinking level, and
-profile instructions to dashboard runs.
-CLI turns can also provide retryable model fallback candidates with
-`--model-fallback <ref>` or comma-separated `DRAGON_MODEL_FALLBACKS`; Dragon
-buffers fallback attempts so failed streamed output is not shown before the
-successful model response.
+| Package | Role |
+|---------|------|
+| `@dragon/core` | Agent turn runtime, lifecycle events, sessions, queues |
+| `@dragon/gateway` | WebSocket/HTTP control plane |
+| `@dragon/channels` | Chat-channel webhooks and Gateway delivery |
+| `@dragon/tools` | Tool registry, permissions, built-in contracts |
+| `@dragon/security` | Sensitive-key detection and secret redaction |
+| `@dragon/providers` | Model provider routing |
+| `@dragon/model-catalog` | Provider-scoped model metadata |
+| `@dragon/memory` | Markdown, SQLite, and search memory |
+| `@dragon/skills` | `SKILL.md` runtime and authoring |
+| `@dragon/cron` | Cron parsing, file-backed jobs, runner |
+| `@dragon/delegation` | Multi-agent plans, `delegation_run` tool |
+| `@dragon/plugin-sdk` | Public plugin API |
+| `@dragon/plugin-openai-compatible` | OpenAI-compatible provider plugin |
+| `@dragon/plugin-openrouter-compatible` | OpenRouter provider plugin |
+| `@dragon/plugin-anthropic-compatible` | Anthropic Messages + tool translation |
+| `@dragon/plugin-git-tools` | Read-only Git inspection tools |
+| `@dragon/test-suite` | TypeScript regression tests |
+| `@dragon/cli` | Command-line entrypoint |
 
-Agent mode exposes `delegation_run` as an allowlisted orchestration tool.
-Delegated turns run through the same runtime, tools, and permission engine as
-ordinary agent turns. Agent mode also exposes `skill_create`, `skill_improve`,
-memory candidate promotion, and memory candidate rejection as write tools for
-reviewable updates. `--allow-write` allows those tools alongside `file_patch`;
-otherwise they require interactive approval.
+---
 
-Security-sensitive diagnostics use shared Dragon redaction helpers for provider
-errors, permission summaries, and CLI metadata output.
+## 🖥️ CLI
 
-`providers.list` returns configured provider ids, display names, default models,
-provider-scoped model catalog entries, and tool-calling capability.
-`plugins.list` returns plugin name/version, tool summaries, provider summaries,
-memory backend summaries, and hook names. It intentionally omits plugin
-filesystem paths.
+```bash
+dragon chat [--session <id>] [--session-dir <path>] [--no-session] \
+  [--model <ref>] [--model-fallback <ref>] [--plugin-root <path>] <message>
 
-`tools.catalog` returns the runtime tool catalog. `tool.invoke` is deliberately
-stricter than the agent tool loop: direct Gateway invocation only runs explicit
-allowlisted, read-only tools that also pass the same permission engine. The
-default direct allowlist is the read-only Git inspection tools.
+dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] \
+  [--model <ref>] [--model-fallback <ref>] [--skill-root <path>] [--plugin-root <path>] \
+  [--memory-dir <path>] [--memory-backend <id>] <message>
 
-`@dragon/plugin-git-tools` is a reference tool plugin. It registers read-only
-`git_status`, `git_diff`, and `git_log` tools when loaded with
-`--plugin-root packages/plugin-git-tools`.
+dragon gateway [--host <host>] [--port <port>] [--secret <value>] \
+  [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] \
+  [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>]
 
-`@dragon/plugin-openrouter-compatible` registers an OpenRouter provider when
-`DRAGON_OPENROUTER_API_KEY` or `OPENROUTER_API_KEY` is set. It uses
-`https://openrouter.ai/api/v1` by default and forwards optional
-`DRAGON_OPENROUTER_REFERER` / `DRAGON_OPENROUTER_TITLE` attribution headers.
+dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] \
+  [--once] [--interval-ms <ms>]
+```
 
-Memory backend plugins can register durable memory stores. Dragon keeps the
-built-in `file` backend as the default. A built-in `sqlite` backend is also
-available for local SQLite/FTS search on Node runtimes that provide
-`node:sqlite`. Select any non-default backend explicitly with
-`--memory-backend <id>` or `DRAGON_MEMORY_BACKEND`.
+<details>
+<summary><strong>Agent capabilities</strong></summary>
 
-`dragon agent` and `dragon gateway` also read human-maintained Markdown memory
-from the selected memory directory when present: `USER.md`, `PROJECT.md`,
-`MEMORY.md`, and recent `notes/YYYY-MM-DD.md` files.
+- Read/search workspace files; conservative read-only shell allowlist
+- `sandbox_exec` (local, Docker, or SSH) with `inspect`, `versions`, `git-read`, `search-read`, `repo-read` profiles
+- `browser_snapshot`, `browser_form_submit`, `file_patch` (writes need approval unless `--allow-write`)
+- `/skills`, `/skills <query>`, `/skills load <name>` — local, no model required
+- `delegation_run`, `skill_create`, `skill_improve`, memory candidate promote/reject
 
-When session storage is enabled, older user/assistant messages beyond the
-recent history window can be injected as bounded compacted context instead of
-being silently lost.
+</details>
 
-Explicit remember-style requests are also captured as reviewable pending
-memory candidates under `.dragon/memory/candidates/YYYY-MM-DD.jsonl`. These
-candidates are not searched or injected until `memory_candidate_promote`
-promotes them into durable memory; `memory_candidate_reject` records an
-auditable rejection without storing the content.
+<details>
+<summary><strong>Models, plugins, memory</strong></summary>
 
-## Verification
+- Model refs: `openai:gpt-4o`, `anthropic:claude-sonnet-4-5`, etc. Config: `.dragon/config/providers.json`
+- Agent profiles: `.dragon/config/agents.json`
+- Fallbacks: `--model-fallback` or `DRAGON_MODEL_FALLBACKS`
+- Plugins: `.dragon/plugins`, `DRAGON_PLUGIN_ROOTS`, `--plugin-root`
+- Memory: `file` (default), `sqlite`, Markdown under `USER.md` / `PROJECT.md` / `MEMORY.md` / `notes/`
+- Candidates: `.dragon/memory/candidates/` — promote before search/injection
+
+</details>
+
+---
+
+## 🌐 Gateway
+
+`dragon gateway` serves a minimal dashboard at `/` with workspaces **Run**, **Models**, **Agents**, **Observe**, and **System**.
+
+| Surface | Purpose |
+|---------|---------|
+| `GET /health` | Health check |
+| `GET /events` | SSE stream (`sessionId` / `runId` filters) |
+| `GET /ws` | WebSocket RPC + events |
+| `POST /rpc` | `connect`, `health`, `agent`, `run.status`, `run.cancel`, `runs.list`, config, plugins, tools, memory, trajectory, cron, … |
+| `POST /channels/webhook` | Authenticated channel ingress (Telegram/Slack adapters in `@dragon/channels`) |
+
+<details>
+<summary><strong>RPC highlights</strong></summary>
+
+- `providers.list` — provider ids, models, tool-calling capability (no raw API keys returned)
+- `plugins.list` — names, tools, providers, memory backends, hooks (no filesystem paths)
+- `tools.catalog` / `tool.invoke` — direct invoke is stricter than the agent loop (read-only allowlist by default)
+- OpenAI/Anthropic-compatible plugins can stream true text deltas via `assistant_delta` events
+- Cron: `.dragon/cron/jobs.json`, `dragon cron --once` or long-running runner (also started by gateway by default)
+
+</details>
+
+---
+
+## 📚 Documentation
+
+| Topic | Link |
+|-------|------|
+| Architecture & reuse plan | [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [REUSE_PLAN.md](docs/REUSE_PLAN.md) |
+| Technical design | [TECHNICAL_ARCHITECTURE.md](docs/TECHNICAL_ARCHITECTURE.md) |
+| Per-module specs | [modules/README.md](docs/modules/README.md) |
+| Plugins | [PLUGINS.md](docs/PLUGINS.md) |
+| Deploy & smoke test | [DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+
+---
+
+## ✅ Verification
 
 ```bash
 corepack pnpm check
@@ -195,14 +201,18 @@ corepack pnpm test
 corepack pnpm smoke:gateway
 ```
 
-`corepack pnpm test` builds the workspace and runs the TypeScript regression
-suite for CLI skill slash commands, Gateway direct tools, Gateway WebSocket
-RPC/events, Gateway webhook channel delivery, Gateway cron RPC, channel
-adapters, memory candidate review, trajectory persistence/RPC, runtime
-tool-call loops, sandbox command planning/execution and policy profiles, cron
-schedule/delivery targets, browser snapshotting with form extraction,
-basic browser form submission,
-cron file stores/runners, delegation planning/running, runtime-backed
-delegation, the `delegation_run` agent tool, model catalog behavior, model
-provider plugin loading/routing, shared security redaction, and provider
-translation/streaming.
+`corepack pnpm test` covers CLI skills, Gateway RPC/WS/webhook/cron, channels, memory candidates, trajectories, sandbox, browser tools, delegation, model catalog, provider plugins, and security redaction.
+
+---
+
+## 📜 License
+
+[MIT License](./LICENSE) — Copyright (c) 2026 Dragon Authors
+
+---
+
+<div align="center">
+
+<sub>🐉 Built with TypeScript · Local-first · 潜龙在渊，智驭八方</sub>
+
+</div>

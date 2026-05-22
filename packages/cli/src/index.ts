@@ -16,6 +16,13 @@ import {
   type DragonTierHint,
   type ModelTierConfig,
 } from "@dragon/core";
+import {
+  loadGatewaySettingsFile,
+  parseModelTimeoutMsArg,
+  parseModelTimeoutMsFromEnv,
+  parseModelTimeoutSecArg,
+  resolveModelTimeoutMs,
+} from "./gateway-settings.js";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
 import { createRuntimeDelegationTool } from "@dragon/delegation";
 import {
@@ -270,6 +277,12 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
   const builtinProviders = await createBuiltinProviders();
   const permissionHandler = mode === "agent" ? createCliPermissionHandler() : undefined;
   const tierConfig = await loadPersistedTierConfig(configuredTierConfigPath());
+  const fileSettings = await loadGatewaySettingsFile();
+  const envModelTimeoutMs = parseModelTimeoutMsFromEnv();
+  const modelTimeoutMs = resolveModelTimeoutMs({
+    ...(envModelTimeoutMs !== undefined ? { envMs: envModelTimeoutMs } : {}),
+    ...(fileSettings.modelTimeoutMs !== undefined ? { fileMs: fileSettings.modelTimeoutMs } : {}),
+  });
   const runtimeBundle = await createRuntime({
     mode,
     allowWrite: parsed.allowWrite,
@@ -283,6 +296,7 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
     ...(builtinProviders.defaultProviderId ? { defaultProviderId: builtinProviders.defaultProviderId } : {}),
     ...(permissionHandler ? { permissionHandler } : {}),
     tierConfig,
+    modelTimeoutMs,
   });
   const runtime = runtimeBundle.runtime;
 
@@ -334,7 +348,7 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
 }
 
 async function runGateway(args: string[]): Promise<void> {
-  const parsed = parseGatewayArgs(args);
+  const parsed = await parseGatewayArgs(args);
   const modelConfigPath = configuredModelConfigPath();
   const agentConfigPath = configuredAgentConfigPath();
   const tierConfigPath = configuredTierConfigPath();
@@ -378,6 +392,7 @@ async function runGateway(args: string[]): Promise<void> {
     permissionHandler: approvalService.handler,
     denyAskWithoutHandler: true,
     ticketLifecycleHook: createTicketLifecycleHook({ ticketStore }),
+    modelTimeoutMs: parsed.modelTimeoutMs,
   });
   const gateway = createHttpGateway({
     runtime: runtimeBundle.runtime,
@@ -412,6 +427,7 @@ async function runGateway(args: string[]): Promise<void> {
     await gateway.start(parsed.config);
     const address = gateway.address();
     process.stderr.write(`Dragon gateway listening on ${address?.url ?? "unknown address"}\n`);
+    process.stderr.write(`Dragon model timeout: ${Math.round(parsed.modelTimeoutMs / 1000)}s\n`);
     await cronRunner.tick();
     cronRunner.start();
     await waitForShutdown();
@@ -474,6 +490,7 @@ interface RuntimeFactoryOptions {
     toolPolicyStore: ToolPolicyStore;
   };
   ticketLifecycleHook?: DragonLifecycleHook;
+  modelTimeoutMs?: number;
 }
 
 interface RuntimeFactoryResult {
@@ -608,6 +625,7 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
     const runtimeConfig: Parameters<typeof createDragonRuntime>[0] = {
       ...runtimeOptions,
       ...(defaultProvider?.defaultModel !== undefined ? { defaultModel: defaultProvider.defaultModel } : {}),
+      ...(options.modelTimeoutMs !== undefined ? { modelTimeoutMs: options.modelTimeoutMs } : {}),
       ...(options.tierConfig !== undefined ? { tierConfig: options.tierConfig } : {}),
       ...(options.orgStores
         ? {
@@ -649,6 +667,7 @@ interface ParsedGatewayArgs {
   memoryBackendId?: string;
   skillRoots: string[];
   pluginRoots: string[];
+  modelTimeoutMs: number;
 }
 
 interface ParsedCronArgs {
@@ -659,7 +678,9 @@ interface ParsedCronArgs {
   intervalMs?: number;
 }
 
-function parseGatewayArgs(args: string[]): ParsedGatewayArgs {
+async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
+  const fileSettings = await loadGatewaySettingsFile();
+  let modelTimeoutMsCli: number | undefined;
   const config: GatewayConfig = {};
   const envHost = process.env.DRAGON_GATEWAY_HOST?.trim();
   const envPort = process.env.DRAGON_GATEWAY_PORT?.trim();
@@ -841,8 +862,49 @@ function parseGatewayArgs(args: string[]): ParsedGatewayArgs {
       pluginRoots.push(resolveExistingPluginRoot(value));
       continue;
     }
+    if (arg === "--model-timeout-ms") {
+      const value = args[index + 1]?.trim();
+      if (!value) {
+        throw new Error("Usage: dragon gateway --model-timeout-ms <milliseconds>");
+      }
+      modelTimeoutMsCli = parseModelTimeoutMsArg(value, "--model-timeout-ms");
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith("--model-timeout-ms=")) {
+      const value = arg.slice("--model-timeout-ms=".length).trim();
+      if (!value) {
+        throw new Error("Usage: dragon gateway --model-timeout-ms=<milliseconds>");
+      }
+      modelTimeoutMsCli = parseModelTimeoutMsArg(value, "--model-timeout-ms");
+      continue;
+    }
+    if (arg === "--model-timeout-sec") {
+      const value = args[index + 1]?.trim();
+      if (!value) {
+        throw new Error("Usage: dragon gateway --model-timeout-sec <seconds>");
+      }
+      modelTimeoutMsCli = parseModelTimeoutSecArg(value, "--model-timeout-sec");
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith("--model-timeout-sec=")) {
+      const value = arg.slice("--model-timeout-sec=".length).trim();
+      if (!value) {
+        throw new Error("Usage: dragon gateway --model-timeout-sec=<seconds>");
+      }
+      modelTimeoutMsCli = parseModelTimeoutSecArg(value, "--model-timeout-sec");
+      continue;
+    }
     throw new Error(`Unknown gateway option: ${arg}`);
   }
+
+  const envModelTimeoutMs = parseModelTimeoutMsFromEnv();
+  const modelTimeoutMs = resolveModelTimeoutMs({
+    ...(modelTimeoutMsCli !== undefined ? { cliMs: modelTimeoutMsCli } : {}),
+    ...(envModelTimeoutMs !== undefined ? { envMs: envModelTimeoutMs } : {}),
+    ...(fileSettings.modelTimeoutMs !== undefined ? { fileMs: fileSettings.modelTimeoutMs } : {}),
+  });
 
   return {
     config,
@@ -853,6 +915,7 @@ function parseGatewayArgs(args: string[]): ParsedGatewayArgs {
     ...(memoryBackendId !== undefined ? { memoryBackendId } : {}),
     skillRoots: uniquePaths([...skillRoots, ...defaultSkillRoots]),
     pluginRoots: uniquePaths(pluginRoots),
+    modelTimeoutMs,
   };
 }
 
@@ -2364,7 +2427,7 @@ function printHelp(): void {
 Usage:
   dragon chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--plugin-root <path>] [--attach <path>]... <message>
   dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--attach <path>]... <message>
-  dragon gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>]
+  dragon gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>] [--model-timeout-ms <ms>] [--model-timeout-sec <sec>]
   dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] [--once] [--interval-ms <ms>]
 
 Provider:

@@ -34,6 +34,29 @@ export function RunWorkspace() {
   const chat = useRunChat(settings, selectedProfile);
 
   useEffect(() => {
+    if (settings.profileId) {
+      return;
+    }
+    const profiles = catalog.agentConfig.profiles;
+    const autoProfileId = catalog.agentConfig.defaultProfileId
+      ?? (profiles.length === 1 ? profiles[0]?.id : undefined);
+    if (!autoProfileId) {
+      return;
+    }
+    const profile = profiles.find(entry => entry.id === autoProfileId);
+    if (!profile) {
+      return;
+    }
+    setSettings(current => ({
+      ...current,
+      profileId: autoProfileId,
+      workspace: current.workspace || profile.workspace || "",
+      model: current.model || profile.defaultModel || "",
+      thinking: current.thinking || (profile.thinking as ThinkingLevel) || "",
+    }));
+  }, [catalog.agentConfig, settings.profileId]);
+
+  useEffect(() => {
     const defaultId = catalog.employeeCatalog.defaultEmployeeId;
     if (!defaultId || settings.employeeId) {
       return;
@@ -42,12 +65,16 @@ export function RunWorkspace() {
     if (!employee) {
       return;
     }
+    const employeeProfileExists = catalog.agentConfig.profiles.some(
+      entry => entry.id === employee.profileId,
+    );
     setSettings(current => ({
       ...current,
       employeeId: employee.id,
-      profileId: current.profileId || employee.profileId,
+      profileId: current.profileId
+        || (employeeProfileExists ? employee.profileId : ""),
     }));
-  }, [catalog.employeeCatalog, settings.employeeId]);
+  }, [catalog.agentConfig.profiles, catalog.employeeCatalog, settings.employeeId, settings.profileId]);
 
   const handleProfileChange = useCallback(
     (profileId: string) => {

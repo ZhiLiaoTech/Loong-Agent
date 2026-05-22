@@ -151,15 +151,24 @@ body {
   50% { opacity: 0; }
 }
 
+.chat-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .chat-meta {
+  flex-shrink: 0;
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--muted);
-  margin-bottom: 4px;
 }
 
 .chat-text {
+  flex: 1;
+  min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

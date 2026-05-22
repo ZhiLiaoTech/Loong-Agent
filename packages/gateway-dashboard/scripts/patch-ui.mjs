@@ -75,7 +75,7 @@ html = html.replace(
                 </div>
                 <div class="message-field">
                   <label for="message">Message</label>
-                  <textarea id="message" rows="4" placeholder="Ask Dragon…"></textarea>
+                  <textarea id="message" rows="4" placeholder="(drag .docx/.pdf/.xlsx/.png… here or paste an image)"></textarea>
                 </div>
                 <pre id="runOutput" class="result-box collapsed"></pre>`,
 );
@@ -106,10 +106,11 @@ if (!js.includes("function renderChatTranscript")) {
       }
       el.innerHTML = state.chatTurns.map(turn => {
         const role = turn.role === "user" ? "user" : "assistant";
+        const label = role === "assistant" ? "🤖" : "我";
         const streaming = turn.streaming ? " streaming" : "";
         return "<div class='chat-bubble " + role + streaming + "'>" +
-          "<div class='chat-meta'>" + escapeHtml(role) + "</div>" +
-          "<div class='chat-text'>" + escapeHtml(turn.text || "") + "</div>" +
+          "<div class='chat-line'><span class='chat-meta'>" + escapeHtml(label) + "：</span>" +
+          "<span class='chat-text'>" + escapeHtml(turn.text || "") + "</span></div>" +
         "</div>";
       }).join("");
       el.scrollTop = el.scrollHeight;

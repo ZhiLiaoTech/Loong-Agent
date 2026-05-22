@@ -50,7 +50,9 @@ export function RunInspector({
                 ? styles.statusError
                 : lastResult?.status === "cancelled"
                   ? styles.statusCancelled
-                  : undefined
+                  : lastResult?.status === "timeout"
+                    ? styles.statusTimeout
+                    : undefined
             }
           >
             {lastResult?.status || "—"}
