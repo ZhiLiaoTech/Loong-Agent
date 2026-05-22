@@ -78,7 +78,14 @@ Dashboard HTML 由独立包 `@dragon/gateway-dashboard` 构建（`dist/index.htm
 - `model-catalog-bridge.ts`：由 Gateway 启动时的 `providerSummaries` 构建 `DragonModelCatalog`；`#resolveAgentParams` 在 profile/员工路由之后调用 `applyModelCatalogToAgentParams`，将裸别名规范为 `provider:model`。
 - `channels-webhook.ts`：`assertDragonGatewayWebhookPayload` 与 `@dragon/channels` 的 `DragonGatewayWebhookPayload` 对齐；`/channels/webhook` 解析路径在 `parseGatewayWebhookParams` 中先校验再映射为 `GatewayAgentParams`。
 
-### 3.9 依赖
+### 3.9 模块拆分（进行中）
+
+- `gateway-http.ts` — `GatewayHttpError`、`badRequest`、`errorToStatusCode`
+- `gateway-parse.ts` — RPC 通用校验与文本规范化
+- `gateway-agent-types.ts` — Agent/Webhook 参数类型
+- `agent-params.ts` — `parseGatewayAgentParams`、`parseGatewayWebhookParams`、`toTurnInput`、`resolveAgentParamsWithProfile`
+
+### 3.10 依赖
 
 - `@dragon/core` — Runtime、事件类型
 - `@dragon/tools` — 工具目录与权限

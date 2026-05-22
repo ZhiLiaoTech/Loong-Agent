@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { applyProductionAuthDefaults, describeAuthStartup, requiresSharedSecret } from "./auth-policy.js";
-import { assertDragonGatewayWebhookPayload } from "./channels-webhook.js";
 import {
   applyModelCatalogToAgentParams,
   createModelCatalogFromProviderSummaries,
@@ -20,6 +19,27 @@ import {
   resolveQueryLoopMaxTurns,
   shouldContinueQueryLoop,
 } from "./query-loop.js";
+import {
+  parseGatewayAgentParams,
+  parseGatewayWebhookParams,
+  resolveAgentParamsWithProfile,
+  toTurnInput,
+} from "./agent-params.js";
+import type {
+  GatewayAgentConfig,
+  GatewayAgentConfigStore,
+  GatewayAgentParams,
+  GatewayAgentProfileConfig,
+  GatewayTierName,
+  GatewayWebhookParams,
+} from "./gateway-agent-types.js";
+import { badRequest, errorToStatusCode, GatewayHttpError } from "./gateway-http.js";
+import {
+  isDragonThinking,
+  isRecord,
+  normalizeBoundedText,
+  normalizeShortText,
+} from "./gateway-parse.js";
 import type {
   DragonAgentRuntime,
   DragonEvent,
@@ -77,40 +97,15 @@ export interface GatewayAddress {
   url: string;
 }
 
-export interface GatewayAgentAttachment {
-  kind: "image" | "text" | "document";
-  mimeType: string;
-  /** base64-encoded bytes */
-  data: string;
-  name?: string;
-  size?: number;
-}
-
-export interface GatewayAgentParams {
-  sessionId: string;
-  message: string;
-  source?: DragonSource;
-  workspace?: string;
-  model?: string;
-  thinking?: DragonThinkingLevel;
-  profileId?: string;
-  employeeId?: string;
-  systemPrompt?: string;
-  toolsEnabled?: boolean;
-  memoryEnabled?: boolean;
-  attachments?: GatewayAgentAttachment[];
-  tier?: GatewayTierName;
-  /** When true, Gateway may auto-continue turns (e.g. after tool-iteration cap). */
-  queryLoop?: boolean;
-  queryLoopMaxTurns?: number;
-  metadata?: Record<string, unknown>;
-}
-
-export interface GatewayWebhookParams extends GatewayAgentParams {
-  channel: string;
-  userId?: string;
-  threadId?: string;
-}
+export type {
+  GatewayAgentAttachment,
+  GatewayAgentConfig,
+  GatewayAgentParams,
+  GatewayAgentProfileConfig,
+  GatewayAgentConfigStore,
+  GatewayWebhookParams,
+  GatewayTierName,
+} from "./gateway-agent-types.js";
 
 export interface GatewayEventEnvelope {
   type: "event";
@@ -226,8 +221,6 @@ export interface GatewayModelConfigStore {
 
 // --- Tier scheduling ---------------------------------------------------------
 
-export type GatewayTierName = "fast" | "standard" | "deep";
-
 export type GatewayTierClassifierMode = "heuristic" | "fixed";
 
 export interface GatewayTierSpec {
@@ -306,32 +299,9 @@ export interface GatewayTierClassifyResult {
   resolvedMemoryEnabled?: boolean;
 }
 
-export interface GatewayAgentProfileConfig {
-  id: string;
-  name: string;
-  description?: string;
-  defaultModel?: string;
-  workspace?: string;
-  thinking?: DragonThinkingLevel;
-  memoryEnabled?: boolean;
-  toolsEnabled?: boolean;
-  systemPrompt?: string;
-}
-
-export interface GatewayAgentConfig {
-  profiles: readonly GatewayAgentProfileConfig[];
-  defaultProfileId?: string;
-  configPath?: string;
-}
-
 export interface GatewayAgentConfigSaveParams {
   profiles: readonly GatewayAgentProfileConfig[];
   defaultProfileId?: string;
-}
-
-export interface GatewayAgentConfigStore {
-  load(): Promise<GatewayAgentConfig>;
-  save(config: GatewayAgentConfigSaveParams): Promise<GatewayAgentConfig>;
 }
 
 export type GatewayEmployeeSaveParams = EmployeeRegistry;
@@ -1913,16 +1883,6 @@ export class HttpDragonGateway implements DragonGateway {
   }
 }
 
-function errorToStatusCode(error: unknown): number {
-  if (error instanceof GatewayHttpError) {
-    return error.statusCode;
-  }
-  if (error instanceof SyntaxError) {
-    return 400;
-  }
-  return 500;
-}
-
 function normalizeConfig(config: GatewayConfig): NormalizedGatewayConfig {
   const withAuth = applyProductionAuthDefaults({
     ...config,
@@ -2852,183 +2812,6 @@ function parseCronJobRemoveParams(value: unknown): GatewayCronJobRemoveParams {
   return { id: normalizeShortText(value.id, "id", 200) };
 }
 
-function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
-  if (!isRecord(value)) {
-    badRequest("Gateway agent request requires params.");
-  }
-  if (typeof value.sessionId !== "string" || !value.sessionId.trim()) {
-    badRequest("Gateway agent request requires non-empty sessionId.");
-  }
-  if (typeof value.message !== "string" || !value.message.trim()) {
-    badRequest("Gateway agent request requires non-empty message.");
-  }
-  const params: GatewayAgentParams = {
-    sessionId: value.sessionId,
-    message: value.message,
-  };
-  if (value.source !== undefined) {
-    if (!isDragonSource(value.source)) {
-      badRequest(`Invalid gateway agent source: ${String(value.source)}`);
-    }
-    params.source = value.source;
-  }
-  if (typeof value.workspace === "string") {
-    params.workspace = value.workspace;
-  }
-  if (typeof value.model === "string") {
-    params.model = value.model;
-  }
-  if (value.thinking !== undefined) {
-    if (!isDragonThinking(value.thinking)) {
-      badRequest(`Invalid gateway agent thinking: ${String(value.thinking)}`);
-    }
-    params.thinking = value.thinking;
-  }
-  if (typeof value.profileId === "string" && value.profileId.trim()) {
-    params.profileId = normalizeShortText(value.profileId, "profileId", 200);
-  }
-  if (typeof value.employeeId === "string" && value.employeeId.trim()) {
-    params.employeeId = normalizeShortText(value.employeeId, "employeeId", 200);
-  }
-  if (typeof value.systemPrompt === "string" && value.systemPrompt.trim()) {
-    params.systemPrompt = normalizeBoundedText(value.systemPrompt, "systemPrompt", 16_000);
-  }
-  if (value.toolsEnabled !== undefined) {
-    if (typeof value.toolsEnabled !== "boolean") {
-      badRequest("Gateway agent toolsEnabled must be a boolean.");
-    }
-    params.toolsEnabled = value.toolsEnabled;
-  }
-  if (value.memoryEnabled !== undefined) {
-    if (typeof value.memoryEnabled !== "boolean") {
-      badRequest("Gateway agent memoryEnabled must be a boolean.");
-    }
-    params.memoryEnabled = value.memoryEnabled;
-  }
-  if (value.metadata !== undefined) {
-    if (!isRecord(value.metadata)) {
-      badRequest("Gateway agent metadata must be an object.");
-    }
-    params.metadata = value.metadata;
-  }
-  if (value.attachments !== undefined) {
-    params.attachments = parseGatewayAttachments(value.attachments);
-  }
-  if (value.tier !== undefined) {
-    if (value.tier !== "fast" && value.tier !== "standard" && value.tier !== "deep") {
-      badRequest(`Invalid gateway agent tier: ${String(value.tier)}`);
-    }
-    params.tier = value.tier;
-  }
-  if (value.queryLoop === true) {
-    params.queryLoop = true;
-  } else if (isRecord(value.queryLoop)) {
-    params.queryLoop = value.queryLoop.enabled !== false;
-    if (typeof value.queryLoop.maxTurns === "number" && Number.isFinite(value.queryLoop.maxTurns)) {
-      params.queryLoopMaxTurns = Math.min(10, Math.max(1, Math.floor(value.queryLoop.maxTurns)));
-    }
-  }
-  if (typeof value.queryLoopMaxTurns === "number" && Number.isFinite(value.queryLoopMaxTurns)) {
-    params.queryLoopMaxTurns = Math.min(10, Math.max(1, Math.floor(value.queryLoopMaxTurns)));
-  }
-  return params;
-}
-
-const GATEWAY_MAX_ATTACHMENTS = 10;
-const GATEWAY_MAX_ATTACHMENT_BASE64 = 14 * 1024 * 1024; // ~10MB raw
-
-function parseGatewayAttachments(value: unknown): GatewayAgentAttachment[] {
-  if (!Array.isArray(value)) {
-    badRequest("Gateway agent attachments must be an array.");
-  }
-  if (value.length > GATEWAY_MAX_ATTACHMENTS) {
-    badRequest(`Gateway agent attachments exceed cap of ${GATEWAY_MAX_ATTACHMENTS}.`);
-  }
-  const out: GatewayAgentAttachment[] = [];
-  for (const [index, raw] of value.entries()) {
-    if (!isRecord(raw)) {
-      badRequest(`Gateway agent attachment ${index + 1} must be an object.`);
-    }
-    if (raw.kind !== "image" && raw.kind !== "text" && raw.kind !== "document") {
-      badRequest(`Gateway agent attachment ${index + 1} kind must be image, text, or document.`);
-    }
-    if (typeof raw.mimeType !== "string" || !raw.mimeType.trim()) {
-      badRequest(`Gateway agent attachment ${index + 1} requires mimeType.`);
-    }
-    if (typeof raw.data !== "string" || raw.data.length === 0) {
-      badRequest(`Gateway agent attachment ${index + 1} requires base64 data.`);
-    }
-    if (raw.data.length > GATEWAY_MAX_ATTACHMENT_BASE64) {
-      badRequest(`Gateway agent attachment ${index + 1} exceeds size cap.`);
-    }
-    const att: GatewayAgentAttachment = {
-      kind: raw.kind,
-      mimeType: raw.mimeType.trim(),
-      data: raw.data,
-    };
-    if (typeof raw.name === "string" && raw.name.trim()) {
-      att.name = normalizeShortText(raw.name, "attachment name", 200);
-    }
-    if (typeof raw.size === "number" && Number.isFinite(raw.size) && raw.size >= 0) {
-      att.size = Math.floor(raw.size);
-    }
-    out.push(att);
-  }
-  return out;
-}
-
-function parseGatewayWebhookParams(value: unknown): GatewayWebhookParams {
-  if (!isRecord(value)) {
-    badRequest("Webhook channel request requires a JSON object.");
-  }
-  try {
-    assertDragonGatewayWebhookPayload(value);
-  } catch (error) {
-    badRequest(error instanceof Error ? error.message : String(error));
-  }
-  const channel = typeof value.channel === "string" && value.channel.trim()
-    ? normalizeShortText(value.channel, "channel", 120)
-    : "webhook";
-  const params = parseGatewayAgentParams({
-    ...value,
-    source: value.source ?? "web",
-    metadata: mergeWebhookMetadata(value.metadata, channel, value.userId, value.threadId),
-  });
-  return {
-    ...params,
-    channel,
-    ...(typeof value.userId === "string" && value.userId.trim()
-      ? { userId: normalizeShortText(value.userId, "userId", 200) }
-      : {}),
-    ...(typeof value.threadId === "string" && value.threadId.trim()
-      ? { threadId: normalizeShortText(value.threadId, "threadId", 200) }
-      : {}),
-  };
-}
-
-function mergeWebhookMetadata(
-  metadata: unknown,
-  channel: string,
-  userId: unknown,
-  threadId: unknown,
-): Record<string, unknown> {
-  if (metadata !== undefined && !isRecord(metadata)) {
-    badRequest("Webhook channel metadata must be an object.");
-  }
-  const merged: Record<string, unknown> = {
-    ...(metadata ?? {}),
-    channel,
-    channelSurface: "webhook",
-  };
-  if (typeof userId === "string" && userId.trim()) {
-    merged.channelUserId = normalizeShortText(userId, "userId", 200);
-  }
-  if (typeof threadId === "string" && threadId.trim()) {
-    merged.channelThreadId = normalizeShortText(threadId, "threadId", 200);
-  }
-  return merged;
-}
-
 function parseEventStreamFilters(url: URL): EventStreamFilters {
   const filters: EventStreamFilters = {};
   const sessionId = url.searchParams.get("sessionId")?.trim();
@@ -3088,84 +2871,6 @@ function summarizeTurnResult(result: DragonTurnResult): GatewayRunResultSummary 
 
 function previewMessage(message: string): string {
   return message.length > 160 ? `${message.slice(0, 160)}... [${message.length} chars]` : message;
-}
-
-function badRequest(message: string): never {
-  throw new GatewayHttpError(400, message);
-}
-
-async function resolveAgentParamsWithProfile(
-  params: GatewayAgentParams,
-  store: GatewayAgentConfigStore | undefined,
-): Promise<GatewayAgentParams> {
-  if (!store) {
-    return params;
-  }
-  const config = await store.load();
-  const profileId = params.profileId
-    ?? (typeof params.metadata?.profileId === "string" ? params.metadata.profileId : undefined)
-    ?? config.defaultProfileId;
-  if (!profileId) {
-    return params;
-  }
-  const profile = config.profiles.find(entry => entry.id === profileId);
-  if (!profile) {
-    return params;
-  }
-  return {
-    ...params,
-    ...(params.model === undefined && profile.defaultModel !== undefined ? { model: profile.defaultModel } : {}),
-    ...(params.workspace === undefined && profile.workspace !== undefined ? { workspace: profile.workspace } : {}),
-    ...(params.thinking === undefined && profile.thinking !== undefined ? { thinking: profile.thinking } : {}),
-    ...(params.systemPrompt === undefined && profile.systemPrompt !== undefined ? { systemPrompt: profile.systemPrompt } : {}),
-    ...(params.toolsEnabled === undefined && profile.toolsEnabled !== undefined ? { toolsEnabled: profile.toolsEnabled } : {}),
-    ...(params.memoryEnabled === undefined && profile.memoryEnabled !== undefined ? { memoryEnabled: profile.memoryEnabled } : {}),
-  };
-}
-
-function toTurnInput(params: GatewayAgentParams): DragonTurnInput {
-  const input: DragonTurnInput = {
-    sessionId: params.sessionId,
-    source: params.source ?? "gateway",
-    message: params.message,
-  };
-  if (params.workspace !== undefined) {
-    input.workspace = params.workspace;
-  }
-  if (params.model !== undefined) {
-    input.model = params.model;
-  }
-  if (params.thinking !== undefined) {
-    input.thinking = params.thinking;
-  }
-  if (params.systemPrompt !== undefined) {
-    input.systemPrompt = params.systemPrompt;
-  }
-  if (params.toolsEnabled !== undefined) {
-    input.toolsEnabled = params.toolsEnabled;
-  }
-  if (params.memoryEnabled !== undefined) {
-    input.memoryEnabled = params.memoryEnabled;
-  }
-  if (params.attachments !== undefined && params.attachments.length > 0) {
-    input.attachments = params.attachments.map(a => ({
-      kind: a.kind,
-      mimeType: a.mimeType,
-      data: a.data,
-      ...(a.name !== undefined ? { name: a.name } : {}),
-      ...(a.size !== undefined ? { size: a.size } : {}),
-    }));
-  }
-  if (params.tier !== undefined) {
-    input.tier = params.tier;
-  }
-  if (params.queryLoop !== undefined) {
-    input.queryLoop = params.queryLoop;
-  }
-  if (params.metadata !== undefined) {
-    input.metadata = params.metadata;
-  }
-  return input;
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
@@ -3410,14 +3115,6 @@ function applyCors(request: IncomingMessage, response: ServerResponse): void {
   response.setHeader("access-control-allow-headers", "content-type,authorization,x-dragon-secret");
 }
 
-function isDragonSource(value: unknown): value is DragonSource {
-  return ["cli", "gateway", "web", "ide", "cron", "api"].includes(String(value));
-}
-
-function isDragonThinking(value: unknown): value is DragonThinkingLevel {
-  return ["none", "low", "medium", "high"].includes(String(value));
-}
-
 function isTurnStatus(value: unknown): value is DragonTurnResult["status"] {
   return ["ok", "error", "cancelled", "timeout"].includes(String(value));
 }
@@ -3432,28 +3129,6 @@ function isMemoryScope(value: unknown): value is NonNullable<GatewayMemoryCandid
 
 function isGatewayModelProviderType(value: unknown): value is GatewayModelProviderType {
   return value === "openai-compatible" || value === "anthropic";
-}
-
-function normalizeShortText(value: string, fieldName: string, maxChars: number): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    badRequest(`${fieldName} cannot be empty.`);
-  }
-  if (trimmed.length > maxChars) {
-    badRequest(`${fieldName} must be ${maxChars} characters or fewer.`);
-  }
-  return trimmed;
-}
-
-function normalizeBoundedText(value: string, fieldName: string, maxChars: number): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    badRequest(`${fieldName} cannot be empty.`);
-  }
-  if (trimmed.length > maxChars) {
-    badRequest(`${fieldName} must be ${maxChars} characters or fewer.`);
-  }
-  return trimmed;
 }
 
 function normalizeDate(value: string, fieldName: string): string {
@@ -3950,20 +3625,7 @@ function trimBounded(value: string, maxChars: number): string {
   return trimmed.length > maxChars ? `${trimmed.slice(0, Math.max(0, maxChars - 14))}... [truncated]` : trimmed;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-class GatewayHttpError extends Error {
-  constructor(
-    readonly statusCode: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "GatewayHttpError";
-  }
-}
-
+export { GatewayHttpError } from "./gateway-http.js";
 export {
   applyModelCatalogToAgentParams,
   createModelCatalogFromProviderSummaries,
@@ -3978,3 +3640,9 @@ export {
   resolveQueryLoopMaxTurns,
   shouldContinueQueryLoop,
 } from "./query-loop.js";
+export {
+  parseGatewayAgentParams,
+  parseGatewayWebhookParams,
+  resolveAgentParamsWithProfile,
+  toTurnInput,
+} from "./agent-params.js";
