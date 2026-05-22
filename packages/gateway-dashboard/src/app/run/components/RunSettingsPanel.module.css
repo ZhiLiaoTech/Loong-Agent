@@ -41,6 +41,18 @@
   grid-column: 1 / -1;
 }
 
+.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+}
+
+.checkbox input {
+  width: auto;
+  margin: 0;
+}
+
 @media (max-width: 720px) {
   .grid {
     grid-template-columns: 1fr;

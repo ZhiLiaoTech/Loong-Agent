@@ -258,6 +258,9 @@
         if (model) params.model = model;
         const thinking = $("thinking").value.trim() || profile?.thinking || "";
         if (thinking) params.thinking = thinking;
+        if ($("queryLoop")?.checked) {
+          params.queryLoop = true;
+        }
         state.chatTurns.push({ role: "assistant", text: "", streaming: true });
         trimChatTurns();
         renderChatTranscript();

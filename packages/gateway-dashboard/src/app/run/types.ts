@@ -19,6 +19,8 @@ export interface RunSettings {
   model: string;
   thinking: ThinkingLevel;
   workspace: string;
+  /** Gateway query loop: auto-continue after tool-iteration cap. */
+  queryLoop: boolean;
 }
 
 export interface DigitalEmployeeSummary {

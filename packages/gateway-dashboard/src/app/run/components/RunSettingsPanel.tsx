@@ -107,6 +107,14 @@ export function RunSettingsPanel({
             autoComplete="off"
           />
         </label>
+        <label className={`${styles.field} ${styles.full} ${styles.checkbox}`}>
+          <input
+            type="checkbox"
+            checked={settings.queryLoop}
+            onChange={event => onChange({ queryLoop: event.target.checked })}
+          />
+          <span>Auto-continue (query loop after tool limit)</span>
+        </label>
       </div>
     </details>
   );

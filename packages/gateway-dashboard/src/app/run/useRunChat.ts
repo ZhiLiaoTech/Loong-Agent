@@ -376,6 +376,9 @@ export function useRunChat(
       if (settings.thinking) {
         params.thinking = settings.thinking;
       }
+      if (settings.queryLoop) {
+        params.queryLoop = true;
+      }
       if (attachments.length > 0) {
         params.attachments = attachments.map(a => ({
           kind: a.kind,

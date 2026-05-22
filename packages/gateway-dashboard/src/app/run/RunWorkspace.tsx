@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS: RunSettings = {
   model: "",
   thinking: "",
   workspace: "",
+  queryLoop: false,
 };
 
 export function RunWorkspace() {
