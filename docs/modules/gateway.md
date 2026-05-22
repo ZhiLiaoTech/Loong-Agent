@@ -33,9 +33,16 @@ Dashboard HTML 由独立包 `@dragon/gateway-dashboard` 构建（`dist/index.htm
 
 ### 3.2 RPC 能力（connect 动态列举）
 
-`health`、`connect`、`agent`、`run.status`、`run.cancel`、`runs.list`、`providers.list`、`model.config.*`、`agent.config.*`、`plugins.list`、`tools.catalog`、`tool.invoke`、`memory.candidates.*`、`trajectory.*`、`cron.*`（按注入 store/runner 启用）。
+`health`、`connect`、`agent`、`agent.wait`、`run.status`、`run.cancel`、`runs.list`、`providers.list`、`model.config.*`、`agent.config.*`、`plugins.list`、`tools.catalog`、`tool.invoke`、`memory.candidates.*`、`trajectory.*`、`cron.*`（按注入 store/runner 启用）。
 
-### 3.3 Session Lane
+### 3.3 SessionTurnCoordinator
+
+- 模块：`packages/gateway/src/session-coordinator.ts`
+- 同 `sessionId` 已有回合在执行时，后续 `agent` RPC 返回 `{ queued: true, queueTurnId, position }`；客户端用 `agent.wait` 等待完成。
+- Webhook/Cron 投递在内部对排队回合自动 `agent.wait`，保持通道语义阻塞完成。
+- 与 `#runInLane` 配合：队列 drain 仍串行执行，不并发踩踏 transcript。
+
+### 3.4 Session Lane
 
 ```typescript
 // packages/gateway/src/index.ts — #runInLane
@@ -44,7 +51,7 @@ Dashboard HTML 由独立包 `@dragon/gateway-dashboard` 构建（`dist/index.htm
 
 保证同会话 Agent 请求不并发，避免 transcript 交错。
 
-### 3.4 直连工具（tool.invoke）
+### 3.5 直连工具（tool.invoke）
 
 默认白名单：`git_status`、`git_diff`、`git_log`。额外条件：
 
@@ -52,16 +59,25 @@ Dashboard HTML 由独立包 `@dragon/gateway-dashboard` 构建（`dist/index.htm
 - 能力不含 `write` / `network` / `memory` / `custom`
 - 通过注入的 `ToolPermissionEngine`（Gateway 默认 deny 未知工具）
 
-### 3.5 认证
+### 3.6 认证与速率限制
 
-`#isAuthorized`：仅当 `authMode === "shared-secret"` 时校验 `Authorization: Bearer` 或 `x-dragon-secret`；**默认无认证**。
+- `auth-policy.ts`：绑定 `0.0.0.0` / 非 loopback 时默认要求 `shared-secret`（可自动生成并打日志）；`127.0.0.1` 仍允许 `authMode: none`。
+- `rate-limit.ts`：对 `/rpc`、`/channels/webhook`、`/events`、`/ws`、`/health` 按客户端 IP 滑动窗口限流。
+- `#isAuthorized`：`shared-secret` 时校验 `Authorization: Bearer` 或 `x-dragon-secret`。
+- 非 loopback 且无认证时，`tool.invoke` 返回 403。
 
-### 3.6 依赖
+### 3.7 模型目录与 Channel Webhook
+
+- `model-catalog-bridge.ts`：由 Gateway 启动时的 `providerSummaries` 构建 `DragonModelCatalog`；`#resolveAgentParams` 在 profile/员工路由之后调用 `applyModelCatalogToAgentParams`，将裸别名规范为 `provider:model`。
+- `channels-webhook.ts`：`assertDragonGatewayWebhookPayload` 与 `@dragon/channels` 的 `DragonGatewayWebhookPayload` 对齐；`/channels/webhook` 解析路径在 `parseGatewayWebhookParams` 中先校验再映射为 `GatewayAgentParams`。
+
+### 3.8 依赖
 
 - `@dragon/core` — Runtime、事件类型
 - `@dragon/tools` — 工具目录与权限
 - `@dragon/cron` — 类型与 Runner（由 CLI 注入）
-- `@dragon/model-catalog` — 能力/状态类型
+- `@dragon/channels` — Webhook payload 类型与出站投递
+- `@dragon/model-catalog` — 能力/状态类型与 Catalog 解析
 
 ## 4. 集成方式
 

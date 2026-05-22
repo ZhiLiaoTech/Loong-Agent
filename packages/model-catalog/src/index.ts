@@ -111,6 +111,35 @@ export function createModelCatalog(entries: readonly DragonModelCatalogEntry[] =
   return new DefaultDragonModelCatalog(entries);
 }
 
+export interface ModelRefCarrier {
+  model?: string;
+}
+
+export function createModelCatalogFromProviders(
+  providers: readonly DragonModelProviderCatalogSource[],
+): DragonModelCatalog {
+  return createModelCatalog(catalogEntriesFromProviders(providers));
+}
+
+/** Canonicalize bare model ids and aliases to `provider:model` when unambiguous. */
+export function applyModelCatalogToParams<T extends ModelRefCarrier>(
+  params: T,
+  catalog: DragonModelCatalog | undefined,
+): T {
+  const modelRef = params.model?.trim();
+  if (!modelRef || !catalog) {
+    return params;
+  }
+  const resolved = catalog.resolve(modelRef);
+  if (!resolved) {
+    return params;
+  }
+  return {
+    ...params,
+    model: `${resolved.providerId}:${resolved.id}`,
+  };
+}
+
 export function catalogEntriesFromProviders(
   providers: readonly DragonModelProviderCatalogSource[],
 ): readonly DragonModelCatalogEntry[] {

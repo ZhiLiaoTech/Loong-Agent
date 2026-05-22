@@ -1,7 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
+import { applyProductionAuthDefaults, describeAuthStartup, requiresSharedSecret } from "./auth-policy.js";
+import { assertDragonGatewayWebhookPayload } from "./channels-webhook.js";
+import {
+  applyModelCatalogToAgentParams,
+  createModelCatalogFromProviderSummaries,
+} from "./model-catalog-bridge.js";
+import type { DragonModelCapabilities, DragonModelCatalog, DragonModelStatus } from "@dragon/model-catalog";
 import { getDashboardHtml, readDashboardAsset } from "./dashboard.js";
+import { classifyHttpRoute, clientRateLimitKey, SlidingWindowRateLimiter } from "./rate-limit.js";
+import {
+  isAgentTurnQueuedPayload,
+  SessionTurnCoordinator,
+  type AgentTurnResultPayload,
+} from "./session-coordinator.js";
 import type {
   DragonAgentRuntime,
   DragonEvent,
@@ -12,7 +25,6 @@ import type {
   DragonTurnResult,
 } from "@dragon/core";
 import { parseCronSchedule, type DragonCronJob, type DragonCronJobStore, type DragonCronRunner } from "@dragon/cron";
-import type { DragonModelCapabilities, DragonModelStatus } from "@dragon/model-catalog";
 import {
   buildKpiSnapshot,
   mergeEmployeeIntoAgentParams,
@@ -401,6 +413,7 @@ export interface GatewayCronJobRemoveParams {
 export type GatewayRequest =
   | { type: "connect"; id: string; params?: Record<string, unknown> }
   | { type: "agent"; id: string; params: GatewayAgentParams }
+  | { type: "agent.wait"; id: string; params: { queueTurnId: string } }
   | { type: "health"; id: string }
   | { type: "run.status"; id: string; params: { runId: string } }
   | { type: "run.cancel"; id: string; params: { runId: string; reason?: string } }
@@ -547,6 +560,7 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #trajectoryStore: GatewayTrajectoryStore | undefined;
   readonly #plugins: readonly GatewayPluginSummary[];
   readonly #providers: readonly GatewayProviderSummary[];
+  readonly #modelCatalog: DragonModelCatalog | undefined;
   readonly #modelConfigStore: GatewayModelConfigStore | undefined;
   readonly #agentConfigStore: GatewayAgentConfigStore | undefined;
   readonly #orgStore: OrgStore | undefined;
@@ -563,6 +577,8 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #directToolNames: ReadonlySet<string>;
   readonly #name: string;
   readonly #lanes = new Map<string, Promise<void>>();
+  readonly #sessionCoordinator = new SessionTurnCoordinator();
+  readonly #rateLimiter = new SlidingWindowRateLimiter();
   readonly #eventClients = new Map<string, EventStreamClient>();
   readonly #webSocketClients = new Map<string, WebSocketClient>();
   readonly #runSessions = new Map<string, string>();
@@ -582,6 +598,10 @@ export class HttpDragonGateway implements DragonGateway {
     this.#trajectoryStore = options.trajectoryStore;
     this.#plugins = normalizePluginSummaries(options.pluginSummaries ?? []);
     this.#providers = normalizeProviderSummaries(options.providerSummaries ?? []);
+    this.#modelCatalog =
+      this.#providers.length > 0
+        ? createModelCatalogFromProviderSummaries(this.#providers)
+        : undefined;
     this.#modelConfigStore = options.modelConfigStore;
     this.#agentConfigStore = options.agentConfigStore;
     this.#orgStore = options.orgStore;
@@ -641,9 +661,13 @@ export class HttpDragonGateway implements DragonGateway {
     this.#runtimeUnsubscribe = this.#runtime.subscribe(event => {
       this.#broadcastRuntimeEvent(event);
     });
-    if (normalized.authMode === "none") {
+    const authNotice = describeAuthStartup(normalized);
+    if (authNotice) {
+      console.error(`[${this.#name}] ${authNotice.replace(/^\[dragon-gateway\] /, "")}`);
+    }
+    if (normalized.authMode === "shared-secret" && normalized.sharedSecret && !config.sharedSecret && requiresSharedSecret(normalized.host)) {
       console.error(
-        `[${this.#name}] WARNING: Gateway auth is disabled. Set sharedSecret (or authMode: "shared-secret") before exposing this server beyond localhost.`,
+        `[${this.#name}] Auto-generated shared secret for non-loopback bind (${normalized.host}): ${normalized.sharedSecret}`,
       );
     }
   }
@@ -700,7 +724,7 @@ export class HttpDragonGateway implements DragonGateway {
       const registry = await this.#employeeStore.load();
       const employee = registry.employees.find(entry => entry.id === explicitEmployeeId);
       if (!employee) {
-        return resolved;
+        return applyModelCatalogToAgentParams(resolved, this.#modelCatalog);
       }
       if (employee.status !== "active") {
         throw new GatewayHttpError(400, `Employee "${explicitEmployeeId}" is inactive.`);
@@ -709,7 +733,8 @@ export class HttpDragonGateway implements DragonGateway {
     }
 
     // Profile fields (workspace, model, …) must merge after profileId is set by employee routing.
-    return resolveAgentParamsWithProfile(resolved, this.#agentConfigStore);
+    const merged = await resolveAgentParamsWithProfile(resolved, this.#agentConfigStore);
+    return applyModelCatalogToAgentParams(merged, this.#modelCatalog);
   }
 
   async #handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -737,6 +762,12 @@ export class HttpDragonGateway implements DragonGateway {
         return;
       }
       writeJson(response, 404, { ok: false, error: "Not found." });
+      return;
+    }
+
+    const rateRoute = classifyHttpRoute(request.method, url.pathname);
+    if (rateRoute && !this.#rateLimiter.tryConsume(rateRoute, clientRateLimitKey(request))) {
+      writeJson(response, 429, { ok: false, error: "Rate limit exceeded." });
       return;
     }
 
@@ -775,6 +806,10 @@ export class HttpDragonGateway implements DragonGateway {
     const url = new URL(request.url ?? "/", "http://dragon.local");
     if (url.pathname !== "/ws") {
       rejectWebSocketUpgrade(socket, 404, "Not Found");
+      return;
+    }
+    if (!this.#rateLimiter.tryConsume("websocket", clientRateLimitKey(request))) {
+      rejectWebSocketUpgrade(socket, 429, "Too Many Requests");
       return;
     }
     if (!this.#isAuthorized(request)) {
@@ -939,6 +974,7 @@ export class HttpDragonGateway implements DragonGateway {
               "health",
               "connect",
               "agent.run",
+              "agent.wait",
               "events.in-response",
               "events.sse",
               "events.websocket",
@@ -1074,6 +1110,10 @@ export class HttpDragonGateway implements DragonGateway {
       if (request.type === "cron.tick") {
         return { type: "response", id: request.id, ok: true, payload: await this.#tickCron() };
       }
+      if (request.type === "agent.wait") {
+        const payload = await this.#sessionCoordinator.waitForQueuedTurn(request.params.queueTurnId);
+        return { type: "response", id: request.id, ok: true, payload };
+      }
       const payload = await this.#runAgent(request.params);
       return { type: "response", id: request.id, ok: true, payload };
     } catch (error) {
@@ -1086,9 +1126,17 @@ export class HttpDragonGateway implements DragonGateway {
     }
   }
 
-  async #runAgent(params: GatewayAgentParams): Promise<{ result: unknown; events: DragonEvent[] }> {
+  async #runAgent(params: GatewayAgentParams): Promise<AgentTurnResultPayload | { queued: true; queueTurnId: string; sessionId: string; position: number }> {
     const resolvedParams = await this.#resolveAgentParams(params);
-    const input = toTurnInput(resolvedParams);
+    return await this.#sessionCoordinator.runOrEnqueue(
+      resolvedParams.sessionId,
+      resolvedParams,
+      agentParams => this.#executeAgentTurn(agentParams),
+    );
+  }
+
+  async #executeAgentTurn(params: GatewayAgentParams): Promise<AgentTurnResultPayload> {
+    const input = toTurnInput(params);
     return await this.#runInLane(input.sessionId, async () => {
       const events: DragonEvent[] = [];
       const controller = new AbortController();
@@ -1132,10 +1180,14 @@ export class HttpDragonGateway implements DragonGateway {
 
   async #runWebhook(value: unknown): Promise<{ channel: string; result: unknown; events: DragonEvent[] }> {
     const webhook = parseGatewayWebhookParams(value);
-    const payload = await this.#runAgent(webhook);
+    const outcome = await this.#runAgent(webhook);
+    const completed: AgentTurnResultPayload = isAgentTurnQueuedPayload(outcome)
+      ? await this.#sessionCoordinator.waitForQueuedTurn(outcome.queueTurnId)
+      : outcome;
     return {
       channel: webhook.channel,
-      ...payload,
+      result: completed.result,
+      events: completed.events,
     };
   }
 
@@ -1718,6 +1770,13 @@ export class HttpDragonGateway implements DragonGateway {
   }
 
   async #invokeTool(params: GatewayToolInvokeParams): Promise<unknown> {
+    const config = this.#config;
+    if (config?.authMode === "none" && config.host && requiresSharedSecret(config.host)) {
+      throw new GatewayHttpError(
+        403,
+        "Direct tool.invoke requires shared-secret auth when Gateway is not bound to loopback.",
+      );
+    }
     const tool = this.#toolRegistry.get(params.toolName);
     if (!tool) {
       throw new Error(`Unknown tool: ${params.toolName}`);
@@ -1823,17 +1882,21 @@ function errorToStatusCode(error: unknown): number {
 }
 
 function normalizeConfig(config: GatewayConfig): NormalizedGatewayConfig {
-  const authMode = config.authMode ?? (config.sharedSecret ? "shared-secret" : "none");
-  if (authMode === "shared-secret" && !config.sharedSecret) {
+  const withAuth = applyProductionAuthDefaults({
+    ...config,
+    host: config.host ?? DEFAULT_HOST,
+  });
+  const authMode = withAuth.authMode ?? (withAuth.sharedSecret ? "shared-secret" : "none");
+  if (authMode === "shared-secret" && !withAuth.sharedSecret) {
     throw new Error("Gateway shared-secret auth requires sharedSecret.");
   }
   const normalized: NormalizedGatewayConfig = {
-    host: config.host ?? DEFAULT_HOST,
+    host: withAuth.host ?? DEFAULT_HOST,
     port: normalizePort(config.port),
     authMode,
   };
-  if (config.sharedSecret !== undefined) {
-    normalized.sharedSecret = config.sharedSecret;
+  if (withAuth.sharedSecret !== undefined) {
+    normalized.sharedSecret = withAuth.sharedSecret;
   }
   return normalized;
 }
@@ -1867,6 +1930,16 @@ function parseGatewayRequest(value: unknown): GatewayRequest {
       type: "agent",
       id: value.id,
       params: parseGatewayAgentParams(value.params),
+    };
+  }
+  if (value.type === "agent.wait") {
+    if (!isRecord(value.params) || typeof value.params.queueTurnId !== "string" || !value.params.queueTurnId.trim()) {
+      badRequest("agent.wait requires params.queueTurnId.");
+    }
+    return {
+      type: "agent.wait",
+      id: value.id,
+      params: { queueTurnId: value.params.queueTurnId.trim() },
     };
   }
   if (value.type === "run.status") {
@@ -2855,6 +2928,11 @@ function parseGatewayWebhookParams(value: unknown): GatewayWebhookParams {
   if (!isRecord(value)) {
     badRequest("Webhook channel request requires a JSON object.");
   }
+  try {
+    assertDragonGatewayWebhookPayload(value);
+  } catch (error) {
+    badRequest(error instanceof Error ? error.message : String(error));
+  }
   const channel = typeof value.channel === "string" && value.channel.trim()
     ? normalizeShortText(value.channel, "channel", 120)
     : "webhook";
@@ -2967,12 +3045,16 @@ async function resolveAgentParamsWithProfile(
   params: GatewayAgentParams,
   store: GatewayAgentConfigStore | undefined,
 ): Promise<GatewayAgentParams> {
-  const profileId = params.profileId
-    ?? (typeof params.metadata?.profileId === "string" ? params.metadata.profileId : undefined);
-  if (!profileId || !store) {
+  if (!store) {
     return params;
   }
   const config = await store.load();
+  const profileId = params.profileId
+    ?? (typeof params.metadata?.profileId === "string" ? params.metadata.profileId : undefined)
+    ?? config.defaultProfileId;
+  if (!profileId) {
+    return params;
+  }
   const profile = config.profiles.find(entry => entry.id === profileId);
   if (!profile) {
     return params;
@@ -3825,3 +3907,12 @@ class GatewayHttpError extends Error {
     this.name = "GatewayHttpError";
   }
 }
+
+export {
+  applyModelCatalogToAgentParams,
+  createModelCatalogFromProviderSummaries,
+  type AgentParamsWithOptionalModel,
+  type GatewayProviderCatalogSource,
+  type GatewayProviderModelCatalogSource,
+} from "./model-catalog-bridge.js";
+export { assertDragonGatewayWebhookPayload, type DragonGatewayWebhookPayload } from "./channels-webhook.js";

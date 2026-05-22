@@ -25,6 +25,7 @@ export {
 export {
   createBrowserFormSubmitTool,
   createBrowserSnapshotTool,
+  validateBrowserTargetUrl,
   type BrowserFormSubmitInput,
   type BrowserFormSubmitOutput,
   type BrowserSnapshotForm,
@@ -66,3 +67,12 @@ export {
   isPathInside,
   resolveWorkspacePath,
 } from "./builtin/workspace.js";
+export {
+  defaultMcpConfigPath,
+  loadMcpConfig,
+  type McpConfigFile,
+  type McpServerConfig,
+} from "./mcp/config.js";
+export { McpStdioClient, type McpToolDescriptor } from "./mcp/client.js";
+export { McpHttpClient, type McpHttpClientOptions } from "./mcp/http-client.js";
+export { registerMcpTools, type RegisterMcpToolsOptions } from "./mcp/register.js";

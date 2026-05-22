@@ -26,6 +26,12 @@ import {
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
 import { createRuntimeDelegationTool } from "@dragon/delegation";
 import {
+  createToolRegistry,
+  defaultMcpConfigPath,
+  loadMcpConfig,
+  registerMcpTools,
+} from "@dragon/tools";
+import {
   createFileApprovalStore,
   createFileEmployeeStore,
   createFileKpiTemplateStore,
@@ -79,7 +85,12 @@ import {
   type TrajectoryStore,
 } from "@dragon/memory";
 import { loadDragonPlugin, type DragonPluginMemoryBackend, type LoadedDragonPlugin } from "@dragon/plugin-sdk";
-import { catalogEntriesFromProviders, createModelCatalog } from "@dragon/model-catalog";
+import {
+  applyModelCatalogToParams,
+  catalogEntriesFromProviders,
+  createModelCatalog,
+  type DragonModelCatalog,
+} from "@dragon/model-catalog";
 import {
   createAnthropicProvider,
   createAnthropicProviderFromEnv,
@@ -286,6 +297,7 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
   const runtimeBundle = await createRuntime({
     mode,
     allowWrite: parsed.allowWrite,
+    ...(parsed.failOnAsk ? { failOnPermissionDeny: true } : {}),
     sessionDir: parsed.sessionDir,
     memoryDir: parsed.memoryDir,
     ...(parsed.memoryBackendId !== undefined ? { memoryBackendId: parsed.memoryBackendId } : {}),
@@ -312,11 +324,15 @@ async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
     const attachments = parsed.attachments
       ? await Promise.all(parsed.attachments.map(spec => readAttachmentFromDisk(spec.filePath)))
       : undefined;
+    const modelParams = applyModelCatalogToParams(
+      { ...(parsed.model !== undefined ? { model: parsed.model } : {}) },
+      runtimeBundle.modelCatalog,
+    );
     const turnInput = {
       sessionId: parsed.sessionId,
       source: "cli",
       message: parsed.message,
-      ...(parsed.model !== undefined ? { model: parsed.model } : {}),
+      ...(modelParams.model !== undefined ? { model: modelParams.model } : {}),
       ...(parsed.modelFallbacks !== undefined ? { modelFallbacks: parsed.modelFallbacks } : {}),
       ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {}),
       ...(parsed.tier !== undefined ? { tier: parsed.tier } : {}),
@@ -472,6 +488,7 @@ async function runCron(args: string[]): Promise<void> {
 interface RuntimeFactoryOptions {
   mode: "chat" | "agent";
   allowWrite: boolean;
+  failOnPermissionDeny?: boolean;
   sessionDir: string;
   memoryDir: string;
   memoryBackendId?: string;
@@ -497,6 +514,7 @@ interface RuntimeFactoryResult {
   runtime: DragonAgentRuntime;
   plugins: LoadedDragonPlugin[];
   providers: ModelProvider[];
+  modelCatalog: DragonModelCatalog;
   tools: ToolDefinition[];
   permissionEngine?: ToolPermissionEngine;
 }
@@ -584,9 +602,24 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
           ],
         })
       : undefined;
+    const toolRegistry = createToolRegistry();
+    for (const tool of tools) {
+      toolRegistry.register(tool);
+    }
+    if (options.mode === "agent") {
+      const mcpResult = await registerMcpTools(toolRegistry, {
+        servers: await loadMcpConfig(defaultMcpConfigPath()),
+      });
+      if (mcpResult.registered.length > 0) {
+        process.stderr.write(`Loaded MCP tools: ${mcpResult.registered.join(", ")}\n`);
+      }
+      for (const mcpError of mcpResult.errors) {
+        process.stderr.write(`MCP server skipped: ${mcpError}\n`);
+      }
+    }
     const runtimeOptions = {
       providerRegistry: registry,
-      tools,
+      toolRegistry,
       lifecycleHooks,
       ...(sessionStore ? { sessionStore } : {}),
       ...(trajectoryStore ? { trajectoryStore } : {}),
@@ -615,6 +648,7 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
             ].filter(Boolean).join("\n"),
             ...(options.permissionHandler ? { permissionHandler: options.permissionHandler } : {}),
             denyAskWithoutHandler: options.denyAskWithoutHandler ?? true,
+            ...(options.failOnPermissionDeny ? { failOnPermissionDeny: true } : {}),
           }
         : {}),
     };
@@ -649,6 +683,7 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
       runtime,
       plugins,
       providers,
+      modelCatalog,
       tools,
       ...(permissionEngine ? { permissionEngine } : {}),
     };
@@ -1524,6 +1559,7 @@ interface ParsedChatArgs {
   modelFallbacks?: string[];
   noSession: boolean;
   allowWrite: boolean;
+  failOnAsk: boolean;
   skillRoots?: string[];
   pluginRoots: string[];
   attachments?: ParsedAttachmentSpec[];
@@ -1545,6 +1581,7 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
   let tier: DragonTierHint | undefined = parseTierName(process.env.DRAGON_TIER);
   let noSession = false;
   let allowWrite = false;
+  let failOnAsk = false;
   const defaultSkillRoots = mode === "agent" ? configuredSkillRoots() : [];
   const skillRoots: string[] = [];
   const pluginRoots = configuredPluginRoots();
@@ -1558,6 +1595,10 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
     }
     if (arg === "--allow-write") {
       allowWrite = true;
+      continue;
+    }
+    if (arg === "--fail-on-ask") {
+      failOnAsk = true;
       continue;
     }
     if (arg === "--attach") {
@@ -1768,6 +1809,7 @@ function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
     ...(modelFallbacks.length > 0 ? { modelFallbacks } : {}),
     noSession,
     allowWrite,
+    failOnAsk,
     pluginRoots: uniquePaths(pluginRoots),
     ...(mode === "agent" ? { skillRoots: uniquePaths([...skillRoots, ...defaultSkillRoots]) } : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
@@ -2426,7 +2468,7 @@ function printHelp(): void {
 
 Usage:
   dragon chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--plugin-root <path>] [--attach <path>]... <message>
-  dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--attach <path>]... <message>
+  dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] [--fail-on-ask] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--attach <path>]... <message>
   dragon gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>] [--model-timeout-ms <ms>] [--model-timeout-sec <sec>]
   dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] [--once] [--interval-ms <ms>]
 
@@ -2449,6 +2491,7 @@ Tiers (multi-model scheduling):
 Permissions:
   Write tools prompt for approval in an interactive terminal.
   Use --allow-write to allow file_patch, skill_create, skill_improve, and memory candidate promote/reject without prompting.
+  Use --fail-on-ask to fail the turn when a tool needs permission but no interactive CLI handler is available (CI/non-TTY).
 
 Session:
   Sessions are stored as JSONL under .dragon/sessions by default.

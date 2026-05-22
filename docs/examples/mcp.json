@@ -1,0 +1,18 @@
+{
+  "servers": [
+    {
+      "id": "example-stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "disabled": true
+    },
+    {
+      "id": "example-http",
+      "url": "http://127.0.0.1:3000/mcp",
+      "headers": {
+        "authorization": "Bearer replace-me"
+      },
+      "disabled": true
+    }
+  ]
+}

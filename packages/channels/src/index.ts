@@ -7,6 +7,8 @@ export interface DragonChannelMessage {
   metadata?: Record<string, unknown>;
 }
 
+export type DragonGatewayThinkingLevel = "none" | "low" | "medium" | "high";
+
 export interface DragonGatewayWebhookPayload {
   sessionId: string;
   message: string;
@@ -15,6 +17,10 @@ export interface DragonGatewayWebhookPayload {
   threadId?: string;
   workspace?: string;
   model?: string;
+  profileId?: string;
+  thinking?: DragonGatewayThinkingLevel;
+  toolsEnabled?: boolean;
+  memoryEnabled?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -23,6 +29,10 @@ export interface DragonChannelGatewayOptions {
   sessionId?: string | ((message: Readonly<DragonChannelMessage>) => string);
   workspace?: string;
   model?: string;
+  profileId?: string;
+  thinking?: DragonGatewayThinkingLevel;
+  toolsEnabled?: boolean;
+  memoryEnabled?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -219,6 +229,10 @@ export function toGatewayWebhookPayload(
     ...(normalized.threadId !== undefined ? { threadId: normalized.threadId } : {}),
     ...(options.workspace !== undefined ? { workspace: normalizeText(options.workspace, "Gateway webhook workspace", 1000) } : {}),
     ...(options.model !== undefined ? { model: normalizeText(options.model, "Gateway webhook model", 200) } : {}),
+    ...(options.profileId !== undefined ? { profileId: normalizeText(options.profileId, "Gateway webhook profileId", 120) } : {}),
+    ...(options.thinking !== undefined ? { thinking: options.thinking } : {}),
+    ...(options.toolsEnabled !== undefined ? { toolsEnabled: options.toolsEnabled } : {}),
+    ...(options.memoryEnabled !== undefined ? { memoryEnabled: options.memoryEnabled } : {}),
     metadata: {
       ...(options.metadata ?? {}),
       ...(normalized.metadata ?? {}),
@@ -246,6 +260,10 @@ function mergeGatewayOptions(
   const sessionId = options.sessionId ?? defaults?.sessionId;
   const workspace = options.workspace ?? defaults?.workspace;
   const model = options.model ?? defaults?.model;
+  const profileId = options.profileId ?? defaults?.profileId;
+  const thinking = options.thinking ?? defaults?.thinking;
+  const toolsEnabled = options.toolsEnabled ?? defaults?.toolsEnabled;
+  const memoryEnabled = options.memoryEnabled ?? defaults?.memoryEnabled;
   const metadata = defaults?.metadata !== undefined || options.metadata !== undefined
     ? { ...(defaults?.metadata ?? {}), ...(options.metadata ?? {}) }
     : undefined;
@@ -260,6 +278,18 @@ function mergeGatewayOptions(
   }
   if (model !== undefined) {
     merged.model = model;
+  }
+  if (profileId !== undefined) {
+    merged.profileId = profileId;
+  }
+  if (thinking !== undefined) {
+    merged.thinking = thinking;
+  }
+  if (toolsEnabled !== undefined) {
+    merged.toolsEnabled = toolsEnabled;
+  }
+  if (memoryEnabled !== undefined) {
+    merged.memoryEnabled = memoryEnabled;
   }
   if (metadata !== undefined) {
     merged.metadata = metadata;

@@ -22,9 +22,11 @@ import {
   isLikelyContextOverflowError,
   normalizeTierConfig,
   pickAssistantDisplayText,
+  prepareSessionHistoryForModel,
   repairModelMessagesAfterCancel,
   TOOL_CANCELLED_CODE,
 } from "@dragon/core";
+import type { ModelMessage } from "@dragon/providers";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
 import {
   createDelegationPlan,
@@ -33,7 +35,12 @@ import {
   runDelegationPlan,
   type DragonRuntimeDelegationToolInput,
 } from "@dragon/delegation";
-import { createHttpGateway } from "@dragon/gateway";
+import {
+  applyModelCatalogToAgentParams,
+  assertDragonGatewayWebhookPayload,
+  createHttpGateway,
+  createModelCatalogFromProviderSummaries,
+} from "@dragon/gateway";
 import {
   createFileMemoryStore,
   createFileTrajectoryStore,
@@ -46,10 +53,24 @@ import {
   type MemoryCandidateRejectInput,
   type MemoryCandidateRejectOutput,
 } from "@dragon/memory";
-import { catalogEntriesFromProviders, createModelCatalog } from "@dragon/model-catalog";
+import {
+  applyModelCatalogToParams,
+  catalogEntriesFromProviders,
+  createModelCatalog,
+} from "@dragon/model-catalog";
 import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@dragon/providers";
 import { isSensitiveKey, redactSecretsInText } from "@dragon/security";
-import { createBrowserFormSubmitTool, createBrowserSnapshotTool, createSandboxExecTool, createToolPermissionEngine, planSandboxExecCommand, type ToolDefinition } from "@dragon/tools";
+import {
+  createBrowserFormSubmitTool,
+  createBrowserSnapshotTool,
+  createSandboxExecTool,
+  createToolPermissionEngine,
+  createToolRegistry,
+  planSandboxExecCommand,
+  registerMcpTools,
+  validateBrowserTargetUrl,
+  type ToolDefinition,
+} from "@dragon/tools";
 
 const TEST_TIMEOUT_MS = 5000;
 type AnyBuffer = Buffer<ArrayBufferLike>;
@@ -90,6 +111,12 @@ async function main(): Promise<void> {
     ["runtime tool iteration limit graceful", testRuntimeToolIterationLimitGraceful],
     ["turn cancel protocol", testTurnCancelProtocol],
     ["runtime turn cancel during tool", testRuntimeTurnCancelDuringTool],
+    ["session history prep", testSessionHistoryPrep],
+    ["gateway session turn queue", testGatewaySessionTurnQueue],
+    ["gateway model catalog bridge", testGatewayModelCatalogBridge],
+    ["mcp http transport", testMcpHttpTransport],
+    ["browser SSRF redirect block", testBrowserSsrfRedirectBlock],
+    ["runtime fail on permission deny", testRuntimeFailOnPermissionDeny],
     ["openai provider tool call translation", testOpenAIProviderToolCallTranslation],
     ["openai provider streaming", testOpenAIProviderStreaming],
     ["anthropic provider tool use translation", testAnthropicProviderToolUse],
@@ -2554,6 +2581,216 @@ async function testRuntimeTurnCancelDuringTool(): Promise<void> {
   } finally {
     unsubscribe();
   }
+}
+
+async function testSessionHistoryPrep(): Promise<void> {
+  const history: ModelMessage[] = [
+    { role: "user", content: "hello" },
+    { role: "tool", content: "payload".repeat(3_000), toolCallId: "call_old" },
+    { role: "assistant", content: "analysis".repeat(2_000) },
+  ];
+  const { messages, report } = prepareSessionHistoryForModel(history, 4_000);
+  assert(report.providerName === "session_history_prep", "session history prep report should be tagged");
+  assert(report.truncatedToolResults >= 1, "historical tool output should be truncated");
+  assert(messages[1]?.role === "tool", "tool message should remain in order");
+  const toolContent = messages[1]?.content;
+  assert(typeof toolContent === "string" && toolContent.length < 3_000, "tool content should shrink");
+}
+
+async function testGatewaySessionTurnQueue(): Promise<void> {
+  let concurrent = 0;
+  let maxConcurrent = 0;
+  const runtime: DragonAgentRuntime = {
+    async runTurn(input) {
+      concurrent += 1;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      await new Promise(resolve => setTimeout(resolve, 150));
+      concurrent -= 1;
+      return {
+        runId: `run-${input.message}`,
+        status: "ok",
+        messages: [
+          { id: "u1", role: "user", content: input.message, createdAt: "2026-05-22T10:00:00.000Z" },
+          { id: "a1", role: "assistant", content: `done:${input.message}`, createdAt: "2026-05-22T10:00:01.000Z" },
+        ],
+      };
+    },
+    subscribe() {
+      return () => {};
+    },
+  };
+  const gateway = createHttpGateway({ runtime });
+  await gateway.start({ host: "127.0.0.1", port: 0 });
+  const address = gateway.address();
+  assert(address !== undefined, "queue gateway should start");
+  try {
+    const firstPromise = rpc(address.url, "agent", { sessionId: "queue-session", message: "first" });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const second = await rpc(address.url, "agent", { sessionId: "queue-session", message: "second" });
+    assert(second.status === 200 && second.json.ok === true, "second agent RPC should succeed");
+    assert(readPath(second.json, ["payload", "queued"]) === true, "second turn should be queued");
+    const queueTurnId = readPath(second.json, ["payload", "queueTurnId"]);
+    assert(typeof queueTurnId === "string" && queueTurnId.length > 0, "queueTurnId should be returned");
+    const first = await firstPromise;
+    assert(first.status === 200 && first.json.ok === true, "first agent RPC should succeed");
+    assert(readPath(first.json, ["payload", "queued"]) !== true, "first turn should not be queued");
+    const waited = await rpc(address.url, "agent.wait", { queueTurnId });
+    assert(waited.status === 200 && waited.json.ok === true, "agent.wait should succeed");
+    assert(
+      readPath(waited.json, ["payload", "result", "messages", 1, "content"]) === "done:second",
+      "queued turn should complete with second message",
+    );
+    assert(maxConcurrent === 1, "session turns should not run concurrently");
+  } finally {
+    await gateway.stop();
+  }
+}
+
+async function testGatewayModelCatalogBridge(): Promise<void> {
+  const catalog = createModelCatalogFromProviderSummaries([
+    {
+      id: "openai",
+      displayName: "OpenAI",
+      supportsToolCalling: true,
+      models: [{ id: "gpt-4.1", aliases: ["gpt-main"] }],
+    },
+  ]);
+  const resolved = applyModelCatalogToAgentParams({ model: "gpt-main" }, catalog);
+  assert(resolved.model === "openai:gpt-4.1", "gateway should canonicalize bare alias to provider:model");
+  const shared = applyModelCatalogToParams({ model: "gpt-main" }, catalog);
+  assert(shared.model === "openai:gpt-4.1", "shared model-catalog helper should canonicalize alias");
+  assertThrows(
+    () =>
+      assertDragonGatewayWebhookPayload({
+        sessionId: "s1",
+        message: "hi",
+        channel: "telegram",
+        thinking: "turbo",
+      }),
+    "webhook validator should reject invalid thinking",
+  );
+}
+
+async function testMcpHttpTransport(): Promise<void> {
+  const requests: Array<{ method?: string; id?: number }> = [];
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
+    requests.push(body);
+    if (body.method === "initialize") {
+      return new Response(
+        JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2024-11-05" } }),
+        { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "sess-1" } },
+      );
+    }
+    if (body.method === "notifications/initialized") {
+      return new Response("", { status: 202, headers: { "content-type": "application/json" } });
+    }
+    if (body.method === "tools/list") {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: { tools: [{ name: "ping", description: "ping tool" }] },
+        }),
+        { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "sess-1" } },
+      );
+    }
+    return new Response(
+      JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "pong" }] } }),
+      { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "sess-1" } },
+    );
+  };
+  const registry = createToolRegistry();
+  const result = await registerMcpTools(registry, {
+    servers: [{ id: "demo", url: "http://127.0.0.1:9999/mcp" }],
+    fetchImpl,
+  });
+  assert(result.errors.length === 0, `MCP HTTP registration should succeed: ${result.errors.join("; ")}`);
+  assert(result.registered.includes("mcp_demo_ping"), "MCP HTTP tools should register with prefixed names");
+  assert(requests.some(request => request.method === "initialize"), "MCP HTTP client should initialize");
+  assert(requests.some(request => request.method === "tools/list"), "MCP HTTP client should list tools");
+  const tool = registry.get("mcp_demo_ping");
+  assert(tool !== undefined, "registered MCP HTTP tool should be retrievable");
+  const invocation = await tool.invoke({
+    id: "mcp-http-1",
+    name: "mcp_demo_ping",
+    input: {},
+    sessionId: "test",
+  });
+  assert(invocation.ok === true, "MCP HTTP tool invoke should succeed");
+  assert(requests.some(request => request.method === "tools/call"), "MCP HTTP client should call tools");
+}
+
+async function testBrowserSsrfRedirectBlock(): Promise<void> {
+  for (const [url, needle, label] of [
+    ["file:///etc/passwd", "HTTP(S)", "file URLs should be rejected"],
+    ["http://127.0.0.1/", "private", "loopback IP should be rejected"],
+    ["http://metadata.google.internal/computeMetadata/v1/", "blocked host", "cloud metadata host should be rejected"],
+  ] as const) {
+    try {
+      validateBrowserTargetUrl(url);
+      assert(false, label);
+    } catch (error) {
+      assert(error instanceof Error && error.message.includes(needle), label);
+    }
+  }
+
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    if (init?.redirect === "manual") {
+      return new Response(null, {
+        status: 302,
+        headers: { location: "http://127.0.0.1/private" },
+      });
+    }
+    return new Response("ok", { status: 200 });
+  };
+  const tool = createBrowserSnapshotTool({ fetchImpl });
+  const result = await tool.invoke({
+    id: "redirect-block",
+    name: tool.name,
+    input: { url: "https://example.com/start", timeoutMs: 1000 },
+    sessionId: "browser-ssrf",
+  });
+  assert(!result.ok, "redirect to private host should fail");
+  assert(
+    result.error?.includes("localhost") || result.error?.includes("private"),
+    `redirect SSRF should be blocked: ${result.error}`,
+  );
+}
+
+async function testRuntimeFailOnPermissionDeny(): Promise<void> {
+  const provider: ModelProvider = {
+    id: "mock-perm-deny",
+    displayName: "Mock Perm Deny",
+    defaultModel: "mock-perm-model",
+    supportsToolCalling: true,
+    async complete() {
+      return {
+        id: "tool-round",
+        toolCalls: [{
+          id: "call_patch",
+          type: "function",
+          function: { name: "file_patch", arguments: JSON.stringify({ path: "README.md", oldText: "a", newText: "b" }) },
+        }],
+      };
+    },
+  };
+  const patchTool = createMockTool("file_patch", ["write"], async () => ({ ok: true }));
+  const runtime = createDragonRuntime({
+    providers: [provider],
+    defaultModel: "mock-perm-model",
+    tools: [patchTool],
+    failOnPermissionDeny: true,
+    permissionEngine: createToolPermissionEngine({ defaultDecision: "ask" }),
+    denyAskWithoutHandler: true,
+  });
+  const result = await runtime.runTurn({
+    sessionId: "fail-on-ask",
+    source: "cli",
+    message: "patch the readme",
+  });
+  assert(result.status === "error", `failOnPermissionDeny should error the turn (got ${result.status})`);
+  assert(result.error?.includes("permission"), "error should mention permission denial");
 }
 
 async function testRuntimeToolCallLoop(): Promise<void> {

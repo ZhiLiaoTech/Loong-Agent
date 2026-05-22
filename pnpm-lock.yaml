@@ -132,6 +132,9 @@ importers:
 
   packages/gateway:
     dependencies:
+      '@dragon/channels':
+        specifier: workspace:*
+        version: link:../channels
       '@dragon/core':
         specifier: workspace:*
         version: link:../core

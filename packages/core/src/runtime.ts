@@ -41,6 +41,7 @@ import {
   isTurnCancelled,
   repairModelMessagesAfterCancel,
 } from "./turn-cancel.js";
+import { prepareSessionHistoryForModel } from "./session-history-prep.js";
 import type {
   ToolDefinition,
   ToolInvocation,
@@ -102,6 +103,8 @@ export interface DragonRuntimeOptions {
   modelTimeoutMs?: number;
   /** When true (default), apply in-turn context prep before each model call. */
   turnPrepEnabled?: boolean;
+  /** When true, denied tool permissions fail the turn instead of returning a soft tool error. */
+  failOnPermissionDeny?: boolean;
 }
 
 interface ModelAttemptFailure {
@@ -133,6 +136,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   readonly #permissionEvaluator: DragonRuntimeOptions["permissionEvaluator"];
   readonly #modelTimeoutMs: number;
   readonly #turnPrepEnabled: boolean;
+  readonly #failOnPermissionDeny: boolean;
   #tierConfig: ModelTierConfig | undefined;
   readonly #maxToolResultChars = 64_000;
   readonly #listeners = new Set<(event: DragonEvent) => void>();
@@ -157,6 +161,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#permissionEvaluator = options.permissionEvaluator;
     this.#modelTimeoutMs = options.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
     this.#turnPrepEnabled = options.turnPrepEnabled !== false;
+    this.#failOnPermissionDeny = options.failOnPermissionDeny === true;
     this.#tierConfig = options.tierConfig;
   }
 
@@ -256,9 +261,27 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         activeInput.workspace,
       );
       const userContent = buildUserMessageContent(activeInput.message, resolvedAttachments);
+      const rawHistory = toModelHistory(history);
+      const sessionHistoryPrep = prepareSessionHistoryForModel(rawHistory, turnMaxContextChars);
+      if (
+        sessionHistoryPrep.report.truncatedToolResults > 0
+        || sessionHistoryPrep.report.truncatedAssistantMessages > 0
+        || sessionHistoryPrep.report.strippedReasoningMessages > 0
+      ) {
+        this.#emit({
+          type: "context",
+          runId,
+          providerName: "session_history_prep",
+          phase: "end",
+          payload: {
+            ok: true,
+            ...sessionHistoryPrep.report,
+          },
+        });
+      }
       modelMessages = [
         { role: "system", content: composeSystemPrompt(effectiveSystemPrompt, contextItems, turnMaxContextChars) },
-        ...toModelHistory(history),
+        ...sessionHistoryPrep.messages,
         { role: "user", content: userContent },
       ];
 
@@ -921,6 +944,9 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         phase: "end",
         payload: { toolCallId: toolCall.id, permission, skipped: true },
       });
+      if (this.#failOnPermissionDeny) {
+        throw new DragonPermissionDeniedError(tool.name, permission);
+      }
       return {
         content: JSON.stringify({
           ok: false,
@@ -2041,6 +2067,18 @@ class DragonCancelledError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "DragonCancelledError";
+  }
+}
+
+class DragonPermissionDeniedError extends Error {
+  readonly toolName: string;
+  readonly permission: ToolPermissionResult;
+
+  constructor(toolName: string, permission: ToolPermissionResult) {
+    super(`Tool permission ${permission.decision} for ${toolName}: ${permission.reason}`);
+    this.name = "DragonPermissionDeniedError";
+    this.toolName = toolName;
+    this.permission = permission;
   }
 }
 

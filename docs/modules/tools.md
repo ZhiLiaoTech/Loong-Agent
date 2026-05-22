@@ -45,7 +45,14 @@
 | `sandbox_exec` | 同上 + local/docker/ssh；profile：`inspect`、`git-read`、`search-read`、`repo-read` |
 | `browser_*` | 仅 http(s)；无 URL 凭证；表单 GET/urlencoded POST |
 
-### 3.4 依赖
+### 3.4 MCP 适配（stdio + HTTP）
+
+- 配置：`.dragon/config/mcp.json`，每项需 `id` 与 **`command`（stdio）** 或 **`url`（HTTP）** 之一。
+- `registerMcpTools(registry, { servers })`：连接 MCP 服务、拉取 `tools/list`，注册为 `mcp_<serverId>_<toolName>`，默认权限 `ask`。
+- **stdio**：`McpStdioClient` 子进程 + 换行分隔 JSON-RPC。
+- **HTTP**：`McpHttpClient` 向 `url` POST JSON-RPC，支持 `mcp-session-id` 与 `text/event-stream` 响应体。
+
+### 3.5 依赖
 
 无 workspace 依赖（纯 Node + 可选子进程/docker/ssh）。
 

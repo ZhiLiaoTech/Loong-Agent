@@ -14,6 +14,8 @@
 | `DragonModelCatalogEntry` | 单条模型元数据 |
 | `normalizeProviderModelEntries` | Provider 注册时规范化 |
 | `catalogEntriesFromProviders` | 从 Provider 数组生成条目 |
+| `createModelCatalogFromProviders` | 从 Provider 源构建 Catalog 实例 |
+| `applyModelCatalogToParams` | 将裸别名规范为 `provider:model`（Gateway/CLI 共用） |
 
 能力标志：`toolCalling`、`streaming`、`vision`、`reasoning`、`jsonMode` 等。
 
@@ -41,8 +43,7 @@
 
 ## 4. 集成方式
 
-- **已用**：`@dragon/providers` 注册时 `normalizeProviderModelEntries`；Gateway 类型导入。
-- **未用**：`createModelCatalog` 仅在 `test-suite` 中调用；CLI/Gateway 列表直接用 Provider 内嵌 `models[]`。
+- **已用**：`@dragon/providers` Registry 注入 `modelCatalog` 做 `resolve`；Gateway `#resolveAgentParams` 与 CLI `runTurn` 前调用 `applyModelCatalogToParams`；`createModelCatalogFromProviders` 由 Gateway provider summaries 构建。
 
 ## 5. Code Review
 

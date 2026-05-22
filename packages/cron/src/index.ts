@@ -13,6 +13,8 @@ export interface DragonCronSchedule {
   dayOfWeekWildcard: boolean;
 }
 
+export type DragonCronThinkingLevel = "none" | "low" | "medium" | "high";
+
 export interface DragonCronJob {
   id: string;
   sessionId: string;
@@ -20,6 +22,10 @@ export interface DragonCronJob {
   schedule: string;
   workspace?: string;
   model?: string;
+  profileId?: string;
+  thinking?: DragonCronThinkingLevel;
+  toolsEnabled?: boolean;
+  memoryEnabled?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -295,6 +301,10 @@ export function toGatewayWebhookCronPayload(
     metadata,
     ...(job.workspace !== undefined ? { workspace: job.workspace } : {}),
     ...(job.model !== undefined ? { model: job.model } : {}),
+    ...(job.profileId !== undefined ? { profileId: job.profileId } : {}),
+    ...(job.thinking !== undefined ? { thinking: job.thinking } : {}),
+    ...(job.toolsEnabled !== undefined ? { toolsEnabled: job.toolsEnabled } : {}),
+    ...(job.memoryEnabled !== undefined ? { memoryEnabled: job.memoryEnabled } : {}),
   };
 }
 

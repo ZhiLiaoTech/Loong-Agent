@@ -81,3 +81,7 @@ export {
   isTurnCancelled,
   repairModelMessagesAfterCancel,
 } from "./turn-cancel.js";
+export {
+  prepareSessionHistoryForModel,
+  type SessionHistoryPrepReport,
+} from "./session-history-prep.js";

@@ -801,10 +801,22 @@ async function safeBrowserFetch(
   return lastResponse ?? await fetchImpl(currentUrl.toString(), { ...init, redirect: "manual" });
 }
 
+const BLOCKED_BROWSER_HOSTNAMES = new Set([
+  "metadata.google.internal",
+]);
+
+/** Validates an HTTP(S) URL for browser tools (SSRF-safe by default). */
+export function validateBrowserTargetUrl(value: string, allowPrivateHosts = false): string {
+  return normalizeBrowserUrl(value, allowPrivateHosts);
+}
+
 function assertPublicBrowserHost(hostname: string): void {
   const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
   if (!host) {
     throw new Error("browser tools require a hostname.");
+  }
+  if (BLOCKED_BROWSER_HOSTNAMES.has(host)) {
+    throw new Error(`browser tools cannot access blocked host: ${host}`);
   }
   if (host === "localhost" || host.endsWith(".localhost")) {
     throw new Error("browser tools cannot access localhost.");

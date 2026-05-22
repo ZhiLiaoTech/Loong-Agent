@@ -261,7 +261,10 @@
         state.chatTurns.push({ role: "assistant", text: "", streaming: true });
         trimChatTurns();
         renderChatTranscript();
-        const payload = await rpc("agent", params);
+        let payload = await rpc("agent", params);
+        if (payload?.queued && payload.queueTurnId) {
+          payload = await rpc("agent.wait", { queueTurnId: payload.queueTurnId });
+        }
         const result = payload.result;
         const assistant = [...(result?.messages || [])].reverse().find(message => message.role === "assistant");
         state.pendingRpcAssistant = assistant?.content || "";

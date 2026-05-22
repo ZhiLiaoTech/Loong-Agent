@@ -90,7 +90,14 @@ runTurn
 - 回合 `status === "cancelled"`，`lifecycle:cancelled`；不再发起后续模型调用。
 - 权限等待前后检查 `signal.aborted`，避免取消后仍阻塞在 `permissionHandler`。
 
-### 3.8 关键常量
+### 3.8 跨轮会话历史治理（P0-3）
+
+- 模块：`packages/core/src/session-history-prep.ts`
+- 在 `toModelHistory` 之后、当前 user 消息之前，对**已持久化的会话历史**运行更紧的 prep 预算（tool 2k / assistant 4k / 总估算 `max(turnMaxContextChars × 4, 16k)`）。
+- 与回合内 `turn_prep` 分层：session 层管跨轮体积，turn 层管当次模型请求（含当轮 tool 结果）。
+- 事件：`context` / `providerName: "session_history_prep"`。
+
+### 3.9 关键常量
 
 - `maxToolIterations`: 20（`createDragonRuntime({ maxToolIterations })` 可覆盖）
 - `maxContextChars`: 12_000
