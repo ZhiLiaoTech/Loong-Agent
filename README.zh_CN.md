@@ -47,15 +47,13 @@
 
 **Dragon（潜龙 / Qianlong）** 是 **原生 TypeScript、本地优先** 的智能体框架。项目中的「龙」指 **中国龙（🐉）** —— 象征深潜蓄势、智慧驭势（*潜龙在渊，智驭八方*）。
 
-Dragon 希望融合：
+Dragon 借鉴业界优秀Agent框架的精髓，取其精华，融合：
 
 | 来源 | 借鉴能力 |
 |------|----------|
 | **OpenClaw** | 网关、插件、会话、本地优先架构 |
 | **Hermes Agent** | 可进化技能、记忆、模型路由、轨迹 |
 | **Claude Code** | 编码智能体交互、权限体验、工程工作流 |
-
-Hermes 相关概念在合适处 **用 TypeScript 重写**，运行时 **不混入 Python**。
 
 > [!TIP]
 > 深入阅读：[架构](docs/ARCHITECTURE.md) · [技术架构](docs/TECHNICAL_ARCHITECTURE.md) · [模块说明](docs/modules/README.md) · [插件](docs/PLUGINS.md) · [部署](docs/DEPLOYMENT.md)
