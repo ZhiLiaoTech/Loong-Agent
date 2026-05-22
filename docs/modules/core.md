@@ -102,7 +102,12 @@ runTurn
 - `DragonTurnInput.queryLoop`（默认在 Gateway 开启 `queryLoop` 时为 true）：工具迭代触顶并完成 finalize 后，assistant `metadata.queryLoopContinue = true`。
 - Gateway `query-loop.ts` 读取该标记，在同一 `agent` RPC 内自动续跑（见 [gateway.md](./gateway.md) §3.4）。
 
-### 3.10 关键常量
+### 3.10 只读工具并行
+
+- 模块：`packages/core/src/tool-parallel.ts`
+- 同一模型轮次内，若全部 tool call 的工具为 baseline `permission: allow` 且能力仅含 `read` / `network`，Runtime 使用 `Promise.all` 并行执行（如并行 `file_read` + `browser_snapshot`）。
+
+### 3.11 关键常量
 
 - `maxToolIterations`: 20（`createDragonRuntime({ maxToolIterations })` 可覆盖）
 - `maxContextChars`: 12_000

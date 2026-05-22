@@ -60,6 +60,10 @@ export {
   type AugmentedModelResponse,
 } from "./text-tool-calls.js";
 export {
+  canRunToolCallsInParallel,
+  isParallelSafeTool,
+} from "./tool-parallel.js";
+export {
   applyTurnPrep,
   buildTurnPrepOptions,
   estimateModelMessagesChars,

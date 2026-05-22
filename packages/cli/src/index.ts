@@ -104,6 +104,7 @@ import { createFileSkillRuntime, createSkillTools, type LoadedSkill, type SkillS
 import {
   createFilePatchTool,
   createBrowserFormSubmitTool,
+  createBrowserPlaywrightSnapshotTool,
   createBrowserSnapshotTool,
   createFileReadTool,
   createFileSearchTool,
@@ -640,7 +641,7 @@ async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFac
               loadedPluginLine,
               "Only use shell_exec for conservative read-only commands.",
               "Use sandbox_exec for conservative read-only commands in local, Docker, or SSH sandboxes when the user provides the target; keep the default inspect profile unless broader git-read, search-read, or repo-read access is explicitly useful.",
-              "Use browser_snapshot for bounded HTTP(S) page inspection and browser_form_submit for basic GET/POST HTML forms when the user asks to inspect or submit a web page.",
+              "Use browser_snapshot for bounded HTTP(S) page inspection, browser_playwright_snapshot for JavaScript-rendered pages when Playwright is installed, and browser_form_submit for basic GET/POST HTML forms when the user asks to inspect or submit a web page.",
               options.allowWrite
                 ? "You may use file_patch for exact text replacements and skill_create/skill_improve for reviewable skill updates when requested."
                 : "Write tools require CLI approval and may be denied.",
@@ -2539,6 +2540,7 @@ function createAgentTools(
     createFileSearchTool(),
     createBrowserSnapshotTool(),
     createBrowserFormSubmitTool(),
+    createBrowserPlaywrightSnapshotTool(),
     createShellExecTool(),
     createSandboxExecTool(),
     createFilePatchTool(),

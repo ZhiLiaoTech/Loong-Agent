@@ -43,7 +43,8 @@
 | `file_patch` | 精确文本替换 / unified diff；`permission: ask` |
 | `shell_exec` | 无 shell 元字符；argv 白名单；输出 64k  cap |
 | `sandbox_exec` | 同上 + local/docker/ssh；profile：`inspect`、`git-read`、`search-read`、`repo-read` |
-| `browser_*` | 仅 http(s)；无 URL 凭证；表单 GET/urlencoded POST |
+| `browser_snapshot` / `browser_form_submit` | 轻量 HTTP fetch；SSRF 防护；表单 GET/urlencoded POST |
+| `browser_playwright_snapshot` | 可选 `playwright` + Chromium；用于 SPA/JS 渲染页（未安装时返回明确错误） |
 
 ### 3.4 MCP 适配（stdio + HTTP）
 
@@ -52,7 +53,12 @@
 - **stdio**：`McpStdioClient` 子进程 + 换行分隔 JSON-RPC。
 - **HTTP**：`McpHttpClient` 向 `url` POST JSON-RPC，支持 `mcp-session-id` 与 `text/event-stream` 响应体。
 
-### 3.5 依赖
+### 3.5 与 Runtime 并行执行
+
+- `@dragon/core` 的 `canRunToolCallsInParallel`：同一轮多个 tool call 均为 **baseline `permission: allow`** 且能力仅含 `read` / `network` 时并行执行（例如并行的 `file_read` + `browser_snapshot`）。
+- `write` / `execute` / `custom` / `memory` 能力或 `ask` 权限的工具仍串行。
+
+### 3.6 依赖
 
 无 workspace 依赖（纯 Node + 可选子进程/docker/ssh）。
 

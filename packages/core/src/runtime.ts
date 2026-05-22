@@ -50,6 +50,7 @@ import type {
   ToolRegistry,
 } from "@dragon/tools";
 import { createToolPermissionEngine, createToolRegistry, normalizeToolName } from "@dragon/tools";
+import { canRunToolCallsInParallel } from "./tool-parallel.js";
 import type {
   DragonAgentRuntime,
   DragonAttachment,
@@ -890,7 +891,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       return { content: JSON.stringify({ ok: false, error: "Tool call is missing function name." }) };
     }
 
-    const tool = this.#toolRegistry.get(toolName);
+    const tool = this.#toolRegistry.get(normalizeToolName(toolName));
     if (!tool) {
       this.#emit({
         type: "tool",
@@ -1937,28 +1938,6 @@ const MEMORY_CONTEXT_PROVIDER_NAMES = new Set([
 
 function isMemoryContextProvider(name: string): boolean {
   return MEMORY_CONTEXT_PROVIDER_NAMES.has(name);
-}
-
-function isParallelSafeTool(tool: ToolDefinition): boolean {
-  const capabilities = tool.capabilities ?? [];
-  if (capabilities.some(capability => capability !== "read")) {
-    return false;
-  }
-  return tool.permission === "allow";
-}
-
-function canRunToolCallsInParallel(toolCalls: ModelToolCall[], registry: ToolRegistry): boolean {
-  if (toolCalls.length <= 1) {
-    return false;
-  }
-  return toolCalls.every(toolCall => {
-    const toolName = toolCall.function?.name?.trim();
-    if (!toolName) {
-      return false;
-    }
-    const tool = registry.get(normalizeToolName(toolName));
-    return tool !== undefined && isParallelSafeTool(tool);
-  });
 }
 
 function composeSystemPrompt(

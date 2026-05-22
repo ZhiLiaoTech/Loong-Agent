@@ -16,7 +16,9 @@ import {
   augmentResponseWithTextToolCalls,
   buildTurnPrepOptions,
   classifyTierHeuristic,
+  canRunToolCallsInParallel,
   createDragonRuntime,
+  isParallelSafeTool,
   decideTier,
   extractTextToolCalls,
   isLikelyContextOverflowError,
@@ -62,10 +64,11 @@ import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError,
 import { isSensitiveKey, redactSecretsInText } from "@dragon/security";
 import {
   createBrowserFormSubmitTool,
+  createBrowserPlaywrightSnapshotTool,
   createBrowserSnapshotTool,
+  createToolRegistry,
   createSandboxExecTool,
   createToolPermissionEngine,
-  createToolRegistry,
   planSandboxExecCommand,
   registerMcpTools,
   validateBrowserTargetUrl,
@@ -106,6 +109,9 @@ async function main(): Promise<void> {
     ["gateway tier RPC", testGatewayTierRpc],
     ["text tool call extraction", testTextToolCallExtraction],
     ["runtime tool-call loop", testRuntimeToolCallLoop],
+    ["runtime parallel read-only tools", testRuntimeParallelReadOnlyTools],
+    ["parallel safe tool policy", testParallelSafeToolPolicy],
+    ["browser playwright snapshot tool", testBrowserPlaywrightSnapshotTool],
     ["turn prep pipeline", testTurnPrepPipeline],
     ["runtime turn prep reactive retry", testRuntimeTurnPrepReactiveRetry],
     ["runtime tool iteration limit graceful", testRuntimeToolIterationLimitGraceful],
@@ -2842,6 +2848,95 @@ async function testRuntimeFailOnPermissionDeny(): Promise<void> {
   });
   assert(result.status === "error", `failOnPermissionDeny should error the turn (got ${result.status})`);
   assert(result.error?.includes("permission"), "error should mention permission denial");
+}
+
+async function testParallelSafeToolPolicy(): Promise<void> {
+  const readOnly = createMockTool("read_only", ["read"], async () => ({}));
+  assert(isParallelSafeTool(readOnly), "read-only allow tools should be parallel-safe");
+  const readNetwork = createMockTool("read_net", ["read", "network"], async () => ({}));
+  assert(isParallelSafeTool(readNetwork), "read+network allow tools should be parallel-safe");
+  const askTool = createMockTool("ask_tool", ["read"], async () => ({}));
+  askTool.permission = "ask";
+  assert(!isParallelSafeTool(askTool), "ask tools should not be parallel-safe");
+  const writeTool = createMockTool("write_tool", ["read", "write"], async () => ({}));
+  assert(!isParallelSafeTool(writeTool), "write tools should not be parallel-safe");
+
+  const registry = createToolRegistry([readOnly, readNetwork]);
+  assert(
+    canRunToolCallsInParallel([
+      { id: "c1", type: "function", function: { name: "read_only", arguments: "{}" } },
+      { id: "c2", type: "function", function: { name: "read_net", arguments: "{}" } },
+    ], registry),
+    "registry should allow parallel rounds for safe tools",
+  );
+}
+
+async function testRuntimeParallelReadOnlyTools(): Promise<void> {
+  let concurrent = 0;
+  let maxConcurrent = 0;
+  const delayMs = 80;
+  const track = async (label: string) => {
+    concurrent += 1;
+    maxConcurrent = Math.max(maxConcurrent, concurrent);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+    concurrent -= 1;
+    return { label };
+  };
+  const toolA = createMockTool("parallel_a", ["read"], async () => track("a"));
+  const toolB = createMockTool("parallel_b", ["read", "network"], async () => track("b"));
+  let requestCount = 0;
+  const provider: ModelProvider = {
+    id: "mock-parallel",
+    displayName: "Mock Parallel",
+    defaultModel: "mock",
+    supportsToolCalling: true,
+    async complete(request) {
+      requestCount += 1;
+      if (requestCount === 1) {
+        return {
+          id: "first",
+          toolCalls: [
+            { id: "call_a", type: "function", function: { name: "parallel_a", arguments: "{}" } },
+            { id: "call_b", type: "function", function: { name: "parallel_b", arguments: "{}" } },
+          ],
+        };
+      }
+      return { id: "second", text: "done" };
+    },
+  };
+  const runtime = createDragonRuntime({
+    providers: [provider],
+    defaultModel: "mock",
+    tools: [toolA, toolB],
+    permissionEngine: createToolPermissionEngine({
+      defaultDecision: "allow",
+    }),
+  });
+  const result = await runtime.runTurn({
+    sessionId: "parallel-tools",
+    source: "cli",
+    message: "run both",
+  });
+  assert(result.status === "ok", `parallel tool turn failed: ${result.error}`);
+  assert(maxConcurrent === 2, `expected concurrent tool execution, saw max ${maxConcurrent}`);
+  assert(requestCount === 2, "model should be called twice after parallel tools");
+}
+
+async function testBrowserPlaywrightSnapshotTool(): Promise<void> {
+  const tool = createBrowserPlaywrightSnapshotTool();
+  const result = await tool.invoke({
+    id: "pw-1",
+    name: tool.name,
+    input: { url: "https://example.com" },
+    sessionId: "browser-pw",
+  });
+  if (result.ok) {
+    assert(result.output?.rendered === true, "output should be marked rendered");
+    assert(result.output?.engine === "playwright-chromium", "output should name playwright engine");
+    assert(typeof result.output?.text === "string" && result.output.text.length > 0, "playwright should return body text");
+    return;
+  }
+  assert(result.error?.includes("Playwright"), "missing playwright should mention install instructions");
 }
 
 async function testRuntimeToolCallLoop(): Promise<void> {

@@ -15,7 +15,11 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
+  "optionalDependencies": {
+    "playwright": "^1.52.0"
+  },
   "devDependencies": {
+    "playwright": "^1.52.0",
     "typescript": "^5.9.3"
   }
 }

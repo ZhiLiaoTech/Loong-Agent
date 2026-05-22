@@ -36,6 +36,11 @@ export {
   type BrowserSnapshotToolOptions,
 } from "./builtin/browser.js";
 export {
+  createBrowserPlaywrightSnapshotTool,
+  type BrowserPlaywrightSnapshotInput,
+  type BrowserPlaywrightSnapshotOutput,
+} from "./builtin/browser-playwright.js";
+export {
   createFileReadTool,
   createFileSearchTool,
   type FileReadInput,
