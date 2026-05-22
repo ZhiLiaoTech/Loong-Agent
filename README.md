@@ -52,18 +52,47 @@
 
 **Dragon（潜龙 / Qianlong）** 是 **原生 TypeScript、本地优先** 的智能体框架。名称中的「龙」指 **中国龙（🐉）** —— 象征深潜蓄势、审时度势、终而智驭八方（*潜龙在渊，智驭八方*）。
 
-Dragon 希望融合以下项目的优点：
+我们在工程上对标并吸收业界主流本地/编码智能体的成熟做法，在 **单一 TypeScript 运行时** 内落地，避免 Python 与 Node 双栈割裂：
 
-| 来源 | 借鉴能力 |
-|------|----------|
-| **OpenClaw** | 网关、插件、会话、本地优先架构 |
-| **Hermes Agent** | 可自我改进的技能、记忆、模型路由、运行轨迹 |
-| **Claude Code** | 编码智能体交互方式、权限体验、工程化工作流 |
+| 来源 | 借鉴能力 | Dragon 中的对应实现 |
+|------|----------|---------------------|
+| **OpenClaw** | 网关、插件、会话、本地优先 | `@dragon/gateway`（HTTP/WS/SSE RPC）、插件发现、按会话队列（Lane）、Dashboard |
+| **Hermes Agent** | 技能进化、记忆、模型路由、轨迹 | `SKILL.md` 与技能工具、可审核记忆候选、Tier 路由与 Fallback、Trajectory 持久化 |
+| **Claude Code** | 编码交互、权限、工程化工具链 | 文件/补丁/Shell/Sandbox、交互式 `ask` 审批、回合级工具循环与事件流 |
 
 与 Hermes 相关的概念在合适处 **用 TypeScript 重新实现**；运行时 **不引入 Python**。
 
+### 已实现的优势
+
+相对「只有 CLI 的编码助手」或「只有聊天网关的 Bot」，Dragon 已经把 **控制面 + 运行时内核 + 可扩展工具链** 连成一条可审计的本地链路：
+
+- **架构清晰、可嵌入**：`@dragon/core` 不依赖 Gateway/Memory，单回合 `runTurn` 可嵌入 CLI、Gateway、委托 Worker；统一 `DragonEvent`（lifecycle / assistant_delta / tool / permission）便于 Dashboard 与轨迹回放。
+- **本地控制面完整**：Gateway 提供 `agent`、`run.cancel`、`runs.list`、Cron/插件/Provider 观测 RPC；按 `sessionId` 串行 Lane，避免同会话并发踩踏。
+- **模型层韧性强**：多 Provider 插件（OpenAI / Anthropic / OpenRouter 兼容）、可重试 Fallback 链、Tier 启发式选模、流式增量转发；回合内 **Turn Prep** 控制上下文体积，溢出时可 reactive 重试。
+- **工具与安全默认值**：工作区约束、Shell 白名单、Sandbox（本地/Docker/SSH）策略档、密钥脱敏；写操作默认 `ask`，Gateway/CLI 可挂接权限 Handler。
+- **工具循环工程化**：达到迭代上限时 **优雅收尾**（合成 `tool_iteration_limit` + 无工具总结），取消时 **补齐 tool 协议**（`turn_cancelled`），避免 Provider 400 与悬空 `tool_use`。
+- **记忆与技能可进化且可审计**：Markdown + 可选 SQLite/FTS；「记住」先入 **待审核候选**，经 promote/reject 再落盘；`skill_create` / `skill_improve` 支持技能迭代。
+- **多智能体与自动化**：`@dragon/delegation` 依赖图编排 + `delegation_run`；Cron 文件存储与 Gateway Tick；`@dragon/channels` 适配 Telegram/Slack Webhook；可选 `@dragon/org` 员工路由与审批工单。
+- **回归覆盖广**：`@dragon/test-suite` 覆盖 Gateway WS、Provider 工具翻译/流式、记忆审核、委托、Cron、Sandbox、取消协议等高风险路径。
+
+### 待突破的技术难点
+
+对照 OpenClaw / Hermes / Claude Code 的纵深能力，Dragon 下一阶段应优先攻克：
+
+| 优先级 | 难点 | 说明 |
+|--------|------|------|
+| **P0** | **会话级 Query Loop** | Claude Code 以 `queryLoop` 驱动整段会话；Dragon 目前是「每用户消息一次 `runTurn`」。需在 Gateway 引入 **SessionTurnCoordinator**（排队、续跑、跨轮状态），统一 CLI/Gateway/委托的会话语义。 |
+| **P0** | **跨轮 Tool 上下文治理** | 长会话中历史 tool 结果占满上下文。需会话级摘要/压缩策略（类似 Hermes compaction + Claude 的 prep），并与 Turn Prep 分层协作。 |
+| **P0** | **Gateway 生产化硬化** | 默认 `authMode: none` 适合本机开发，共享/远程部署需默认认证、速率限制与更严格的直连工具白名单。 |
+| **P1** | **MCP 一等公民** | 业界工具生态正向 MCP 汇聚；需在 `@dragon/tools` 增加协议适配、发现与权限映射，而不是仅内置工具。 |
+| **P1** | **配置与能力贯通** | Agent Profile、`thinking` 档位、`toolsEnabled`/`memoryEnabled` 等需在 `runTurn` 与 Gateway `toTurnInput` 全链路生效，避免 Dashboard 配置「看得见用不了」。 |
+| **P1** | **通道与节点一体化** | Channels 适配器已存在，但 Gateway 仍依赖外部 bridge；多节点配对、远程 Worker 尚未落地（见 Roadmap）。 |
+| **P2** | **浏览器与并行工具** | 现有 `browser_snapshot` / `browser_form_submit` 偏轻量；Rich Browser（Playwright 级）与 **只读工具并行**、流式并行读仍需加强。 |
+| **P2** | **IDE 原生集成** | Claude Code 深度绑定终端/IDE；Dragon 暂以 CLI + Gateway Dashboard 为主，缺少编辑器侧无缝嵌入。 |
+| **P2** | **模块化与 CI 效率** | `memory`/`cli`/`gateway` 大文件待拆分；test-suite 可并行分片以缩短 CI。 |
+
 > [!TIP]
-> 延伸阅读：[架构说明](docs/ARCHITECTURE.md) · [技术架构](docs/TECHNICAL_ARCHITECTURE.md) · [模块文档](docs/modules/README.md) · [插件指南](docs/PLUGINS.md) · [部署说明](docs/DEPLOYMENT.md)
+> 延伸阅读：[架构说明](docs/ARCHITECTURE.md) · [技术架构](docs/TECHNICAL_ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [模块文档](docs/modules/README.md) · [插件指南](docs/PLUGINS.md) · [部署说明](docs/DEPLOYMENT.md)
 >
 > 文档语言：[简体中文](README.md)（本页）· [English](README.en.md)
 

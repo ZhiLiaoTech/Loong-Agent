@@ -52,18 +52,47 @@
 
 Dragon (**Qianlong / 潜龙**) is a **TypeScript-native, local-first** agent framework. The dragon in our name is the **Chinese dragon (中国龙)** — a symbol of wisdom, adaptability, and command from the depths (*潜龙在渊*).
 
-Dragon aims to combine:
+We align with proven patterns from mainstream local and coding agents, implemented in a **single TypeScript runtime**—no Python/Node split:
 
-| Source | What we take |
-|--------|----------------|
-| **OpenClaw** | Gateway, plugins, sessions, local-first architecture |
-| **Hermes Agent** | Self-improving skills, memory, provider routing, trajectories |
-| **Claude Code** | Coding-agent interaction, permissions, engineering workflow |
+| Source | What we take | How Dragon implements it |
+|--------|----------------|---------------------------|
+| **OpenClaw** | Gateway, plugins, sessions, local-first | `@dragon/gateway` (HTTP/WS/SSE RPC), plugin discovery, per-session lanes, Dashboard |
+| **Hermes Agent** | Skill evolution, memory, routing, trajectories | `SKILL.md` + skill tools, reviewable memory candidates, tier routing & fallback, trajectory store |
+| **Claude Code** | Coding UX, permissions, engineering toolchain | file/patch/shell/sandbox tools, interactive `ask` approvals, turn-level tool loop & events |
 
 Hermes concepts are **reimplemented in TypeScript** where they fit — no Python in the runtime.
 
+### Strengths already in the codebase
+
+Compared with “CLI-only coding assistants” or “chat-only gateways,” Dragon wires **control plane + runtime core + extensible tools** into one auditable local stack:
+
+- **Clear boundaries, embeddable core**: `@dragon/core` does not depend on Gateway/Memory; `runTurn` runs in CLI, Gateway, and delegation workers; unified `DragonEvent` streams power Dashboard and trajectory replay.
+- **Complete local control plane**: Gateway exposes `agent`, `run.cancel`, `runs.list`, and observability RPCs for cron/plugins/providers; per-`sessionId` lanes prevent concurrent turn corruption.
+- **Resilient model layer**: provider plugins (OpenAI / Anthropic / OpenRouter compatible), retryable fallback chains, tier heuristics, streaming deltas; in-turn **Turn Prep** with reactive retry on context overflow.
+- **Safe tool defaults**: workspace constraints, shell allowlists, sandbox backends (local/Docker/SSH), secret redaction; writes default to `ask` with pluggable permission handlers.
+- **Hardened tool loop**: graceful cap handling (`tool_iteration_limit` + tool-free summary) and cancel-safe tool protocol (`turn_cancelled` synthetic results) so providers never see dangling `tool_use` ids.
+- **Auditable memory & skills**: Markdown + optional SQLite/FTS; “remember” flows go through **pending candidates** before promotion; `skill_create` / `skill_improve` support iteration.
+- **Multi-agent & automation**: `@dragon/delegation` dependency graphs + `delegation_run`; cron file store & Gateway tick; `@dragon/channels` for Telegram/Slack webhooks; optional `@dragon/org` routing and approvals.
+- **Broad regression coverage**: `@dragon/test-suite` exercises Gateway WS, provider tool translation/streaming, memory review, delegation, cron, sandbox, and cancel protocol paths.
+
+### Technical challenges to tackle next
+
+Relative to the depth of OpenClaw, Hermes, and Claude Code, these are the main gaps to close:
+
+| Priority | Challenge | Notes |
+|----------|-----------|-------|
+| **P0** | **Session-level query loop** | Claude Code drives sessions via `queryLoop`; Dragon still uses one `runTurn` per user message. A **SessionTurnCoordinator** in Gateway (queue, resume, cross-turn state) should unify CLI/Gateway/delegation semantics. |
+| **P0** | **Cross-turn tool context** | Long sessions fill context with tool outputs. Session-level summarization/compaction (Hermes-style + Claude-style prep) must complement per-call Turn Prep. |
+| **P0** | **Gateway hardening for production** | Default `authMode: none` is fine for localhost; shared/remote deploys need auth-by-default, rate limits, and tighter direct-tool allowlists. |
+| **P1** | **First-class MCP** | The ecosystem is converging on MCP; `@dragon/tools` needs protocol adapters, discovery, and permission mapping—not only built-ins. |
+| **P1** | **End-to-end config wiring** | Agent profiles, `thinking` levels, `toolsEnabled`/`memoryEnabled` must flow through `runTurn` and Gateway `toTurnInput` so Dashboard settings actually apply. |
+| **P1** | **Channels & nodes** | Channel adapters exist but Gateway still expects an external bridge; multi-node pairing and remote workers remain on the roadmap. |
+| **P2** | **Browser & parallel tools** | Today’s `browser_snapshot` / `browser_form_submit` are lightweight; Playwright-class automation and parallel read-only tool execution need more work. |
+| **P2** | **Native IDE integration** | Claude Code is deeply tied to terminal/IDE workflows; Dragon is CLI + Gateway Dashboard first. |
+| **P2** | **Modularity & CI speed** | Large `memory`/`cli`/`gateway` modules should split; the test suite can shard for faster CI. |
+
 > [!TIP]
-> Deep dives: [Architecture](docs/ARCHITECTURE.md) · [Technical architecture](docs/TECHNICAL_ARCHITECTURE.md) · [Modules](docs/modules/README.md) · [Plugins](docs/PLUGINS.md) · [Deployment](docs/DEPLOYMENT.md)
+> Deep dives: [Architecture](docs/ARCHITECTURE.md) · [Technical architecture](docs/TECHNICAL_ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md) · [Modules](docs/modules/README.md) · [Plugins](docs/PLUGINS.md) · [Deployment](docs/DEPLOYMENT.md)
 >
 > Languages: [简体中文](README.md) · [English](README.en.md) (this page)
 
