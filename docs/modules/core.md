@@ -97,7 +97,12 @@ runTurn
 - 与回合内 `turn_prep` 分层：session 层管跨轮体积，turn 层管当次模型请求（含当轮 tool 结果）。
 - 事件：`context` / `providerName: "session_history_prep"`。
 
-### 3.9 关键常量
+### 3.9 Query Loop 续跑信号
+
+- `DragonTurnInput.queryLoop`（默认在 Gateway 开启 `queryLoop` 时为 true）：工具迭代触顶并完成 finalize 后，assistant `metadata.queryLoopContinue = true`。
+- Gateway `query-loop.ts` 读取该标记，在同一 `agent` RPC 内自动续跑（见 [gateway.md](./gateway.md) §3.4）。
+
+### 3.10 关键常量
 
 - `maxToolIterations`: 20（`createDragonRuntime({ maxToolIterations })` 可覆盖）
 - `maxContextChars`: 12_000

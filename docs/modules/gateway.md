@@ -42,7 +42,14 @@ Dashboard HTML 由独立包 `@dragon/gateway-dashboard` 构建（`dist/index.htm
 - Webhook/Cron 投递在内部对排队回合自动 `agent.wait`，保持通道语义阻塞完成。
 - 与 `#runInLane` 配合：队列 drain 仍串行执行，不并发踩踏 transcript。
 
-### 3.4 Session Lane
+### 3.4 Query Loop（自动续跑）
+
+- 模块：`packages/gateway/src/query-loop.ts`
+- `agent` RPC 参数：`queryLoop: true` 或 `{ enabled, maxTurns }`（默认最多 3 轮）。
+- 当 Runtime 在回合结束时标记 `metadata.queryLoopContinue`（例如工具迭代触顶后 finalize），Gateway 在同一 `agent` 请求内自动发起续跑，续跑消息为内置 `QUERY_LOOP_CONTINUE_MESSAGE`，事件聚合到单次 RPC 响应。
+- `queryLoop: false` 写入 `DragonTurnInput` 可禁止续跑信号。
+
+### 3.5 Session Lane
 
 ```typescript
 // packages/gateway/src/index.ts — #runInLane
@@ -51,7 +58,7 @@ Dashboard HTML 由独立包 `@dragon/gateway-dashboard` 构建（`dist/index.htm
 
 保证同会话 Agent 请求不并发，避免 transcript 交错。
 
-### 3.5 直连工具（tool.invoke）
+### 3.6 直连工具（tool.invoke）
 
 默认白名单：`git_status`、`git_diff`、`git_log`。额外条件：
 
@@ -59,19 +66,19 @@ Dashboard HTML 由独立包 `@dragon/gateway-dashboard` 构建（`dist/index.htm
 - 能力不含 `write` / `network` / `memory` / `custom`
 - 通过注入的 `ToolPermissionEngine`（Gateway 默认 deny 未知工具）
 
-### 3.6 认证与速率限制
+### 3.7 认证与速率限制
 
 - `auth-policy.ts`：绑定 `0.0.0.0` / 非 loopback 时默认要求 `shared-secret`（可自动生成并打日志）；`127.0.0.1` 仍允许 `authMode: none`。
 - `rate-limit.ts`：对 `/rpc`、`/channels/webhook`、`/events`、`/ws`、`/health` 按客户端 IP 滑动窗口限流。
 - `#isAuthorized`：`shared-secret` 时校验 `Authorization: Bearer` 或 `x-dragon-secret`。
 - 非 loopback 且无认证时，`tool.invoke` 返回 403。
 
-### 3.7 模型目录与 Channel Webhook
+### 3.8 模型目录与 Channel Webhook
 
 - `model-catalog-bridge.ts`：由 Gateway 启动时的 `providerSummaries` 构建 `DragonModelCatalog`；`#resolveAgentParams` 在 profile/员工路由之后调用 `applyModelCatalogToAgentParams`，将裸别名规范为 `provider:model`。
 - `channels-webhook.ts`：`assertDragonGatewayWebhookPayload` 与 `@dragon/channels` 的 `DragonGatewayWebhookPayload` 对齐；`/channels/webhook` 解析路径在 `parseGatewayWebhookParams` 中先校验再映射为 `GatewayAgentParams`。
 
-### 3.8 依赖
+### 3.9 依赖
 
 - `@dragon/core` — Runtime、事件类型
 - `@dragon/tools` — 工具目录与权限

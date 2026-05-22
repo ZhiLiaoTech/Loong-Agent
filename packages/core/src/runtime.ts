@@ -376,6 +376,9 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       if (toolIterationLimitReached) {
         assistantMetadata.toolIterationLimitReached = true;
         assistantMetadata.toolIterationLimit = this.#maxToolIterations;
+        if (activeInput.queryLoop !== false) {
+          assistantMetadata.queryLoopContinue = true;
+        }
       }
       if (fallbackFailures.length > 0) {
         assistantMetadata.modelFallbacks = fallbackFailures;

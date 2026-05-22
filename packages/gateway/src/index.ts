@@ -15,6 +15,11 @@ import {
   SessionTurnCoordinator,
   type AgentTurnResultPayload,
 } from "./session-coordinator.js";
+import {
+  QUERY_LOOP_CONTINUE_MESSAGE,
+  resolveQueryLoopMaxTurns,
+  shouldContinueQueryLoop,
+} from "./query-loop.js";
 import type {
   DragonAgentRuntime,
   DragonEvent,
@@ -95,6 +100,9 @@ export interface GatewayAgentParams {
   memoryEnabled?: boolean;
   attachments?: GatewayAgentAttachment[];
   tier?: GatewayTierName;
+  /** When true, Gateway may auto-continue turns (e.g. after tool-iteration cap). */
+  queryLoop?: boolean;
+  queryLoopMaxTurns?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -1136,6 +1144,40 @@ export class HttpDragonGateway implements DragonGateway {
   }
 
   async #executeAgentTurn(params: GatewayAgentParams): Promise<AgentTurnResultPayload> {
+    const maxTurns = resolveQueryLoopMaxTurns(params.queryLoop, params.queryLoopMaxTurns);
+    const allEvents: DragonEvent[] = [];
+    let lastPayload: AgentTurnResultPayload | undefined;
+    let activeParams = params;
+
+    for (let turnIndex = 0; turnIndex < maxTurns; turnIndex += 1) {
+      const payload = await this.#executeSingleAgentTurn(activeParams);
+      allEvents.push(...payload.events);
+      lastPayload = payload;
+      const result = payload.result as DragonTurnResult;
+      if (!shouldContinueQueryLoop(result, turnIndex, maxTurns)) {
+        break;
+      }
+      activeParams = {
+        ...params,
+        message: QUERY_LOOP_CONTINUE_MESSAGE,
+        metadata: {
+          ...(params.metadata ?? {}),
+          queryLoopContinuation: turnIndex + 1,
+          queryLoopReason: "tool_iteration_limit",
+        },
+      };
+    }
+
+    if (!lastPayload) {
+      throw new Error("Agent turn produced no result.");
+    }
+    return {
+      result: lastPayload.result,
+      events: allEvents,
+    };
+  }
+
+  async #executeSingleAgentTurn(params: GatewayAgentParams): Promise<AgentTurnResultPayload> {
     const input = toTurnInput(params);
     return await this.#runInLane(input.sessionId, async () => {
       const events: DragonEvent[] = [];
@@ -2878,6 +2920,17 @@ function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
     }
     params.tier = value.tier;
   }
+  if (value.queryLoop === true) {
+    params.queryLoop = true;
+  } else if (isRecord(value.queryLoop)) {
+    params.queryLoop = value.queryLoop.enabled !== false;
+    if (typeof value.queryLoop.maxTurns === "number" && Number.isFinite(value.queryLoop.maxTurns)) {
+      params.queryLoopMaxTurns = Math.min(10, Math.max(1, Math.floor(value.queryLoop.maxTurns)));
+    }
+  }
+  if (typeof value.queryLoopMaxTurns === "number" && Number.isFinite(value.queryLoopMaxTurns)) {
+    params.queryLoopMaxTurns = Math.min(10, Math.max(1, Math.floor(value.queryLoopMaxTurns)));
+  }
   return params;
 }
 
@@ -3105,6 +3158,9 @@ function toTurnInput(params: GatewayAgentParams): DragonTurnInput {
   }
   if (params.tier !== undefined) {
     input.tier = params.tier;
+  }
+  if (params.queryLoop !== undefined) {
+    input.queryLoop = params.queryLoop;
   }
   if (params.metadata !== undefined) {
     input.metadata = params.metadata;
@@ -3916,3 +3972,9 @@ export {
   type GatewayProviderModelCatalogSource,
 } from "./model-catalog-bridge.js";
 export { assertDragonGatewayWebhookPayload, type DragonGatewayWebhookPayload } from "./channels-webhook.js";
+export {
+  QUERY_LOOP_CONTINUE_MESSAGE,
+  DEFAULT_QUERY_LOOP_MAX_TURNS,
+  resolveQueryLoopMaxTurns,
+  shouldContinueQueryLoop,
+} from "./query-loop.js";

@@ -51,6 +51,11 @@ export interface DragonTurnInput {
   attachments?: readonly DragonAttachment[];
   /** Caller-forced tier. Bypasses the heuristic classifier entirely. */
   tier?: DragonTierHint;
+  /**
+   * When true (default for Gateway when query loop is enabled), a turn that hits
+   * the tool-iteration cap may request an automatic continuation turn.
+   */
+  queryLoop?: boolean;
   signal?: AbortSignal;
   metadata?: Record<string, unknown>;
 }

@@ -113,6 +113,7 @@ async function main(): Promise<void> {
     ["runtime turn cancel during tool", testRuntimeTurnCancelDuringTool],
     ["session history prep", testSessionHistoryPrep],
     ["gateway session turn queue", testGatewaySessionTurnQueue],
+    ["gateway query loop continuation", testGatewayQueryLoop],
     ["gateway model catalog bridge", testGatewayModelCatalogBridge],
     ["mcp http transport", testMcpHttpTransport],
     ["browser SSRF redirect block", testBrowserSsrfRedirectBlock],
@@ -2641,6 +2642,56 @@ async function testGatewaySessionTurnQueue(): Promise<void> {
       "queued turn should complete with second message",
     );
     assert(maxConcurrent === 1, "session turns should not run concurrently");
+  } finally {
+    await gateway.stop();
+  }
+}
+
+async function testGatewayQueryLoop(): Promise<void> {
+  let turnCount = 0;
+  const runtime: DragonAgentRuntime = {
+    async runTurn(input) {
+      turnCount += 1;
+      const needsContinue = turnCount === 1;
+      return {
+        runId: `run-${turnCount}`,
+        status: "ok",
+        messages: [
+          { id: "u1", role: "user", content: input.message, createdAt: "2026-05-22T10:00:00.000Z" },
+          {
+            id: "a1",
+            role: "assistant",
+            content: needsContinue ? "partial" : "done",
+            createdAt: "2026-05-22T10:00:01.000Z",
+            metadata: needsContinue
+              ? { queryLoopContinue: true, toolIterationLimitReached: true }
+              : {},
+          },
+        ],
+      };
+    },
+    subscribe() {
+      return () => {};
+    },
+  };
+  const gateway = createHttpGateway({ runtime });
+  await gateway.start({ host: "127.0.0.1", port: 0 });
+  const address = gateway.address();
+  assert(address !== undefined, "query loop gateway should start");
+  try {
+    const response = await rpc(address.url, "agent", {
+      sessionId: "query-loop-session",
+      message: "start task",
+      queryLoop: true,
+    });
+    assert(response.status === 200 && response.json.ok === true, "query loop agent RPC should succeed");
+    assert(turnCount === 2, "query loop should auto-continue after queryLoopContinue");
+    assert(
+      readPath(response.json, ["payload", "result", "messages", 1, "content"]) === "done",
+      "final assistant message should come from continuation turn",
+    );
+    const events = readPath(response.json, ["payload", "events"]);
+    assert(Array.isArray(events) && events.length >= 0, "query loop should return events array");
   } finally {
     await gateway.stop();
   }
