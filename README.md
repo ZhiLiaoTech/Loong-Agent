@@ -1,118 +1,125 @@
 <div align="center">
 
-<img src="docs/images/banner.png" alt="Dragon — Chinese dragon banner" width="100%" />
+<img src="docs/images/banner.png" alt="Dragon — 中国龙主题横幅" width="100%" />
 
 <br />
 
-<img src="docs/images/logo.png" alt="Dragon logo — traditional Chinese dragon" width="160" />
+<img src="docs/images/logo.png" alt="Dragon 标志 — 中国龙" width="160" />
 
 # Dragon · 潜龙
 
-🐉 **潜龙在渊，智驭八方** — TypeScript-native, local-first agent framework
+🐉 **潜龙在渊，智驭八方** — 原生 TypeScript、本地优先的智能体框架
 
 <p align="center">
-  <a href="./README.zh_CN.md">简体中文</a> |
-  <strong>English</strong>
+  <a href="./README.md" title="简体中文（默认）">
+    <img src="https://img.shields.io/badge/简体中文-当前-C41E3A?style=for-the-badge" alt="简体中文" />
+  </a>
+  &nbsp;
+  <a href="./README.en.md" title="English">
+    <img src="https://img.shields.io/badge/English-README-D4AF37?style=for-the-badge" alt="English" />
+  </a>
 </p>
 
 <p align="center">
   <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/license-MIT-D4AF37?style=flat-square" alt="license">
+    <img src="https://img.shields.io/badge/许可证-MIT-D4AF37?style=flat-square" alt="许可证">
   </a><!--
   --><a href="https://www.typescriptlang.org/">
-    <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="typescript">
+    <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   </a><!--
   --><a href="https://pnpm.io/">
     <img src="https://img.shields.io/badge/pnpm-10.11-F69220?style=flat-square&logo=pnpm&logoColor=white" alt="pnpm">
   </a><!--
-  --><img src="https://img.shields.io/badge/architecture-local--first-C41E3A?style=flat-square" alt="local-first"><!--
-  --><img src="https://img.shields.io/badge/runtime-no%20Python-2E8B57?style=flat-square" alt="no python runtime">
+  --><img src="https://img.shields.io/badge/架构-本地优先-C41E3A?style=flat-square" alt="本地优先"><!--
+  --><img src="https://img.shields.io/badge/运行时-无%20Python-2E8B57?style=flat-square" alt="无 Python 运行时">
 </p>
 
 <p align="center">
-  <a href="#-about">About</a> •
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-packages">Packages</a> •
-  <a href="#-cli">CLI</a> •
-  <a href="#-gateway">Gateway</a> •
-  <a href="#-documentation">Docs</a> •
-  <a href="#-verification">Verify</a>
+  <a href="#-项目简介">项目简介</a> •
+  <a href="#-快速开始">快速开始</a> •
+  <a href="#-软件包">软件包</a> •
+  <a href="#-命令行">命令行</a> •
+  <a href="#-网关">网关</a> •
+  <a href="#-文档">文档</a> •
+  <a href="#-验证">验证</a>
 </p>
 
 </div>
 
 ---
 
-## 📝 About
+## 📝 项目简介
 
-Dragon (**Qianlong / 潜龙**) is a **TypeScript-native, local-first** agent framework. The dragon in our name is the **Chinese dragon (中国龙)** — a symbol of wisdom, adaptability, and command from the depths (*潜龙在渊*).
+**Dragon（潜龙 / Qianlong）** 是 **原生 TypeScript、本地优先** 的智能体框架。名称中的「龙」指 **中国龙（🐉）** —— 象征深潜蓄势、审时度势、终而智驭八方（*潜龙在渊，智驭八方*）。
 
-Dragon aims to combine:
+Dragon 希望融合以下项目的优点：
 
-| Source | What we take |
-|--------|----------------|
-| **OpenClaw** | Gateway, plugins, sessions, local-first architecture |
-| **Hermes Agent** | Self-improving skills, memory, provider routing, trajectories |
-| **Claude Code** | Coding-agent interaction, permissions, engineering workflow |
+| 来源 | 借鉴能力 |
+|------|----------|
+| **OpenClaw** | 网关、插件、会话、本地优先架构 |
+| **Hermes Agent** | 可自我改进的技能、记忆、模型路由、运行轨迹 |
+| **Claude Code** | 编码智能体交互方式、权限体验、工程化工作流 |
 
-Hermes concepts are **reimplemented in TypeScript** where they fit — no Python in the runtime.
+与 Hermes 相关的概念在合适处 **用 TypeScript 重新实现**；运行时 **不引入 Python**。
 
 > [!TIP]
-> Deep dives: [Architecture](docs/ARCHITECTURE.md) · [Technical architecture](docs/TECHNICAL_ARCHITECTURE.md) · [Modules](docs/modules/README.md) · [Plugins](docs/PLUGINS.md) · [Deployment](docs/DEPLOYMENT.md)
+> 延伸阅读：[架构说明](docs/ARCHITECTURE.md) · [技术架构](docs/TECHNICAL_ARCHITECTURE.md) · [模块文档](docs/modules/README.md) · [插件指南](docs/PLUGINS.md) · [部署说明](docs/DEPLOYMENT.md)
+>
+> 文档语言：[简体中文](README.md)（本页）· [English](README.en.md)
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
 ```bash
-# Install dependencies
+# 安装依赖
 corepack pnpm install
 
-# Build & verify
+# 构建与检查
 corepack pnpm check
 corepack pnpm build
 corepack pnpm test
 
-# Chat once
-dragon chat "Hello from the depths."
+# 单次对话
+dragon chat "潜龙试爪。"
 
-# Agent with tools (interactive write approval by default)
-dragon agent "Summarize this repository."
+# 带工具的智能体（默认：写入操作需交互审批）
+dragon agent "概括本仓库的结构与模块。"
 
-# Local gateway + dashboard
+# 启动本地网关与控制台
 dragon gateway
 ```
 
-Open `http://127.0.0.1:17357/` after `dragon gateway` (default port `17357`; override with `--port`).
+执行 `dragon gateway` 后，在浏览器打开 `http://127.0.0.1:17357/`（默认端口 `17357`，可用 `--port` 修改）。
 
 ---
 
-## 📦 Packages
+## 📦 软件包
 
-| Package | Role |
-|---------|------|
-| `@dragon/core` | Agent turn runtime, lifecycle events, sessions, queues |
-| `@dragon/gateway` | WebSocket/HTTP control plane |
-| `@dragon/channels` | Chat-channel webhooks and Gateway delivery |
-| `@dragon/tools` | Tool registry, permissions, built-in contracts |
-| `@dragon/security` | Sensitive-key detection and secret redaction |
-| `@dragon/providers` | Model provider routing |
-| `@dragon/model-catalog` | Provider-scoped model metadata |
-| `@dragon/memory` | Markdown, SQLite, and search memory |
-| `@dragon/skills` | `SKILL.md` runtime and authoring |
-| `@dragon/cron` | Cron parsing, file-backed jobs, runner |
-| `@dragon/delegation` | Multi-agent plans, `delegation_run` tool |
-| `@dragon/plugin-sdk` | Public plugin API |
-| `@dragon/plugin-openai-compatible` | OpenAI-compatible provider plugin |
-| `@dragon/plugin-openrouter-compatible` | OpenRouter provider plugin |
-| `@dragon/plugin-anthropic-compatible` | Anthropic Messages + tool translation |
-| `@dragon/plugin-git-tools` | Read-only Git inspection tools |
-| `@dragon/test-suite` | TypeScript regression tests |
-| `@dragon/cli` | Command-line entrypoint |
+| 包名 | 说明 |
+|------|------|
+| `@dragon/core` | 智能体回合运行时、生命周期事件、会话、队列 |
+| `@dragon/gateway` | WebSocket / HTTP 控制平面 |
+| `@dragon/channels` | 聊天渠道 Webhook 与 Gateway 消息投递 |
+| `@dragon/tools` | 工具注册表、权限控制、内置工具契约 |
+| `@dragon/security` | 敏感键检测与密钥脱敏 |
+| `@dragon/providers` | 模型提供商路由 |
+| `@dragon/model-catalog` | 按提供商划分的模型元数据 |
+| `@dragon/memory` | Markdown、SQLite 与搜索型记忆 |
+| `@dragon/skills` | `SKILL.md` 技能运行时与编写 |
+| `@dragon/cron` | Cron 表达式解析、文件任务存储与执行器 |
+| `@dragon/delegation` | 多智能体任务编排与 `delegation_run` 工具 |
+| `@dragon/plugin-sdk` | 对外公开的插件 API |
+| `@dragon/plugin-openai-compatible` | OpenAI 兼容协议提供商插件 |
+| `@dragon/plugin-openrouter-compatible` | OpenRouter 提供商插件 |
+| `@dragon/plugin-anthropic-compatible` | Anthropic Messages API 与工具调用翻译 |
+| `@dragon/plugin-git-tools` | 只读 Git 仓库检查工具 |
+| `@dragon/test-suite` | TypeScript 回归测试套件 |
+| `@dragon/cli` | 命令行入口 |
 
 ---
 
-## 🖥️ CLI
+## 🖥️ 命令行
 
 ```bash
 dragon chat [--session <id>] [--session-dir <path>] [--no-session] \
@@ -131,68 +138,68 @@ dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] \
 ```
 
 <details>
-<summary><strong>Agent capabilities</strong></summary>
+<summary><strong>智能体能力</strong></summary>
 
-- Read/search workspace files; conservative read-only shell allowlist
-- `sandbox_exec` (local, Docker, or SSH) with `inspect`, `versions`, `git-read`, `search-read`, `repo-read` profiles
-- `browser_snapshot`, `browser_form_submit`, `file_patch` (writes need approval unless `--allow-write`)
-- `/skills`, `/skills <query>`, `/skills load <name>` — local, no model required
-- `delegation_run`, `skill_create`, `skill_improve`, memory candidate promote/reject
+- 读取、搜索工作区文件；保守的只读 Shell 命令白名单
+- `sandbox_exec`：支持本地、Docker、SSH 沙箱；配置档 `inspect`、`versions`、`git-read`、`search-read`、`repo-read`
+- `browser_snapshot`、`browser_form_submit`、`file_patch`（写入默认需审批；`--allow-write` 可跳过）
+- `/skills`、`/skills <query>`、`/skills load <name>`：本地技能命令，无需连接模型
+- `delegation_run`、`skill_create`、`skill_improve`、记忆候选晋升 / 拒绝
 
 </details>
 
 <details>
-<summary><strong>Models, plugins, memory</strong></summary>
+<summary><strong>模型、插件与记忆</strong></summary>
 
-- Model refs: `openai:gpt-4o`, `anthropic:claude-sonnet-4-5`, etc. Config: `.dragon/config/providers.json`
-- Agent profiles: `.dragon/config/agents.json`
-- Fallbacks: `--model-fallback` or `DRAGON_MODEL_FALLBACKS`
-- Plugins: `.dragon/plugins`, `DRAGON_PLUGIN_ROOTS`, `--plugin-root`
-- Memory: `file` (default), `sqlite`, Markdown under `USER.md` / `PROJECT.md` / `MEMORY.md` / `notes/`
-- Candidates: `.dragon/memory/candidates/` — promote before search/injection
+- 模型引用示例：`openai:gpt-4o`、`anthropic:claude-sonnet-4-5`；配置文件 `.dragon/config/providers.json`
+- 智能体配置：`.dragon/config/agents.json`
+- 失败回退：`--model-fallback` 或环境变量 `DRAGON_MODEL_FALLBACKS`
+- 插件目录：`.dragon/plugins`、`DRAGON_PLUGIN_ROOTS`、`--plugin-root`
+- 记忆后端：默认 `file`，可选 `sqlite`；Markdown 记忆包括 `USER.md`、`PROJECT.md`、`MEMORY.md`、`notes/` 等
+- 候选记忆位于 `.dragon/memory/candidates/`，须经晋升后才参与检索与注入
 
 </details>
 
 ---
 
-## 🌐 Gateway
+## 🌐 网关
 
-`dragon gateway` serves a minimal dashboard at `/` with workspaces **Run**, **Models**, **Agents**, **Observe**, and **System**.
+`dragon gateway` 在 `/` 提供轻量控制台，包含 **运行、模型、智能体、观测、系统** 五个工作区。
 
-| Surface | Purpose |
-|---------|---------|
-| `GET /health` | Health check |
-| `GET /events` | SSE stream (`sessionId` / `runId` filters) |
-| `GET /ws` | WebSocket RPC + events |
-| `POST /rpc` | `connect`, `health`, `agent`, `run.status`, `run.cancel`, `runs.list`, config, plugins, tools, memory, trajectory, cron, … |
-| `POST /channels/webhook` | Authenticated channel ingress (Telegram/Slack adapters in `@dragon/channels`) |
+| 接口 | 说明 |
+|------|------|
+| `GET /health` | 健康检查 |
+| `GET /events` | SSE 事件流（支持 `sessionId` / `runId` 过滤） |
+| `GET /ws` | WebSocket RPC 与事件推送 |
+| `POST /rpc` | 连接、健康检查、智能体调用、运行状态、配置、插件、工具、记忆、轨迹、定时任务等 |
+| `POST /channels/webhook` | 经认证的聊天渠道入站（`@dragon/channels` 提供 Telegram / Slack 适配） |
 
 <details>
-<summary><strong>RPC highlights</strong></summary>
+<summary><strong>RPC 要点</strong></summary>
 
-- `providers.list` — provider ids, models, tool-calling capability (no raw API keys returned)
-- `plugins.list` — names, tools, providers, memory backends, hooks (no filesystem paths)
-- `tools.catalog` / `tool.invoke` — direct invoke is stricter than the agent loop (read-only allowlist by default)
-- OpenAI/Anthropic-compatible plugins can stream true text deltas via `assistant_delta` events
-- Cron: `.dragon/cron/jobs.json`, `dragon cron --once` or long-running runner (also started by gateway by default)
+- `providers.list`：列出提供商、模型及工具调用能力（不返回原始 API Key）
+- `plugins.list`：插件名、工具、提供商、记忆后端、钩子摘要（不含文件系统路径）
+- `tools.catalog` / `tool.invoke`：直连调用比智能体循环更严格（默认仅只读白名单）
+- 兼容 OpenAI / Anthropic 的插件可通过 `assistant_delta` 事件推送真实文本增量
+- 定时任务：任务文件 `.dragon/cron/jobs.json`；`dragon cron --once` 单次执行或常驻运行（网关默认也会启动定时任务）
 
 </details>
 
 ---
 
-## 📚 Documentation
+## 📚 文档
 
-| Topic | Link |
-|-------|------|
-| Architecture & reuse plan | [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [REUSE_PLAN.md](docs/REUSE_PLAN.md) |
-| Technical design | [TECHNICAL_ARCHITECTURE.md](docs/TECHNICAL_ARCHITECTURE.md) |
-| Per-module specs | [modules/README.md](docs/modules/README.md) |
-| Plugins | [PLUGINS.md](docs/PLUGINS.md) |
-| Deploy & smoke test | [DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| 主题 | 链接 |
+|------|------|
+| 架构与复用计划 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [REUSE_PLAN.md](docs/REUSE_PLAN.md) |
+| 技术设计 | [TECHNICAL_ARCHITECTURE.md](docs/TECHNICAL_ARCHITECTURE.md) |
+| 各模块规格 | [modules/README.md](docs/modules/README.md) |
+| 插件开发 | [PLUGINS.md](docs/PLUGINS.md) |
+| 部署与冒烟测试 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 
 ---
 
-## ✅ Verification
+## ✅ 验证
 
 ```bash
 corepack pnpm check
@@ -201,18 +208,23 @@ corepack pnpm test
 corepack pnpm smoke:gateway
 ```
 
-`corepack pnpm test` covers CLI skills, Gateway RPC/WS/webhook/cron, channels, memory candidates, trajectories, sandbox, browser tools, delegation, model catalog, provider plugins, and security redaction.
+`corepack pnpm test` 覆盖：CLI 技能命令、Gateway RPC / WebSocket / Webhook / Cron、渠道适配、记忆候选、运行轨迹、沙箱执行、浏览器工具、任务委派、模型目录、提供商插件与安全脱敏等。
 
 ---
 
-## 📜 License
+## 📜 许可证
 
-[MIT License](./LICENSE) — Copyright (c) 2026 Dragon Authors
+本项目采用 [MIT 许可证](./LICENSE)，Copyright (c) 2026 Dragon Authors。
 
 ---
 
 <div align="center">
 
-<sub>🐉 Built with TypeScript · Local-first · 潜龙在渊，智驭八方</sub>
+<p>
+  <a href="./README.md"><strong>简体中文</strong></a> ·
+  <a href="./README.en.md">English</a>
+</p>
+
+<sub>🐉 以 TypeScript 构建 · 本地优先 · 潜龙在渊，智驭八方</sub>
 
 </div>

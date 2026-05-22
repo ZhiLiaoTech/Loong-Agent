@@ -2,36 +2,152 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Dragon README Preview</title>
   <style>
+    * { box-sizing: border-box; }
     body { margin: 0; background: #0d1117; color: #e6edf3; font-family: system-ui, sans-serif; }
+    .bar {
+      position: sticky; top: 0; z-index: 10;
+      background: #161b22; border-bottom: 1px solid #30363d;
+      padding: 10px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .bar strong { color: #f0883e; }
+    .lang button {
+      background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+      padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px;
+    }
+    .lang button.active { background: #C41E3A; border-color: #D4AF37; font-weight: 600; }
     .wrap { max-width: 920px; margin: 0 auto; padding: 24px; text-align: center; }
     img.banner { width: 100%; border-radius: 8px; }
     img.logo { width: 160px; margin-top: 16px; border-radius: 50%; }
     h1 { margin: 12px 0 4px; }
-    p { color: #8b949e; }
+    .tagline { color: #8b949e; font-size: 1.05em; }
+    .tagline strong { color: #e6edf3; }
     .badges img { margin: 4px; }
-    a { color: #4493f8; }
-    .bar { background: #161b22; padding: 8px 16px; font-size: 13px; color: #f0883e; text-align: left; }
+    a { color: #4493f8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .nav { margin: 16px 0; color: #8b949e; }
+    .panel { display: none; text-align: left; margin-top: 32px; }
+    .panel.active { display: block; }
+    .panel h2 { border-bottom: 1px solid #30363d; padding-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    th, td { border: 1px solid #30363d; padding: 8px; }
+    th { background: #161b22; }
+    pre { background: #161b22; border: 1px solid #30363d; padding: 12px; border-radius: 6px; overflow: auto; }
+    footer { text-align: center; color: #8b949e; margin-top: 48px; font-size: 0.9em; }
   </style>
 </head>
 <body>
-  <div class="bar">本地预览 · 用浏览器打开此文件即可（无需启动服务）</div>
+  <div class="bar">
+    <strong>README 预览</strong>
+    <span>模拟 GitHub 深色主题</span>
+    <span class="lang">
+      <button type="button" id="btn-zh" class="active">简体中文</button>
+      <button type="button" id="btn-en">English</button>
+    </span>
+    <span style="margin-left:auto;font-size:13px;color:#8b949e">
+      仓库：<a href="../README.md">README.md</a> · <a href="../README.en.md">README.en.md</a>
+    </span>
+  </div>
+
   <div class="wrap">
     <img class="banner" src="images/banner.png" alt="banner" />
     <img class="logo" src="images/logo.png" alt="logo" />
     <h1>Dragon · 潜龙</h1>
-    <p>🐉 <strong style="color:#e6edf3">潜龙在渊，智驭八方</strong> — TypeScript-native, local-first agent framework</p>
-    <p><a href="../README.zh_CN.md">简体中文</a> | <strong>English</strong></p>
-    <p class="badges">
-      <img src="https://img.shields.io/badge/license-MIT-D4AF37?style=flat-square" alt="" />
-      <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square" alt="" />
-      <img src="https://img.shields.io/badge/pnpm-10.11-F69220?style=flat-square" alt="" />
-      <img src="https://img.shields.io/badge/architecture-local--first-C41E3A?style=flat-square" alt="" />
-    </p>
-    <p><a href="#about">About</a> · <a href="#quick">Quick Start</a> · <a href="../README.md">完整 README</a></p>
-    <hr style="border-color:#30363d;margin:32px 0" />
-    <p id="about" style="text-align:left">完整内容请查看仓库根目录 <code>README.md</code> / <code>README.zh_CN.md</code></p>
+
+    <div id="panel-zh">
+      <p class="tagline">🐉 <strong>潜龙在渊，智驭八方</strong> — 原生 TypeScript、本地优先的智能体框架</p>
+      <p>
+        <img src="https://img.shields.io/badge/简体中文-当前-C41E3A?style=for-the-badge" alt="" />
+        <a href="../README.en.md"><img src="https://img.shields.io/badge/English-README-D4AF37?style=for-the-badge" alt="" /></a>
+      </p>
+      <p class="nav">
+        <a href="#zh-about">项目简介</a> · <a href="#zh-quick">快速开始</a> · <a href="#zh-pkg">软件包</a>
+      </p>
+    </div>
+
+    <div id="panel-en" style="display:none">
+      <p class="tagline">🐉 <strong>潜龙在渊，智驭八方</strong> — TypeScript-native, local-first agent framework</p>
+      <p>
+        <a href="../README.md"><img src="https://img.shields.io/badge/简体中文-README-C41E3A?style=for-the-badge" alt="" /></a>
+        <img src="https://img.shields.io/badge/English-current-D4AF37?style=for-the-badge" alt="" />
+      </p>
+      <p class="nav">
+        <a href="#en-about">About</a> · <a href="#en-quick">Quick Start</a> · <a href="#en-pkg">Packages</a>
+      </p>
+    </div>
+
+    <section id="content-zh" class="panel active">
+      <h2 id="zh-about">📝 项目简介</h2>
+      <p>Dragon（潜龙）是原生 TypeScript、本地优先的智能体框架，名称中的龙为中国龙 🐉。</p>
+      <h2 id="zh-quick">🚀 快速开始</h2>
+      <pre><code>corepack pnpm install
+dragon chat "潜龙试爪。"
+dragon gateway</code></pre>
+      <p>控制台：<code>http://127.0.0.1:17357/</code></p>
+      <h2 id="zh-pkg">📦 软件包（节选）</h2>
+      <table>
+        <tr><th>包名</th><th>说明</th></tr>
+        <tr><td>@dragon/core</td><td>智能体运行时</td></tr>
+        <tr><td>@dragon/gateway</td><td>HTTP/WebSocket 网关</td></tr>
+        <tr><td>@dragon/cli</td><td>命令行入口</td></tr>
+      </table>
+      <p><a href="../README.md">→ 打开完整中文版 README.md</a></p>
+    </section>
+
+    <section id="content-en" class="panel">
+      <h2 id="en-about">📝 About</h2>
+      <p>Dragon (Qianlong) is a TypeScript-native, local-first agent framework named after the Chinese dragon 🐉.</p>
+      <h2 id="en-quick">🚀 Quick Start</h2>
+      <pre><code>corepack pnpm install
+dragon chat "Hello from the depths."
+dragon gateway</code></pre>
+      <p>Dashboard: <code>http://127.0.0.1:17357/</code></p>
+      <h2 id="en-pkg">📦 Packages (sample)</h2>
+      <table>
+        <tr><th>Package</th><th>Role</th></tr>
+        <tr><td>@dragon/core</td><td>Agent runtime</td></tr>
+        <tr><td>@dragon/gateway</td><td>HTTP/WebSocket gateway</td></tr>
+        <tr><td>@dragon/cli</td><td>CLI entrypoint</td></tr>
+      </table>
+      <p><a href="../README.en.md">→ Open full English README.en.md</a></p>
+    </section>
+
+    <footer>
+      <p><a href="../README.md">简体中文</a> · <a href="../README.en.md">English</a></p>
+      <p>🐉 潜龙在渊，智驭八方</p>
+    </footer>
   </div>
+
+  <script>
+    const btnZh = document.getElementById("btn-zh");
+    const btnEn = document.getElementById("btn-en");
+    const panelZh = document.getElementById("panel-zh");
+    const panelEn = document.getElementById("panel-en");
+    const contentZh = document.getElementById("content-zh");
+    const contentEn = document.getElementById("content-en");
+
+    function showZh() {
+      btnZh.classList.add("active");
+      btnEn.classList.remove("active");
+      panelZh.style.display = "block";
+      panelEn.style.display = "none";
+      contentZh.classList.add("active");
+      contentEn.classList.remove("active");
+      document.documentElement.lang = "zh-CN";
+    }
+    function showEn() {
+      btnEn.classList.add("active");
+      btnZh.classList.remove("active");
+      panelEn.style.display = "block";
+      panelZh.style.display = "none";
+      contentEn.classList.add("active");
+      contentZh.classList.remove("active");
+      document.documentElement.lang = "en";
+    }
+    btnZh.onclick = showZh;
+    btnEn.onclick = showEn;
+  </script>
 </body>
 </html>
