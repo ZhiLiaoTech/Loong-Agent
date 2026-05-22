@@ -10,14 +10,20 @@ import { promisify } from "node:util";
 import { createGatewayWebhookChannelTarget, parseSlackWebhook, parseTelegramWebhook, toGatewayWebhookPayload } from "@dragon/channels";
 import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
 import {
+  appendCancelledToolResults,
   appendWorkspaceToolGuidance,
+  applyTurnPrep,
   augmentResponseWithTextToolCalls,
+  buildTurnPrepOptions,
   classifyTierHeuristic,
   createDragonRuntime,
   decideTier,
   extractTextToolCalls,
+  isLikelyContextOverflowError,
   normalizeTierConfig,
   pickAssistantDisplayText,
+  repairModelMessagesAfterCancel,
+  TOOL_CANCELLED_CODE,
 } from "@dragon/core";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
 import {
@@ -79,6 +85,11 @@ async function main(): Promise<void> {
     ["gateway tier RPC", testGatewayTierRpc],
     ["text tool call extraction", testTextToolCallExtraction],
     ["runtime tool-call loop", testRuntimeToolCallLoop],
+    ["turn prep pipeline", testTurnPrepPipeline],
+    ["runtime turn prep reactive retry", testRuntimeTurnPrepReactiveRetry],
+    ["runtime tool iteration limit graceful", testRuntimeToolIterationLimitGraceful],
+    ["turn cancel protocol", testTurnCancelProtocol],
+    ["runtime turn cancel during tool", testRuntimeTurnCancelDuringTool],
     ["openai provider tool call translation", testOpenAIProviderToolCallTranslation],
     ["openai provider streaming", testOpenAIProviderStreaming],
     ["anthropic provider tool use translation", testAnthropicProviderToolUse],
@@ -2299,6 +2310,250 @@ async function testTextToolCallExtraction(): Promise<void> {
   );
   assert(skipped.toolCalls?.length === 1 && skipped.toolCalls[0]?.id === "native-1", "native toolCalls should win");
   assert(skipped.textToolCallsExtracted === undefined, "should not extract when native toolCalls exist");
+}
+
+async function testTurnPrepPipeline(): Promise<void> {
+  const messages = [
+    { role: "system" as const, content: "system".repeat(200) },
+    { role: "user" as const, content: "hello" },
+    { role: "tool" as const, content: "payload".repeat(4_000), toolCallId: "call_1" },
+    { role: "assistant" as const, content: "analysis".repeat(3_000) },
+  ];
+  const { messages: prepped, report } = applyTurnPrep(
+    messages,
+    buildTurnPrepOptions(4_000, {
+      toolResultMaxChars: 600,
+      assistantContentMaxChars: 800,
+      totalEstimatedMaxChars: 2_500,
+    }),
+  );
+  assert(report.truncatedToolResults === 1, "tool output should be truncated");
+  assert(report.truncatedAssistantMessages === 1, "assistant text should be truncated");
+  const toolContent = prepped[2]?.content;
+  assert(typeof toolContent === "string" && toolContent.length < 4_000, "tool output should be smaller after prep");
+  assert(
+    toolContent.includes("truncated") || toolContent.includes("omitted"),
+    "tool truncation marker expected",
+  );
+  assert(report.estimatedCharsAfter < report.estimatedCharsBefore, "prep should shrink estimated size");
+  assert(isLikelyContextOverflowError(new ProviderError({
+    providerId: "mock-prep",
+    message: "prompt is too long for this model",
+    retryable: false,
+    status: 413,
+  })), "context overflow heuristic should match provider errors");
+}
+
+async function testRuntimeTurnPrepReactiveRetry(): Promise<void> {
+  let attempts = 0;
+  const provider: ModelProvider = {
+    id: "mock-prep",
+    displayName: "Mock Prep",
+    defaultModel: "mock-prep-model",
+    supportsToolCalling: false,
+    async complete() {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new ProviderError({
+          providerId: "mock-prep",
+          message: "prompt is too long",
+          retryable: false,
+          status: 413,
+        });
+      }
+      return { id: "ok", text: "recovered" };
+    },
+  };
+  const runtime = createDragonRuntime({
+    providers: [provider],
+    defaultModel: "mock-prep-model",
+    turnPrepEnabled: true,
+    maxContextChars: 4_000,
+  });
+  const events: DragonEvent[] = [];
+  const unsubscribe = runtime.subscribe(event => events.push(event));
+  try {
+    const result = await runtime.runTurn({
+      sessionId: "turn-prep-reactive",
+      source: "cli",
+      message: "recover from context overflow",
+    });
+    assert(result.status === "ok", `reactive prep retry failed: ${result.error}`);
+    assert(result.messages[1]?.content === "recovered", "second model attempt should succeed");
+    assert(attempts === 2, "provider should be called twice after reactive prep");
+    const prepEvents = events.filter((event): event is Extract<DragonEvent, { type: "context" }> =>
+      event.type === "context" && event.providerName === "turn_prep" && event.phase === "end",
+    );
+    assert(prepEvents.length >= 1, "turn_prep context event should be emitted");
+    assert(prepEvents.some(event => {
+      const payload = event.payload;
+      return typeof payload === "object"
+        && payload !== null
+        && (payload as { reactive?: boolean }).reactive === true;
+    }), "reactive prep event should be recorded");
+  } finally {
+    unsubscribe();
+  }
+}
+
+async function testRuntimeToolIterationLimitGraceful(): Promise<void> {
+  let calls = 0;
+  const provider: ModelProvider = {
+    id: "mock-tool-limit",
+    displayName: "Mock Tool Limit",
+    defaultModel: "mock-tool-limit-model",
+    supportsToolCalling: true,
+    async complete(request) {
+      calls += 1;
+      const toolsDisabled = !request.tools || (Array.isArray(request.tools) && request.tools.length === 0);
+      if (toolsDisabled) {
+        return { id: "summary", text: "Reached tool limit; here is the summary." };
+      }
+      return {
+        id: `tool-${calls}`,
+        toolCalls: [{
+          id: `call_${calls}`,
+          type: "function",
+          function: { name: "echo_tool", arguments: JSON.stringify({ text: `step-${calls}` }) },
+        }],
+      };
+    },
+  };
+  const echoTool = createMockTool("echo_tool", ["read"], async invocation => ({
+    ok: true,
+    step: readPath(invocation.input, ["text"]),
+  }));
+  const runtime = createDragonRuntime({
+    providers: [provider],
+    defaultModel: "mock-tool-limit-model",
+    maxToolIterations: 2,
+    tools: [echoTool],
+    permissionEngine: createToolPermissionEngine({
+      defaultDecision: "ask",
+      rules: [{ toolName: "echo_tool", decision: "allow", reason: "test allow" }],
+    }),
+  });
+  const events: DragonEvent[] = [];
+  const unsubscribe = runtime.subscribe(event => events.push(event));
+  try {
+    const result = await runtime.runTurn({
+      sessionId: "tool-limit-graceful",
+      source: "cli",
+      message: "keep using tools",
+    });
+    assert(result.status === "ok", `graceful tool limit should succeed: ${result.error}`);
+    assert(
+      result.messages[1]?.content === "Reached tool limit; here is the summary.",
+      "final assistant should come from summarize pass",
+    );
+    const limitEvent = events.find(event =>
+      event.type === "context" && event.providerName === "tool_iteration_limit" && event.phase === "end",
+    );
+    assert(limitEvent !== undefined, "tool_iteration_limit event should be emitted");
+    assert(
+      result.messages[1]?.metadata?.toolIterationLimitReached === true,
+      "assistant metadata should record tool iteration limit",
+    );
+    assert(calls >= 3, "should run tool rounds plus a final summarize call");
+  } finally {
+    unsubscribe();
+  }
+}
+
+async function testTurnCancelProtocol(): Promise<void> {
+  const modelMessages = [
+    {
+      role: "assistant" as const,
+      content: "calling tools",
+      toolCalls: [{
+        id: "call_a",
+        type: "function" as const,
+        function: { name: "echo_tool", arguments: "{}" },
+      }, {
+        id: "call_b",
+        type: "function" as const,
+        function: { name: "echo_tool", arguments: "{}" },
+      }],
+    },
+    { role: "tool" as const, toolCallId: "call_a", content: "{\"ok\":true}" },
+  ];
+  const repaired = repairModelMessagesAfterCancel(modelMessages);
+  assert(repaired === 1, "repair should insert one missing tool result");
+  const missingResult = modelMessages.find(message => message.role === "tool" && message.toolCallId === "call_b");
+  assert(missingResult !== undefined, "missing tool result should be inserted");
+  const payload = JSON.parse(String(missingResult?.content)) as { code?: string };
+  assert(payload.code === TOOL_CANCELLED_CODE, "cancelled tool result should use turn_cancelled code");
+
+  const scratch: typeof modelMessages = [];
+  const appended = appendCancelledToolResults(scratch, [{
+    id: "call_c",
+    type: "function",
+    function: { name: "echo_tool", arguments: "{}" },
+  }]);
+  assert(appended === 1, "appendCancelledToolResults should add one synthetic result");
+  assert(scratch[0]?.toolCallId === "call_c", "synthetic tool result should reference tool call id");
+}
+
+async function testRuntimeTurnCancelDuringTool(): Promise<void> {
+  let modelCalls = 0;
+  let toolStarted = false;
+  const controller = new AbortController();
+  const provider: ModelProvider = {
+    id: "mock-cancel",
+    displayName: "Mock Cancel",
+    defaultModel: "mock-cancel-model",
+    supportsToolCalling: true,
+    async complete() {
+      modelCalls += 1;
+      return {
+        id: "tool-round",
+        toolCalls: [{
+          id: "call_slow",
+          type: "function",
+          function: { name: "slow_tool", arguments: JSON.stringify({ waitMs: 2_000 }) },
+        }],
+      };
+    },
+  };
+  const slowTool = createMockTool("slow_tool", ["read"], async invocation => {
+    toolStarted = true;
+    const waitMs = typeof readPath(invocation.input, ["waitMs"]) === "number"
+      ? (readPath(invocation.input, ["waitMs"]) as number)
+      : 2_000;
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+    return { ok: true };
+  });
+  const runtime = createDragonRuntime({
+    providers: [provider],
+    defaultModel: "mock-cancel-model",
+    tools: [slowTool],
+    permissionEngine: createToolPermissionEngine({
+      defaultDecision: "ask",
+      rules: [{ toolName: "slow_tool", decision: "allow", reason: "test allow" }],
+    }),
+  });
+  const events: DragonEvent[] = [];
+  const unsubscribe = runtime.subscribe(event => events.push(event));
+  try {
+    const turn = runtime.runTurn({
+      sessionId: "cancel-during-tool",
+      source: "cli",
+      message: "start slow tool",
+      signal: controller.signal,
+    });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    controller.abort();
+    const result = await turn;
+    assert(result.status === "cancelled", `cancel during tool should return cancelled (got ${result.status})`);
+    assert(modelCalls === 1, "cancelled turn should not start a second model call");
+    assert(toolStarted, "slow tool should have started before cancel");
+    assert(
+      events.some(event => event.type === "lifecycle" && event.phase === "cancelled"),
+      "cancelled lifecycle event should be emitted",
+    );
+  } finally {
+    unsubscribe();
+  }
 }
 
 async function testRuntimeToolCallLoop(): Promise<void> {

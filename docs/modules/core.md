@@ -31,16 +31,21 @@ runTurn
   ├─ lifecycle:start + hooks
   ├─ loadSession(history)
   ├─ contextProviders → composeSystemPrompt
-  ├─ completeModelWithFallback (provider 链)
+  ├─ completeModelWithPrep (默认开启)
+  │     ├─ applyTurnPrep: tool 结果/assistant 文本预算 + 总字符预算
+  │     ├─ completeModelWithFallback (provider 链)
+  │     └─ 若 context overflow → aggressive prep 后重试一次
   └─ while toolCalls && iterations < maxToolIterations (默认 20)
-        ├─ for each toolCall (串行)
-        │     ├─ permissionEngine.evaluate
-        │     ├─ permissionHandler (可选)
+        ├─ executeToolCallsForRound（串行 / 只读并行）
+        │     ├─ 若 AbortSignal 已中止 → 为未完成的 tool_use 写入 `turn_cancelled` 结果
+        │     ├─ permissionEngine.evaluate + permissionHandler（中止时抛 DragonCancelledError）
         │     └─ tool.invoke → modelMessages.push(tool result)
-        └─ completeModelWithFallback again
+        └─ completeModelWithPrep again（取消则不再调用模型）
   ├─ persist session + trajectory
   └─ lifecycle:end | error | cancelled | timeout (result.status)
 ```
+
+`turn_prep` 事件通过 `context` 通道上报（`providerName: "turn_prep"`），含截断统计与是否 reactive。
 
 ### 3.2 模型超时
 
@@ -64,11 +69,31 @@ runTurn
 | Fail-hard 持久化 | 成功路径下 `appendTurn` 失败抛 `DragonPersistenceError` |
 | 模型 Fallback | `ProviderError.retryable` 或未知错误触发下一 ref |
 
-### 3.4 关键常量
+### 3.5 Turn Prep（P0-1）
 
-- `maxToolIterations`: 20
+- 模块：`packages/core/src/turn-prep.ts`
+- 每次模型调用前运行；`turnPrepEnabled: false` 可关闭。
+- 预算默认：单条 tool 8k 字符、assistant 16k、总估算 `max(turnMaxContextChars × 8, 32k)`。
+
+### 3.6 工具迭代上限（P0-5）
+
+- 模块：`packages/core/src/turn-tool-limit.ts`
+- 达到 `maxToolIterations` 且模型仍要工具时：为未执行的 `tool_use` 写入 `tool_iteration_limit` 结果，追加 user 收尾指令，再 **禁用工具** 调一次模型生成总结。
+- 回合 `status` 仍为 `ok`；`assistantMetadata.toolIterationLimitReached = true`。
+- 事件：`context` / `providerName: "tool_iteration_limit"`。
+
+### 3.7 取消与 Tool 协议（P0-2）
+
+- 模块：`packages/core/src/turn-cancel.ts`
+- `DragonTurnInput.signal`（Gateway `run.cancel` → `AbortController`）在工具轮次中传播。
+- 中止时：为尚未有 `tool` 消息的 `tool_use` id 写入 `{ code: "turn_cancelled" }` 合成结果；`repairModelMessagesAfterCancel` 保证 assistant/tool 块顺序满足 Provider 协议。
+- 回合 `status === "cancelled"`，`lifecycle:cancelled`；不再发起后续模型调用。
+- 权限等待前后检查 `signal.aborted`，避免取消后仍阻塞在 `permissionHandler`。
+
+### 3.8 关键常量
+
+- `maxToolIterations`: 20（`createDragonRuntime({ maxToolIterations })` 可覆盖）
 - `maxContextChars`: 12_000
-- `maxToolResultChars`: 64_000
 - `lifecycleHookTimeoutMs`: 500
 
 ## 4. 集成方式

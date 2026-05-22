@@ -59,3 +59,25 @@ export {
   stripTextToolBlocks,
   type AugmentedModelResponse,
 } from "./text-tool-calls.js";
+export {
+  applyTurnPrep,
+  buildTurnPrepOptions,
+  estimateModelMessagesChars,
+  isLikelyContextOverflowError,
+  type TurnPrepOptions,
+  type TurnPrepReport,
+} from "./turn-prep.js";
+export {
+  TOOL_ITERATION_LIMIT_USER_MESSAGE,
+  appendToolIterationLimitFinalizeMessages,
+  toToolLimitFinalizeInput,
+  type ToolIterationLimitFinalizeInput,
+} from "./turn-tool-limit.js";
+export {
+  TOOL_CANCELLED_CODE,
+  appendCancelledToolResults,
+  buildCancelledToolResultContent,
+  collectSatisfiedToolCallIds,
+  isTurnCancelled,
+  repairModelMessagesAfterCancel,
+} from "./turn-cancel.js";

@@ -26,6 +26,21 @@ import {
   createModelTurnAbort,
   resolveTurnFailureStatus,
 } from "./model-timeout.js";
+import {
+  applyTurnPrep,
+  buildTurnPrepOptions,
+  isLikelyContextOverflowError,
+  type TurnPrepReport,
+} from "./turn-prep.js";
+import {
+  appendToolIterationLimitFinalizeMessages,
+  toToolLimitFinalizeInput,
+} from "./turn-tool-limit.js";
+import {
+  appendCancelledToolResults,
+  isTurnCancelled,
+  repairModelMessagesAfterCancel,
+} from "./turn-cancel.js";
 import type {
   ToolDefinition,
   ToolInvocation,
@@ -85,6 +100,8 @@ export interface DragonRuntimeOptions {
   ) => Promise<ToolPermissionResult>;
   /** Per model HTTP request timeout in ms (default 300_000). Set 0 to disable. */
   modelTimeoutMs?: number;
+  /** When true (default), apply in-turn context prep before each model call. */
+  turnPrepEnabled?: boolean;
 }
 
 interface ModelAttemptFailure {
@@ -115,6 +132,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   readonly #denyAskWithoutHandler: boolean;
   readonly #permissionEvaluator: DragonRuntimeOptions["permissionEvaluator"];
   readonly #modelTimeoutMs: number;
+  readonly #turnPrepEnabled: boolean;
   #tierConfig: ModelTierConfig | undefined;
   readonly #maxToolResultChars = 64_000;
   readonly #listeners = new Set<(event: DragonEvent) => void>();
@@ -138,6 +156,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#denyAskWithoutHandler = options.denyAskWithoutHandler ?? true;
     this.#permissionEvaluator = options.permissionEvaluator;
     this.#modelTimeoutMs = options.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
+    this.#turnPrepEnabled = options.turnPrepEnabled !== false;
     this.#tierConfig = options.tierConfig;
   }
 
@@ -213,6 +232,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     const turnMaxContextChars = tierAdjustedMaxContextChars ?? this.#maxContextChars;
     const turnAbort = createModelTurnAbort(input.signal, this.#modelTimeoutMs);
     const activeInput: DragonTurnInput = { ...input, signal: turnAbort.signal };
+    let modelMessages: ModelMessage[] | undefined;
 
     try {
       if (activeInput.signal?.aborted) {
@@ -236,14 +256,14 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         activeInput.workspace,
       );
       const userContent = buildUserMessageContent(activeInput.message, resolvedAttachments);
-      const modelMessages: ModelMessage[] = [
+      modelMessages = [
         { role: "system", content: composeSystemPrompt(effectiveSystemPrompt, contextItems, turnMaxContextChars) },
         ...toModelHistory(history),
         { role: "user", content: userContent },
       ];
 
       const modelRefs = modelAttemptRefs(activeInput.model, this.#defaultModel, activeInput.modelFallbacks, this.#modelFallbacks);
-      let completion = await this.#completeModelWithFallback(modelRefs, modelMessages, activeInput, runId);
+      let completion = await this.#completeModelWithPrep(modelRefs, modelMessages, activeInput, runId, turnMaxContextChars);
       let providerResponse = augmentResponseWithTextToolCalls(completion.response, activeInput.toolsEnabled);
       let resolution = completion.resolution;
       let fallbackFailures = completion.failures;
@@ -277,46 +297,37 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         modelMessages.push(assistantTurn);
 
         const toolCalls = providerResponse.toolCalls;
-        if (activeInput.toolsEnabled === false) {
-          for (const toolCall of toolCalls) {
-            modelMessages.push({
-              role: "tool",
-              content: JSON.stringify({
-                ok: false,
-                error: "Tool calling is disabled for this turn.",
-                toolCallId: toolCall.id,
-              }),
-              toolCallId: toolCall.id,
-            });
-          }
-        } else if (canRunToolCallsInParallel(toolCalls, this.#toolRegistry)) {
-          const toolResults = await Promise.all(toolCalls.map(toolCall => this.#runToolCall(toolCall, activeInput, runId)));
-          for (const [index, toolResult] of toolResults.entries()) {
-            modelMessages.push({
-              role: "tool",
-              content: toolResult.content,
-              toolCallId: toolCalls[index]!.id,
-            });
-          }
-        } else {
-          for (const toolCall of toolCalls) {
-            const toolResult = await this.#runToolCall(toolCall, activeInput, runId);
-            modelMessages.push({
-              role: "tool",
-              content: toolResult.content,
-              toolCallId: toolCall.id,
-            });
-          }
+        const toolOutcome = await this.#executeToolCallsForRound(toolCalls, modelMessages, activeInput, runId);
+        if (toolOutcome === "cancelled") {
+          repairModelMessagesAfterCancel(modelMessages);
+          throw new DragonCancelledError("Turn was cancelled.");
         }
 
-        completion = await this.#completeModelWithFallback(modelRefs, modelMessages, activeInput, runId);
+        if (activeInput.signal?.aborted) {
+          repairModelMessagesAfterCancel(modelMessages);
+          throw new DragonCancelledError("Turn was cancelled.");
+        }
+
+        completion = await this.#completeModelWithPrep(modelRefs, modelMessages, activeInput, runId, turnMaxContextChars);
         providerResponse = augmentResponseWithTextToolCalls(completion.response, activeInput.toolsEnabled);
         resolution = completion.resolution;
         fallbackFailures = completion.failures;
       }
 
+      let toolIterationLimitReached = false;
       if (providerResponse.toolCalls?.length) {
-        throw new Error(`Tool iteration limit exceeded (${this.#maxToolIterations}).`);
+        const finalized = await this.#finalizeAfterToolIterationLimit(
+          modelRefs,
+          modelMessages,
+          providerResponse,
+          activeInput,
+          runId,
+          turnMaxContextChars,
+        );
+        providerResponse = augmentResponseWithTextToolCalls(finalized.response, false);
+        resolution = finalized.resolution;
+        fallbackFailures = finalized.failures;
+        toolIterationLimitReached = true;
       }
 
       const assistantText = providerResponse.text ?? "";
@@ -336,8 +347,12 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         assistantMetadata.tier = tierDecision.tier;
         assistantMetadata.tierSource = tierDecision.source;
       }
-      if (providerResponse.toolCalls) {
+      if (providerResponse.toolCalls && !toolIterationLimitReached) {
         assistantMetadata.toolCalls = providerResponse.toolCalls;
+      }
+      if (toolIterationLimitReached) {
+        assistantMetadata.toolIterationLimitReached = true;
+        assistantMetadata.toolIterationLimit = this.#maxToolIterations;
       }
       if (fallbackFailures.length > 0) {
         assistantMetadata.modelFallbacks = fallbackFailures;
@@ -363,6 +378,9 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       await this.#tryPersistTrajectory(activeInput, result, createdAt, completedAt);
       return result;
     } catch (error) {
+      if (modelMessages && isTurnCancelled(activeInput.signal, error)) {
+        repairModelMessagesAfterCancel(modelMessages);
+      }
       const errorDetails = errorToDetails(error);
       const status = resolveTurnFailureStatus(error, input.signal, turnAbort);
       const result: DragonTurnResult = {
@@ -573,6 +591,98 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     return response;
   }
 
+  async #finalizeAfterToolIterationLimit(
+    modelRefs: Array<string | undefined>,
+    modelMessages: ModelMessage[],
+    providerResponse: ModelResponse,
+    input: DragonTurnInput,
+    runId: string,
+    turnMaxContextChars: number,
+  ): Promise<{ resolution: ProviderResolution; response: ModelResponse; failures: ModelAttemptFailure[] }> {
+    const finalizeInput = toToolLimitFinalizeInput(providerResponse);
+    if (!finalizeInput) {
+      throw new Error("Tool iteration finalize requested without pending tool calls.");
+    }
+    const pendingCount = appendToolIterationLimitFinalizeMessages(
+      modelMessages,
+      finalizeInput,
+      this.#maxToolIterations,
+    );
+    this.#emit({
+      type: "context",
+      runId,
+      providerName: "tool_iteration_limit",
+      phase: "end",
+      payload: {
+        ok: true,
+        limit: this.#maxToolIterations,
+        pendingToolCalls: pendingCount,
+      },
+    });
+    return await this.#completeModelWithPrep(
+      modelRefs,
+      modelMessages,
+      { ...input, toolsEnabled: false },
+      runId,
+      turnMaxContextChars,
+    );
+  }
+
+  async #completeModelWithPrep(
+    modelRefs: Array<string | undefined>,
+    messages: ModelMessage[],
+    input: DragonTurnInput,
+    runId: string,
+    turnMaxContextChars: number,
+  ): Promise<{ resolution: ProviderResolution; response: ModelResponse; failures: ModelAttemptFailure[] }> {
+    if (!this.#turnPrepEnabled) {
+      return await this.#completeModelWithFallback(modelRefs, messages, input, runId);
+    }
+
+    const standard = applyTurnPrep(messages, buildTurnPrepOptions(turnMaxContextChars));
+    this.#emitTurnPrep(runId, standard.report);
+    try {
+      return await this.#completeModelWithFallback(modelRefs, standard.messages, input, runId);
+    } catch (error) {
+      if (input.signal?.aborted || !isLikelyContextOverflowError(error)) {
+        throw error;
+      }
+      const aggressive = applyTurnPrep(messages, buildTurnPrepOptions(turnMaxContextChars, {}, true));
+      this.#emitTurnPrep(runId, aggressive.report, { reactive: true });
+      return await this.#completeModelWithFallback(modelRefs, aggressive.messages, input, runId);
+    }
+  }
+
+  #emitTurnPrep(
+    runId: string,
+    report: TurnPrepReport,
+    options: { reactive?: boolean } = {},
+  ): void {
+    const changed = report.estimatedCharsBefore !== report.estimatedCharsAfter
+      || report.truncatedToolResults > 0
+      || report.truncatedAssistantMessages > 0
+      || report.strippedReasoningMessages > 0;
+    if (!changed && options.reactive !== true) {
+      return;
+    }
+    this.#emit({
+      type: "context",
+      runId,
+      providerName: "turn_prep",
+      phase: "end",
+      payload: {
+        ok: true,
+        reactive: options.reactive === true,
+        aggressive: report.aggressive,
+        truncatedToolResults: report.truncatedToolResults,
+        truncatedAssistantMessages: report.truncatedAssistantMessages,
+        strippedReasoningMessages: report.strippedReasoningMessages,
+        estimatedCharsBefore: report.estimatedCharsBefore,
+        estimatedCharsAfter: report.estimatedCharsAfter,
+      },
+    });
+  }
+
   async #completeModelWithFallback(
     modelRefs: Array<string | undefined>,
     messages: ModelMessage[],
@@ -637,11 +747,111 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     throw new DragonModelFallbackError(failures);
   }
 
+  async #executeToolCallsForRound(
+    toolCalls: ModelToolCall[],
+    modelMessages: ModelMessage[],
+    input: DragonTurnInput,
+    runId: string,
+  ): Promise<"completed" | "cancelled"> {
+    if (input.toolsEnabled === false) {
+      for (const toolCall of toolCalls) {
+        modelMessages.push({
+          role: "tool",
+          content: JSON.stringify({
+            ok: false,
+            error: "Tool calling is disabled for this turn.",
+            toolCallId: toolCall.id,
+          }),
+          toolCallId: toolCall.id,
+        });
+      }
+      return "completed";
+    }
+
+    if (canRunToolCallsInParallel(toolCalls, this.#toolRegistry)) {
+      if (input.signal?.aborted) {
+        appendCancelledToolResults(modelMessages, toolCalls);
+        return "cancelled";
+      }
+
+      const toolResults: Array<{ content: string } | undefined> = new Array(toolCalls.length);
+      let cancelled = false;
+      try {
+        await Promise.all(toolCalls.map(async (toolCall, index) => {
+          if (input.signal?.aborted) {
+            cancelled = true;
+            return;
+          }
+          toolResults[index] = await this.#runToolCall(toolCall, input, runId);
+          if (input.signal?.aborted) {
+            cancelled = true;
+          }
+        }));
+      } catch (error) {
+        if (isTurnCancelled(input.signal, error)) {
+          cancelled = true;
+        } else {
+          throw error;
+        }
+      }
+
+      for (const [index, toolResult] of toolResults.entries()) {
+        if (!toolResult) {
+          continue;
+        }
+        modelMessages.push({
+          role: "tool",
+          content: toolResult.content,
+          toolCallId: toolCalls[index]!.id,
+        });
+      }
+
+      if (cancelled || input.signal?.aborted) {
+        appendCancelledToolResults(modelMessages, toolCalls);
+        return "cancelled";
+      }
+      return "completed";
+    }
+
+    for (let index = 0; index < toolCalls.length; index++) {
+      const toolCall = toolCalls[index]!;
+      if (input.signal?.aborted) {
+        appendCancelledToolResults(modelMessages, toolCalls.slice(index));
+        return "cancelled";
+      }
+
+      try {
+        const toolResult = await this.#runToolCall(toolCall, input, runId);
+        modelMessages.push({
+          role: "tool",
+          content: toolResult.content,
+          toolCallId: toolCall.id,
+        });
+        if (input.signal?.aborted) {
+          appendCancelledToolResults(modelMessages, toolCalls.slice(index + 1));
+          return "cancelled";
+        }
+      } catch (error) {
+        if (isTurnCancelled(input.signal, error)) {
+          appendCancelledToolResults(modelMessages, toolCalls.slice(index));
+          return "cancelled";
+        }
+        throw error;
+      }
+    }
+
+    return "completed";
+  }
+
   async #runToolCall(
     toolCall: ModelToolCall,
     input: DragonTurnInput,
     runId: string,
   ): Promise<{ content: string }> {
+    if (input.signal?.aborted) {
+      throw new DragonCancelledError("Turn was cancelled during tool execution.");
+    }
+
     const toolName = toolCall.function?.name;
     if (!toolName) {
       this.#emit({
@@ -702,7 +912,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     if (this.#permissionEvaluator) {
       baselinePermission = await this.#permissionEvaluator(tool, invocation, baselinePermission);
     }
-    const permission = await this.#resolvePermission(tool, invocation, baselinePermission, runId);
+    const permission = await this.#resolvePermission(tool, invocation, baselinePermission, runId, input.signal);
     if (permission.decision !== "allow") {
       this.#emit({
         type: "tool",
@@ -758,9 +968,14 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     invocation: ToolInvocation,
     permission: ToolPermissionResult,
     runId: string,
+    signal: AbortSignal | undefined,
   ): Promise<ToolPermissionResult> {
     if (permission.decision !== "ask") {
       return permission;
+    }
+
+    if (signal?.aborted) {
+      throw new DragonCancelledError("Turn was cancelled while waiting for permission.");
     }
 
     const request = toPermissionRequest(runId, tool, invocation, permission.reason);
@@ -781,6 +996,10 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         };
       }
       return permission;
+    }
+
+    if (signal?.aborted) {
+      throw new DragonCancelledError("Turn was cancelled while waiting for permission.");
     }
 
     try {
