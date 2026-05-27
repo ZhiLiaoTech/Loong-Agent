@@ -111,9 +111,30 @@ export function RunSettingsPanel({
           <input
             type="checkbox"
             checked={settings.queryLoop}
-            onChange={event => onChange({ queryLoop: event.target.checked })}
+            onChange={event => onChange({ queryLoop: event.target.checked, ...(event.target.checked ? {} : { finishTask: false }) })}
           />
           <span>Auto-continue (query loop after tool limit)</span>
+        </label>
+        <label className={`${styles.field} ${styles.full} ${styles.checkbox}`}>
+          <input
+            type="checkbox"
+            checked={settings.finishTask}
+            onChange={event => onChange({
+              finishTask: event.target.checked,
+              ...(event.target.checked ? { queryLoop: true } : {}),
+            })}
+          />
+          <span>Finish task (force query loop until done)</span>
+        </label>
+        <label className={styles.field}>
+          <span>Query loop max turns</span>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={settings.queryLoopMaxTurns}
+            onChange={event => onChange({ queryLoopMaxTurns: Number(event.target.value) || 3 })}
+          />
         </label>
       </div>
     </details>

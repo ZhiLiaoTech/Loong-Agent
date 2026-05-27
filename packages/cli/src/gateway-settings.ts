@@ -1,9 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_MODEL_TIMEOUT_MS } from "@dragon/core";
+import type { GatewayConfig } from "@dragon/gateway";
 
 export interface GatewaySettingsFile {
   modelTimeoutMs?: number;
+  host?: string;
+  port?: number;
+  authMode?: "none" | "shared-secret";
+  sharedSecret?: string;
+  requireExplicitSecret?: boolean;
+  toolInvokeAllowlist?: string[];
 }
 
 export function gatewaySettingsPath(cwd = process.cwd()): string {
@@ -23,14 +30,67 @@ export async function loadGatewaySettingsFile(cwd = process.cwd()): Promise<Gate
       return {};
     }
     const record = parsed as Record<string, unknown>;
+    const out: GatewaySettingsFile = {};
     const modelTimeoutMs = parseOptionalPositiveMs(record.modelTimeoutMs, "gateway.json modelTimeoutMs");
-    return modelTimeoutMs !== undefined ? { modelTimeoutMs } : {};
+    if (modelTimeoutMs !== undefined) {
+      out.modelTimeoutMs = modelTimeoutMs;
+    }
+    if (typeof record.host === "string" && record.host.trim()) {
+      out.host = record.host.trim();
+    }
+    if (typeof record.port === "number" && Number.isFinite(record.port)) {
+      out.port = Math.floor(record.port);
+    }
+    if (record.authMode === "none" || record.authMode === "shared-secret") {
+      out.authMode = record.authMode;
+    }
+    if (typeof record.sharedSecret === "string" && record.sharedSecret.trim()) {
+      out.sharedSecret = record.sharedSecret.trim();
+    }
+    if (record.requireExplicitSecret === true) {
+      out.requireExplicitSecret = true;
+    }
+    if (Array.isArray(record.toolInvokeAllowlist)) {
+      out.toolInvokeAllowlist = record.toolInvokeAllowlist
+        .map(item => String(item).trim())
+        .filter(Boolean);
+    }
+    return out;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return {};
     }
     throw error;
   }
+}
+
+export function mergeGatewayConfigFromFile(
+  config: GatewayConfig,
+  file: GatewaySettingsFile,
+): GatewayConfig {
+  const merged: GatewayConfig = { ...config };
+  if (file.host !== undefined && merged.host === undefined) {
+    merged.host = file.host;
+  }
+  if (file.port !== undefined && merged.port === undefined) {
+    merged.port = file.port;
+  }
+  if (file.authMode !== undefined && merged.authMode === undefined) {
+    merged.authMode = file.authMode;
+  }
+  if (file.sharedSecret !== undefined && merged.sharedSecret === undefined) {
+    merged.sharedSecret = file.sharedSecret;
+    if (merged.authMode === undefined) {
+      merged.authMode = "shared-secret";
+    }
+  }
+  if (file.requireExplicitSecret === true) {
+    merged.requireExplicitSecret = true;
+  }
+  if (file.toolInvokeAllowlist !== undefined && merged.toolInvokeAllowlist === undefined) {
+    merged.toolInvokeAllowlist = file.toolInvokeAllowlist;
+  }
+  return merged;
 }
 
 export function parseModelTimeoutMsFromEnv(): number | undefined {

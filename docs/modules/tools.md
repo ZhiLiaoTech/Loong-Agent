@@ -46,6 +46,20 @@
 | `browser_snapshot` / `browser_form_submit` | 轻量 HTTP fetch；SSRF 防护；表单 GET/urlencoded POST |
 | `browser_playwright_snapshot` | 可选 `playwright` + Chromium；用于 SPA/JS 渲染页（未安装时返回明确错误） |
 
+#### 3.3.1 Browser capability matrix
+
+| Capability | `browser_snapshot` | `browser_form_submit` | `browser_playwright_snapshot` |
+|------------|-------------------|----------------------|------------------------------|
+| Static HTML / server-rendered | Yes | Yes (GET / urlencoded POST) | Yes |
+| JavaScript-rendered (SPA) | No | No | Yes (needs Playwright) |
+| Cookies / authenticated sessions | Limited | Limited | Yes (browser context) |
+| Extra install | None | None | `pnpm exec playwright install chromium` |
+| SSRF / redirect guard | Yes | Yes | Yes (navigation policy) |
+| Default permission | `ask` | `ask` | `ask` |
+| Parallel-safe with other read tools | Yes (`read` + `network`) | No (`write` on submit) | Yes when read-only snapshot |
+
+Install notes: [DEPLOYMENT.md](../DEPLOYMENT.md#browser-automation-optional-playwright).
+
 ### 3.4 MCP 适配（stdio + HTTP）
 
 - 配置：`.dragon/config/mcp.json`，每项需 `id` 与 **`command`（stdio）** 或 **`url`（HTTP）** 之一。

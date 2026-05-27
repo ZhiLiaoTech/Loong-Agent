@@ -1,0 +1,6 @@
+[
+  ["cli skills slash command", "testCliSkillsSlashCommand"],
+  ["cli cron once", "testCliCronOnce"],
+  ["cli model provider plugin", "testCliModelProviderPlugin"],
+  ["cli model provider config", "testCliModelProviderConfig"]
+]

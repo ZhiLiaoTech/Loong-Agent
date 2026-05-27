@@ -1,0 +1,20 @@
+[
+  ["runtime model fallback", "testRuntimeModelFallback"],
+  ["tier classifier heuristic", "testTierClassifierHeuristic"],
+  ["runtime tier overrides", "testRuntimeTierOverrides"],
+  ["text tool call extraction", "testTextToolCallExtraction"],
+  ["runtime tool-call loop", "testRuntimeToolCallLoop"],
+  ["runtime parallel read-only tools", "testRuntimeParallelReadOnlyTools"],
+  ["runtime parallel read streaming events", "testRuntimeParallelReadStreamingEvents"],
+  ["parallel safe tool policy", "testParallelSafeToolPolicy"],
+  ["turn prep pipeline", "testTurnPrepPipeline"],
+  ["runtime turn prep reactive retry", "testRuntimeTurnPrepReactiveRetry"],
+  ["runtime tool iteration limit graceful", "testRuntimeToolIterationLimitGraceful"],
+  ["turn cancel protocol", "testTurnCancelProtocol"],
+  ["runtime turn cancel during tool", "testRuntimeTurnCancelDuringTool"],
+  ["session history prep", "testSessionHistoryPrep"],
+  ["session message compaction by turn", "testSessionMessageCompactionByTurn"],
+  ["agent profile merge into turn input", "testAgentProfileMergeIntoTurnInput"],
+  ["core runTurnWithQueryLoop", "testCoreRunTurnWithQueryLoop"],
+  ["runtime fail on permission deny", "testRuntimeFailOnPermissionDeny"]
+]

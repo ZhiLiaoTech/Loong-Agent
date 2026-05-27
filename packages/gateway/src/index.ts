@@ -1,24 +1,38 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Duplex } from "node:stream";
-import { applyProductionAuthDefaults, describeAuthStartup, requiresSharedSecret } from "./auth-policy.js";
+import { describeAuthStartup, requiresSharedSecret } from "./auth-policy.js";
 import {
   applyModelCatalogToAgentParams,
   createModelCatalogFromProviderSummaries,
 } from "./model-catalog-bridge.js";
 import type { DragonModelCapabilities, DragonModelCatalog, DragonModelStatus } from "@dragon/model-catalog";
-import { getDashboardHtml, readDashboardAsset } from "./dashboard.js";
-import { classifyHttpRoute, clientRateLimitKey, SlidingWindowRateLimiter } from "./rate-limit.js";
+import { handleGatewayHttpRequest } from "./gateway-http-handler.js";
+import { handleGatewayRpc, type GatewayRpcHandlerDeps } from "./gateway-rpc-handler.js";
+import { readEventSessionId, type EventStreamFilters, type GatewayEventEnvelope } from "./gateway-event-stream.js";
+export type { EventStreamFilters, GatewayEventEnvelope } from "./gateway-event-stream.js";
+import { GatewayConnectionHub } from "./gateway-connection-hub.js";
+import { fitUtf8Text } from "./gateway-text.js";
+import { clientRateLimitKey, SlidingWindowRateLimiter } from "./rate-limit.js";
+import { FilePairingStore, type PairingStore } from "./pairing.js";
+import { parseAgentConfigSaveParams, sanitizeAgentConfig } from "./gateway-agent-config.js";
+import {
+  DEFAULT_DIRECT_TOOL_NAMES,
+  normalizeConfig,
+  type GatewayConfig,
+  type NormalizedGatewayConfig,
+} from "./gateway-config.js";
+import {
+  isDirectToolCandidate,
+  summarizeGatewayTool,
+  type GatewayToolSummary,
+} from "./gateway-tools.js";
+import { parseGatewayRequest } from "./gateway-rpc-parse.js";
 import {
   isAgentTurnQueuedPayload,
   SessionTurnCoordinator,
   type AgentTurnResultPayload,
 } from "./session-coordinator.js";
-import {
-  QUERY_LOOP_CONTINUE_MESSAGE,
-  resolveQueryLoopMaxTurns,
-  shouldContinueQueryLoop,
-} from "./query-loop.js";
+import { executeGatewayAgentTurn } from "./gateway-agent-turn.js";
 import {
   parseGatewayAgentParams,
   parseGatewayWebhookParams,
@@ -27,13 +41,21 @@ import {
 } from "./agent-params.js";
 import type {
   GatewayAgentConfig,
+  GatewayAgentConfigSaveParams,
   GatewayAgentConfigStore,
   GatewayAgentParams,
   GatewayAgentProfileConfig,
   GatewayTierName,
   GatewayWebhookParams,
 } from "./gateway-agent-types.js";
-import { badRequest, errorToStatusCode, GatewayHttpError } from "./gateway-http.js";
+import {
+  badRequest,
+  errorToStatusCode,
+  GatewayHttpError,
+  MAX_REQUEST_BYTES,
+  readSingleHeader,
+  writeJson,
+} from "./gateway-http.js";
 import {
   isDragonThinking,
   isRecord,
@@ -76,6 +98,8 @@ import {
 import {
   createToolPermissionEngine,
   createToolRegistry,
+  defaultMcpConfigPath,
+  loadMcpConfig,
   type ToolDefinition,
   type ToolInvocation,
   type ToolPermissionEngine,
@@ -84,12 +108,53 @@ import {
   type ToolResult,
 } from "@dragon/tools";
 
-export interface GatewayConfig {
-  host?: string;
-  port?: number;
-  authMode?: "none" | "shared-secret";
-  sharedSecret?: string;
-}
+export type { GatewayConfig } from "./gateway-config.js";
+export type { GatewayRequest, GatewayResponse } from "./gateway-rpc-types.js";
+export type {
+  GatewayApprovalListParams,
+  GatewayApprovalResolveParams,
+  GatewayCronJobRemoveParams,
+  GatewayCronJobUpsertParams,
+  GatewayEmployeeSaveParams,
+  GatewayKpiSnapshotParams,
+  GatewayMemoryCandidateListParams,
+  GatewayMemoryCandidatePromoteParams,
+  GatewayMemoryCandidateRejectParams,
+  GatewayModelConfigSaveParams,
+  GatewayModelProviderConfig,
+  GatewayModelProviderType,
+  GatewayTierClassifyParams,
+  GatewayTierConfigSaveParams,
+  GatewayTierKeywordHint,
+  GatewayTierSpec,
+  GatewayToolInvokeParams,
+  GatewayTrajectoryGetParams,
+  GatewayTrajectoryListParams,
+} from "./gateway-rpc-params.js";
+export type { GatewayToolSummary } from "./gateway-tools.js";
+import type { GatewayRequest, GatewayResponse } from "./gateway-rpc-types.js";
+import type {
+  GatewayApprovalListParams,
+  GatewayApprovalResolveParams,
+  GatewayCronJobRemoveParams,
+  GatewayCronJobUpsertParams,
+  GatewayEmployeeSaveParams,
+  GatewayKpiSnapshotParams,
+  GatewayMemoryCandidateListParams,
+  GatewayMemoryCandidatePromoteParams,
+  GatewayMemoryCandidateRejectParams,
+  GatewayModelConfigSaveParams,
+  GatewayModelProviderConfig,
+  GatewayTicketUpsertParams,
+  GatewayTierClassifyParams,
+  GatewayTierConfigSaveParams,
+  GatewayTierKeywordHint,
+  GatewayTierSpec,
+  GatewayToolInvokeParams,
+  GatewayToolPolicySaveParams,
+  GatewayTrajectoryGetParams,
+  GatewayTrajectoryListParams,
+} from "./gateway-rpc-params.js";
 
 export interface GatewayAddress {
   host: string;
@@ -102,18 +167,11 @@ export type {
   GatewayAgentConfig,
   GatewayAgentParams,
   GatewayAgentProfileConfig,
+  GatewayAgentConfigSaveParams,
   GatewayAgentConfigStore,
   GatewayWebhookParams,
   GatewayTierName,
 } from "./gateway-agent-types.js";
-
-export interface GatewayEventEnvelope {
-  type: "event";
-  sequence: number;
-  timestamp: string;
-  sessionId?: string;
-  event: DragonEvent;
-}
 
 export type GatewayRunState = "running" | "cancelling" | "completed" | "cancelled" | "timeout" | "error";
 
@@ -138,20 +196,6 @@ export interface GatewayRunResultSummary {
   assistantPreview?: string;
   usage?: DragonTurnResult["usage"];
   error?: string;
-}
-
-export interface GatewayTrajectoryListParams {
-  sessionId: string;
-  status?: DragonTurnResult["status"];
-  dateFrom?: string;
-  dateTo?: string;
-  limit?: number;
-}
-
-export interface GatewayTrajectoryGetParams {
-  sessionId: string;
-  runId: string;
-  maxEvents?: number;
 }
 
 export interface GatewayTrajectoryStore {
@@ -190,28 +234,10 @@ export interface GatewayModelSummary {
   default?: boolean;
 }
 
-export type GatewayModelProviderType = "openai-compatible" | "anthropic";
-
-export interface GatewayModelProviderConfig {
-  id: string;
-  type: GatewayModelProviderType;
-  displayName?: string;
-  apiKey?: string;
-  apiKeyConfigured?: boolean;
-  baseUrl?: string;
-  defaultModel?: string;
-  supportsToolCalling?: boolean;
-  enabled?: boolean;
-}
-
 export interface GatewayModelConfig {
   providers: readonly GatewayModelProviderConfig[];
   appliesOn: "restart";
   configPath?: string;
-}
-
-export interface GatewayModelConfigSaveParams {
-  providers: readonly GatewayModelProviderConfig[];
 }
 
 export interface GatewayModelConfigStore {
@@ -222,21 +248,6 @@ export interface GatewayModelConfigStore {
 // --- Tier scheduling ---------------------------------------------------------
 
 export type GatewayTierClassifierMode = "heuristic" | "fixed";
-
-export interface GatewayTierSpec {
-  model?: string;
-  modelFallbacks?: readonly string[];
-  thinking?: DragonThinkingLevel;
-  maxContextChars?: number;
-  toolsEnabled?: boolean;
-  memoryEnabled?: boolean;
-  systemPromptAddendum?: string;
-}
-
-export interface GatewayTierKeywordHint {
-  tier: GatewayTierName;
-  words: readonly string[];
-}
 
 export interface GatewayTierConfig {
   enabled: boolean;
@@ -254,20 +265,6 @@ export interface GatewayTierConfig {
   configPath?: string;
 }
 
-export interface GatewayTierConfigSaveParams {
-  enabled: boolean;
-  tiers: {
-    fast?: GatewayTierSpec;
-    standard?: GatewayTierSpec;
-    deep?: GatewayTierSpec;
-  };
-  classifier: {
-    mode: GatewayTierClassifierMode;
-    fixedTier?: GatewayTierName;
-    keywordHints?: readonly GatewayTierKeywordHint[];
-  };
-}
-
 export interface GatewayTierConfigStore {
   load(): Promise<GatewayTierConfig>;
   save(config: GatewayTierConfigSaveParams): Promise<GatewayTierConfig>;
@@ -276,15 +273,6 @@ export interface GatewayTierConfigStore {
    * decisions for the next turn without restart.
    */
   onChange?(listener: (config: GatewayTierConfig) => void): () => void;
-}
-
-export interface GatewayTierClassifyParams {
-  message: string;
-  attachments?: readonly { kind: "image" | "text" | "document"; mimeType: string; size?: number }[];
-  workspace?: string;
-  toolsEnabled?: boolean;
-  memoryRecallCount?: number;
-  hasSkillLoaded?: boolean;
 }
 
 export interface GatewayTierClassifyResult {
@@ -298,33 +286,6 @@ export interface GatewayTierClassifyResult {
   resolvedToolsEnabled?: boolean;
   resolvedMemoryEnabled?: boolean;
 }
-
-export interface GatewayAgentConfigSaveParams {
-  profiles: readonly GatewayAgentProfileConfig[];
-  defaultProfileId?: string;
-}
-
-export type GatewayEmployeeSaveParams = EmployeeRegistry;
-
-export type GatewayToolPolicySaveParams = ToolPolicyDocument;
-
-export interface GatewayApprovalListParams {
-  status?: ApprovalStatus;
-  assignedApproverId?: string;
-}
-
-export interface GatewayApprovalResolveParams {
-  id: string;
-  resolvedBy?: string;
-  note?: string;
-}
-
-export interface GatewayKpiSnapshotParams {
-  templateId: string;
-  employeeId?: string;
-}
-
-export type GatewayTicketUpsertParams = OrgTicket;
 
 export interface GatewayPluginMemoryBackendSummary {
   id: string;
@@ -341,97 +302,6 @@ export interface GatewayPluginSummary {
   memoryBackends?: readonly GatewayPluginMemoryBackendSummary[];
   lifecycleHooks?: readonly string[];
 }
-
-export interface GatewayToolSummary {
-  name: string;
-  description: string;
-  capabilities?: readonly string[];
-  permission?: "allow" | "ask" | "deny";
-  inputSchema?: unknown;
-  directInvokeAllowed: boolean;
-}
-
-export interface GatewayToolInvokeParams {
-  toolName: string;
-  input?: unknown;
-  sessionId?: string;
-  workspace?: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface GatewayMemoryCandidateListParams {
-  status?: "pending" | "promoted" | "rejected" | "all";
-  dateFrom?: string;
-  dateTo?: string;
-  limit?: number;
-}
-
-export interface GatewayMemoryCandidatePromoteParams {
-  id: string;
-  scope?: "user" | "project" | "session" | "skill";
-  content?: string;
-  source?: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface GatewayMemoryCandidateRejectParams {
-  id: string;
-  reason?: string;
-}
-
-export interface GatewayCronJobUpsertParams extends DragonCronJob {
-  enabled?: boolean;
-  nextRunAt?: string;
-}
-
-export interface GatewayCronJobRemoveParams {
-  id: string;
-}
-
-export type GatewayRequest =
-  | { type: "connect"; id: string; params?: Record<string, unknown> }
-  | { type: "agent"; id: string; params: GatewayAgentParams }
-  | { type: "agent.wait"; id: string; params: { queueTurnId: string } }
-  | { type: "health"; id: string }
-  | { type: "run.status"; id: string; params: { runId: string } }
-  | { type: "run.cancel"; id: string; params: { runId: string; reason?: string } }
-  | { type: "runs.list"; id: string; params?: { sessionId?: string; limit?: number } }
-  | { type: "providers.list"; id: string }
-  | { type: "model.config.get"; id: string }
-  | { type: "model.config.save"; id: string; params: GatewayModelConfigSaveParams }
-  | { type: "agent.config.get"; id: string }
-  | { type: "agent.config.save"; id: string; params: GatewayAgentConfigSaveParams }
-  | { type: "org.get"; id: string }
-  | { type: "employee.list"; id: string }
-  | { type: "employee.save"; id: string; params: GatewayEmployeeSaveParams }
-  | { type: "policy.tool.get"; id: string }
-  | { type: "policy.tool.save"; id: string; params: GatewayToolPolicySaveParams }
-  | { type: "approval.list"; id: string; params?: GatewayApprovalListParams }
-  | { type: "approval.approve"; id: string; params: GatewayApprovalResolveParams }
-  | { type: "approval.reject"; id: string; params: GatewayApprovalResolveParams }
-  | { type: "ticket.list"; id: string }
-  | { type: "ticket.upsert"; id: string; params: GatewayTicketUpsertParams }
-  | { type: "kpi.template.list"; id: string }
-  | { type: "kpi.snapshot.get"; id: string; params: GatewayKpiSnapshotParams }
-  | { type: "tier.config.get"; id: string }
-  | { type: "tier.config.save"; id: string; params: GatewayTierConfigSaveParams }
-  | { type: "tier.classify"; id: string; params: GatewayTierClassifyParams }
-  | { type: "plugins.list"; id: string }
-  | { type: "tools.catalog"; id: string; params?: { includeSchemas?: boolean } }
-  | { type: "tool.invoke"; id: string; params: GatewayToolInvokeParams }
-  | { type: "memory.candidates.list"; id: string; params?: GatewayMemoryCandidateListParams }
-  | { type: "memory.candidate.promote"; id: string; params: GatewayMemoryCandidatePromoteParams }
-  | { type: "memory.candidate.reject"; id: string; params: GatewayMemoryCandidateRejectParams }
-  | { type: "trajectory.list"; id: string; params: GatewayTrajectoryListParams }
-  | { type: "trajectory.get"; id: string; params: GatewayTrajectoryGetParams }
-  | { type: "cron.jobs.list"; id: string }
-  | { type: "cron.job.upsert"; id: string; params: GatewayCronJobUpsertParams }
-  | { type: "cron.job.remove"; id: string; params: GatewayCronJobRemoveParams }
-  | { type: "cron.tick"; id: string };
-
-export type GatewayResponse =
-  | { type: "response"; id: string; ok: true; payload?: unknown }
-  | { type: "response"; id: string; ok: false; error: string };
 
 export type GatewayWebSocketEnvelope =
   | GatewayResponse
@@ -479,54 +349,16 @@ export interface HttpDragonGatewayOptions {
   permissionEngine?: ToolPermissionEngine;
   directToolNames?: readonly string[];
   name?: string;
+  pairingStore?: PairingStore;
 }
 
-interface NormalizedGatewayConfig {
-  host: string;
-  port: number;
-  authMode: "none" | "shared-secret";
-  sharedSecret?: string;
-}
+export { FilePairingStore, defaultPairingFilePath, type PairedDeviceRecord, type PairingStore } from "./pairing.js";
 
-interface EventStreamClient {
-  id: string;
-  response: ServerResponse;
-  filters: EventStreamFilters;
-  heartbeat: NodeJS.Timeout;
-}
-
-interface WebSocketClient {
-  id: string;
-  socket: Duplex;
-  filters: EventStreamFilters;
-  heartbeat: NodeJS.Timeout;
-  buffer: Buffer;
-  closed: boolean;
-}
-
-export interface EventStreamFilters {
-  sessionId?: string;
-  runId?: string;
-}
-
-const DEFAULT_HOST = "127.0.0.1";
-const DEFAULT_PORT = 17357;
-// 32 MB request body cap. Large enough to carry up to ~10 image attachments
-// (base64-encoded, ~14 MB raw budget enforced separately per attachment in
-// parseGatewayAttachments).
-const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 const MAX_RUN_RECORDS = 200;
 const MAX_DIRECT_TOOL_RESULT_BYTES = 256_000;
 const MAX_DIRECT_TOOL_PREVIEW_BYTES = 64_000;
-// Match HTTP body limit so WebSocket RPC can carry attachments too.
-const MAX_WEBSOCKET_MESSAGE_BYTES = MAX_REQUEST_BYTES;
-const MAX_WEBSOCKET_BUFFER_BYTES = MAX_REQUEST_BYTES * 2;
-const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-const WEBSOCKET_PROTOCOL = "dragon.gateway.v1";
 const DEFAULT_TOOL_SESSION_ID = "gateway-tools";
 const DEFAULT_MEMORY_REVIEW_SESSION_ID = "gateway-memory-review";
-const DEFAULT_DIRECT_TOOL_NAMES = Object.freeze(["git_status", "git_diff", "git_log"]);
-
 export function createHttpGateway(options: HttpDragonGatewayOptions): DragonGateway {
   return new HttpDragonGateway(options);
 }
@@ -552,17 +384,16 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #onTierConfigChange: ((config: GatewayTierConfig) => void) | undefined;
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
-  readonly #directToolNames: ReadonlySet<string>;
+  #directToolNames: Set<string>;
   readonly #name: string;
+  readonly #pairingStore: PairingStore;
   readonly #lanes = new Map<string, Promise<void>>();
   readonly #sessionCoordinator = new SessionTurnCoordinator();
   readonly #rateLimiter = new SlidingWindowRateLimiter();
-  readonly #eventClients = new Map<string, EventStreamClient>();
-  readonly #webSocketClients = new Map<string, WebSocketClient>();
+  readonly #connections: GatewayConnectionHub;
   readonly #runSessions = new Map<string, string>();
   readonly #runs = new Map<string, GatewayRunRecord>();
   readonly #runControllers = new Map<string, AbortController>();
-  #eventSequence = 0;
   #server: Server | undefined;
   #config: NormalizedGatewayConfig | undefined;
   #startedAt: string | undefined;
@@ -595,6 +426,13 @@ export class HttpDragonGateway implements DragonGateway {
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
     this.#name = options.name ?? "dragon-gateway";
+    this.#pairingStore = options.pairingStore ?? new FilePairingStore();
+    this.#connections = new GatewayConnectionHub({
+      isAuthorized: request => this.#isAuthorized(request),
+      tryConsumeWebSocket: request => this.#rateLimiter.tryConsume("websocket", clientRateLimitKey(request)),
+      handleRpc: request => this.#handleRpc(request),
+      resolveSessionId: event => this.#runSessions.get(event.runId) ?? readEventSessionId(event),
+    });
   }
 
   async start(config: GatewayConfig = {}): Promise<void> {
@@ -611,7 +449,7 @@ export class HttpDragonGateway implements DragonGateway {
       });
     });
     server.on("upgrade", (request, socket, head) => {
-      this.#handleUpgrade(request, socket, head);
+      this.#connections.handleUpgrade(request, socket, head);
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -630,6 +468,7 @@ export class HttpDragonGateway implements DragonGateway {
 
     this.#server = server;
     this.#config = normalized;
+    this.#directToolNames = new Set(normalized.toolInvokeAllowlist);
     this.#startedAt = new Date().toISOString();
     this.#address = {
       host: normalized.host,
@@ -637,7 +476,7 @@ export class HttpDragonGateway implements DragonGateway {
       url: `http://${normalized.host}:${address.port}`,
     };
     this.#runtimeUnsubscribe = this.#runtime.subscribe(event => {
-      this.#broadcastRuntimeEvent(event);
+      this.#connections.broadcastRuntimeEvent(event);
     });
     const authNotice = describeAuthStartup(normalized);
     if (authNotice) {
@@ -657,8 +496,8 @@ export class HttpDragonGateway implements DragonGateway {
     }
     this.#runtimeUnsubscribe?.();
     this.#runtimeUnsubscribe = undefined;
-    this.#closeEventStreams();
-    this.#closeWebSocketClients();
+    this.#connections.closeEventStreams();
+    this.#connections.closeWebSocketClients();
     await new Promise<void>((resolve, reject) => {
       server.close(error => {
         if (error) {
@@ -716,211 +555,14 @@ export class HttpDragonGateway implements DragonGateway {
   }
 
   async #handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    applyCors(request, response);
-    if (request.method === "OPTIONS") {
-      response.writeHead(204);
-      response.end();
-      return;
-    }
-
-    const url = new URL(request.url ?? "/", "http://dragon.local");
-    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
-      writeHtml(response, 200, getDashboardHtml());
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname.startsWith("/assets/")) {
-      const asset = readDashboardAsset(url.pathname.slice(1));
-      if (asset) {
-        response.writeHead(200, {
-          "Content-Type": asset.contentType,
-          "Cache-Control": "public, max-age=3600",
-        });
-        response.end(asset.body);
-        return;
-      }
-      writeJson(response, 404, { ok: false, error: "Not found." });
-      return;
-    }
-
-    const rateRoute = classifyHttpRoute(request.method, url.pathname);
-    if (rateRoute && !this.#rateLimiter.tryConsume(rateRoute, clientRateLimitKey(request))) {
-      writeJson(response, 429, { ok: false, error: "Rate limit exceeded." });
-      return;
-    }
-
-    if (!this.#isAuthorized(request)) {
-      writeJson(response, 401, { ok: false, error: "Unauthorized." });
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname === "/health") {
-      writeJson(response, 200, this.#healthPayload());
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname === "/events") {
-      this.#openEventStream(request, response, url);
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/channels/webhook") {
-      const payload = await this.#runWebhook(await readJsonBody(request));
-      writeJson(response, 200, { ok: true, payload });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/rpc") {
-      const gatewayRequest = parseGatewayRequest(await readJsonBody(request));
-      const gatewayResponse = await this.#handleRpc(gatewayRequest);
-      writeJson(response, gatewayResponse.ok ? 200 : 400, gatewayResponse);
-      return;
-    }
-
-    writeJson(response, 404, { ok: false, error: "Not found." });
-  }
-
-  #handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    const url = new URL(request.url ?? "/", "http://dragon.local");
-    if (url.pathname !== "/ws") {
-      rejectWebSocketUpgrade(socket, 404, "Not Found");
-      return;
-    }
-    if (!this.#rateLimiter.tryConsume("websocket", clientRateLimitKey(request))) {
-      rejectWebSocketUpgrade(socket, 429, "Too Many Requests");
-      return;
-    }
-    if (!this.#isAuthorized(request)) {
-      rejectWebSocketUpgrade(socket, 401, "Unauthorized");
-      return;
-    }
-    const key = readSingleHeader(request, "sec-websocket-key");
-    if (!isValidWebSocketUpgrade(request, key)) {
-      rejectWebSocketUpgrade(socket, 400, "Bad Request");
-      return;
-    }
-
-    const protocols = readWebSocketProtocols(request);
-    const selectedProtocol = protocols.includes(WEBSOCKET_PROTOCOL) ? WEBSOCKET_PROTOCOL : undefined;
-    const accept = createHash("sha1")
-      .update(`${key}${WEBSOCKET_GUID}`)
-      .digest("base64");
-    const responseHeaders = [
-      "HTTP/1.1 101 Switching Protocols",
-      "Upgrade: websocket",
-      "Connection: Upgrade",
-      `Sec-WebSocket-Accept: ${accept}`,
-      ...(selectedProtocol ? [`Sec-WebSocket-Protocol: ${selectedProtocol}`] : []),
-      "",
-      "",
-    ];
-    socket.write(responseHeaders.join("\r\n"));
-
-    const clientId = randomUUID();
-    const client: WebSocketClient = {
-      id: clientId,
-      socket,
-      filters: parseEventStreamFilters(url),
-      heartbeat: setInterval(() => {
-        if (!client.closed) {
-          sendWebSocketFrame(client, 0x9, Buffer.alloc(0));
-        }
-      }, 15_000),
-      buffer: Buffer.alloc(0),
-      closed: false,
-    };
-    this.#webSocketClients.set(clientId, client);
-    sendWebSocketJson(client, {
-      type: "ready",
-      clientId,
-      filters: client.filters,
-      protocolVersion: 1,
-      serverTime: new Date().toISOString(),
-    });
-
-    socket.on("data", chunk => {
-      this.#handleWebSocketData(client, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    });
-    socket.on("close", () => {
-      this.#removeWebSocketClient(client.id);
-    });
-    socket.on("error", () => {
-      this.#removeWebSocketClient(client.id);
-    });
-    if (head.length > 0) {
-      this.#handleWebSocketData(client, head);
-    }
-  }
-
-  #handleWebSocketData(client: WebSocketClient, chunk: Buffer): void {
-    if (client.closed) {
-      return;
-    }
-    client.buffer = Buffer.concat([client.buffer, chunk]);
-    if (client.buffer.byteLength > MAX_WEBSOCKET_BUFFER_BYTES) {
-      closeWebSocketClient(client, 1009, "WebSocket buffer limit exceeded.");
-      this.#removeWebSocketClient(client.id);
-      return;
-    }
-
-    let parsed: ParsedWebSocketFrames;
-    try {
-      parsed = parseWebSocketFrames(client.buffer);
-    } catch (error) {
-      closeWebSocketClient(client, 1002, error instanceof Error ? error.message : String(error));
-      this.#removeWebSocketClient(client.id);
-      return;
-    }
-    client.buffer = parsed.remaining;
-
-    for (const frame of parsed.frames) {
-      if (frame.opcode === 0x8) {
-        closeWebSocketClient(client, 1000, "Normal closure.");
-        this.#removeWebSocketClient(client.id);
-        return;
-      }
-      if (frame.opcode === 0x9) {
-        sendWebSocketFrame(client, 0xA, frame.payload);
-        continue;
-      }
-      if (frame.opcode === 0xA) {
-        continue;
-      }
-      if (frame.opcode === 0x1) {
-        this.#handleWebSocketText(client, frame.payload.toString("utf8")).catch(error => {
-          sendWebSocketJson(client, {
-            type: "error",
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-        continue;
-      }
-      closeWebSocketClient(client, 1003, "Unsupported WebSocket frame.");
-      this.#removeWebSocketClient(client.id);
-      return;
-    }
-  }
-
-  async #handleWebSocketText(client: WebSocketClient, text: string): Promise<void> {
-    let request: GatewayRequest;
-    try {
-      request = parseGatewayRequest(JSON.parse(text) as unknown);
-    } catch (error) {
-      sendWebSocketJson(client, {
-        type: "error",
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return;
-    }
-    const response = await this.#handleRpc(request);
-    if (!sendWebSocketJson(client, response)) {
-      sendWebSocketJson(client, {
-        type: "response",
-        id: request.id,
-        ok: false,
-        error: `WebSocket response exceeds ${MAX_WEBSOCKET_MESSAGE_BYTES} bytes.`,
-      });
-    }
+    await handleGatewayHttpRequest({
+      rateLimiter: this.#rateLimiter,
+      isAuthorized: request => this.#isAuthorized(request),
+      healthPayload: () => this.#healthPayload(),
+      openEventStream: (req, res, url) => this.#connections.openEventStream(req, res, url),
+      runWebhook: body => this.#runWebhook(body),
+      handleRpc: req => this.#handleRpc(req),
+    }, request, response);
   }
 
   #isAuthorized(request: IncomingMessage): boolean {
@@ -935,173 +577,97 @@ export class HttpDragonGateway implements DragonGateway {
     return bearer === config.sharedSecret || headerSecret === config.sharedSecret;
   }
 
+  #rpcCapabilities(): readonly string[] {
+    return [
+      "health",
+      "connect",
+      "agent.run",
+      "agent.wait",
+      "events.in-response",
+      "events.sse",
+      "events.websocket",
+      "channels.webhook",
+      "run.status",
+      "run.cancel",
+      "runs.list",
+      "providers.list",
+      ...(this.#modelConfigStore ? ["model.config.get", "model.config.save"] : []),
+      ...(this.#agentConfigStore ? ["agent.config.get", "agent.config.save"] : []),
+      ...(this.#orgStore ? ["org.get"] : []),
+      ...(this.#employeeStore ? ["employee.list", "employee.save"] : []),
+      ...(this.#toolPolicyStore ? ["policy.tool.get", "policy.tool.save"] : []),
+      ...(this.#approvalService ? ["approval.list", "approval.approve", "approval.reject"] : []),
+      ...(this.#ticketStore ? ["ticket.list", "ticket.upsert"] : []),
+      ...(this.#kpiTemplateStore ? ["kpi.template.list", "kpi.snapshot.get"] : []),
+      ...(this.#tierConfigStore ? ["tier.config.get", "tier.config.save", "tier.classify"] : []),
+      "plugins.list",
+      "mcp.servers.list",
+      "pairing.token.create",
+      "pairing.devices.list",
+      "pairing.device.register",
+      "pairing.device.revoke",
+      "tools.catalog",
+      "tool.invoke",
+      ...(this.#toolRegistry.has("memory_candidates_list") ? ["memory.candidates.list"] : []),
+      ...(this.#toolRegistry.has("memory_candidate_promote") ? ["memory.candidate.promote"] : []),
+      ...(this.#toolRegistry.has("memory_candidate_reject") ? ["memory.candidate.reject"] : []),
+      ...(this.#trajectoryStore ? ["trajectory.list", "trajectory.get"] : []),
+      ...(this.#cronStore ? ["cron.jobs.list", "cron.job.upsert", "cron.job.remove"] : []),
+      ...(this.#cronRunner ? ["cron.tick"] : []),
+    ];
+  }
+
+  #rpcDeps(): import("./gateway-rpc-handler.js").GatewayRpcHandlerDeps {
+    return {
+      capabilities: this.#rpcCapabilities(),
+      healthPayload: () => this.#healthPayload(),
+      getRunStatus: runId => this.#getRunStatus(runId),
+      cancelRun: (runId, reason) => this.#cancelRun(runId, reason),
+      listRuns: params => this.#listRuns(params),
+      listProviders: () => this.#listProviders(),
+      loadModelConfig: () => this.#loadModelConfig(),
+      saveModelConfig: params => this.#saveModelConfig(params as GatewayModelConfigSaveParams),
+      loadAgentConfig: () => this.#loadAgentConfig(),
+      saveAgentConfig: params => this.#saveAgentConfig(params as GatewayAgentConfigSaveParams),
+      loadOrg: () => this.#loadOrg(),
+      loadEmployees: () => this.#loadEmployees(),
+      saveEmployees: params => this.#saveEmployees(params as EmployeeRegistry),
+      loadToolPolicies: () => this.#loadToolPolicies(),
+      saveToolPolicies: params => this.#saveToolPolicies(params as ToolPolicyDocument),
+      listApprovals: params => this.#listApprovals(params as GatewayApprovalListParams | undefined),
+      approveRequest: params => this.#approveRequest(params as GatewayApprovalResolveParams),
+      rejectRequest: params => this.#rejectRequest(params as GatewayApprovalResolveParams),
+      loadTickets: () => this.#loadTickets(),
+      upsertTicket: params => this.#upsertTicket(params as OrgTicket),
+      loadKpiTemplates: () => this.#loadKpiTemplates(),
+      loadKpiSnapshot: params => this.#loadKpiSnapshot(params as GatewayKpiSnapshotParams),
+      loadTierConfig: () => this.#loadTierConfig(),
+      saveTierConfig: params => this.#saveTierConfig(params as GatewayTierConfigSaveParams),
+      classifyTier: params => this.#classifyTier(params as GatewayTierClassifyParams),
+      listPlugins: () => this.#listPlugins(),
+      listMcpServers: () => this.#listMcpServers(),
+      createPairingToken: params => this.#createPairingToken(params as { label?: string; ttlMs?: number } | undefined),
+      listPairedDevices: () => this.#listPairedDevices(),
+      registerPairedDevice: token => this.#registerPairedDevice(token),
+      revokePairedDevice: deviceId => this.#revokePairedDevice(deviceId),
+      listTools: params => this.#listTools(params as { includeSchemas?: boolean } | undefined),
+      invokeTool: params => this.#invokeTool(params as GatewayToolInvokeParams),
+      listMemoryCandidates: params => this.#listMemoryCandidates(params as GatewayMemoryCandidateListParams | undefined),
+      promoteMemoryCandidate: params => this.#promoteMemoryCandidate(params as GatewayMemoryCandidatePromoteParams),
+      rejectMemoryCandidate: params => this.#rejectMemoryCandidate(params as GatewayMemoryCandidateRejectParams),
+      listTrajectories: params => this.#listTrajectories(params as GatewayTrajectoryListParams),
+      getTrajectory: params => this.#getTrajectory(params as GatewayTrajectoryGetParams),
+      listCronJobs: () => this.#listCronJobs(),
+      upsertCronJob: params => this.#upsertCronJob(params as GatewayCronJobUpsertParams),
+      removeCronJob: params => this.#removeCronJob(params as GatewayCronJobRemoveParams),
+      tickCron: () => this.#tickCron(),
+      waitForQueuedTurn: queueTurnId => this.#sessionCoordinator.waitForQueuedTurn(queueTurnId),
+      runAgent: params => this.#runAgent(params as GatewayAgentParams),
+    };
+  }
+
   async #handleRpc(request: GatewayRequest): Promise<GatewayResponse> {
-    try {
-      if (request.type === "health") {
-        return { type: "response", id: request.id, ok: true, payload: this.#healthPayload() };
-      }
-      if (request.type === "connect") {
-        return {
-          type: "response",
-          id: request.id,
-          ok: true,
-          payload: {
-            protocolVersion: 1,
-            serverTime: new Date().toISOString(),
-            capabilities: [
-              "health",
-              "connect",
-              "agent.run",
-              "agent.wait",
-              "events.in-response",
-              "events.sse",
-              "events.websocket",
-              "channels.webhook",
-              "run.status",
-              "run.cancel",
-              "runs.list",
-              "providers.list",
-              ...(this.#modelConfigStore ? ["model.config.get", "model.config.save"] : []),
-              ...(this.#agentConfigStore ? ["agent.config.get", "agent.config.save"] : []),
-              ...(this.#orgStore ? ["org.get"] : []),
-              ...(this.#employeeStore ? ["employee.list", "employee.save"] : []),
-              ...(this.#toolPolicyStore ? ["policy.tool.get", "policy.tool.save"] : []),
-              ...(this.#approvalService ? ["approval.list", "approval.approve", "approval.reject"] : []),
-              ...(this.#ticketStore ? ["ticket.list", "ticket.upsert"] : []),
-              ...(this.#kpiTemplateStore ? ["kpi.template.list", "kpi.snapshot.get"] : []),
-              ...(this.#tierConfigStore ? ["tier.config.get", "tier.config.save", "tier.classify"] : []),
-              "plugins.list",
-              "tools.catalog",
-              "tool.invoke",
-              ...(this.#toolRegistry.has("memory_candidates_list") ? ["memory.candidates.list"] : []),
-              ...(this.#toolRegistry.has("memory_candidate_promote") ? ["memory.candidate.promote"] : []),
-              ...(this.#toolRegistry.has("memory_candidate_reject") ? ["memory.candidate.reject"] : []),
-              ...(this.#trajectoryStore ? ["trajectory.list", "trajectory.get"] : []),
-              ...(this.#cronStore ? ["cron.jobs.list", "cron.job.upsert", "cron.job.remove"] : []),
-              ...(this.#cronRunner ? ["cron.tick"] : []),
-            ],
-          },
-        };
-      }
-      if (request.type === "run.status") {
-        return { type: "response", id: request.id, ok: true, payload: this.#getRunStatus(request.params.runId) };
-      }
-      if (request.type === "run.cancel") {
-        return { type: "response", id: request.id, ok: true, payload: this.#cancelRun(request.params.runId, request.params.reason) };
-      }
-      if (request.type === "runs.list") {
-        return { type: "response", id: request.id, ok: true, payload: this.#listRuns(request.params) };
-      }
-      if (request.type === "providers.list") {
-        return { type: "response", id: request.id, ok: true, payload: this.#listProviders() };
-      }
-      if (request.type === "model.config.get") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#loadModelConfig() };
-      }
-      if (request.type === "model.config.save") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#saveModelConfig(request.params) };
-      }
-      if (request.type === "agent.config.get") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#loadAgentConfig() };
-      }
-      if (request.type === "agent.config.save") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#saveAgentConfig(request.params) };
-      }
-      if (request.type === "org.get") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#loadOrg() };
-      }
-      if (request.type === "employee.list") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#loadEmployees() };
-      }
-      if (request.type === "employee.save") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#saveEmployees(request.params) };
-      }
-      if (request.type === "policy.tool.get") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#loadToolPolicies() };
-      }
-      if (request.type === "policy.tool.save") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#saveToolPolicies(request.params) };
-      }
-      if (request.type === "approval.list") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#listApprovals(request.params) };
-      }
-      if (request.type === "approval.approve") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#approveRequest(request.params) };
-      }
-      if (request.type === "approval.reject") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#rejectRequest(request.params) };
-      }
-      if (request.type === "ticket.list") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#loadTickets() };
-      }
-      if (request.type === "ticket.upsert") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#upsertTicket(request.params) };
-      }
-      if (request.type === "kpi.template.list") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#loadKpiTemplates() };
-      }
-      if (request.type === "kpi.snapshot.get") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#loadKpiSnapshot(request.params) };
-      }
-      if (request.type === "tier.config.get") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#loadTierConfig() };
-      }
-      if (request.type === "tier.config.save") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#saveTierConfig(request.params) };
-      }
-      if (request.type === "tier.classify") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#classifyTier(request.params) };
-      }
-      if (request.type === "plugins.list") {
-        return { type: "response", id: request.id, ok: true, payload: this.#listPlugins() };
-      }
-      if (request.type === "tools.catalog") {
-        return { type: "response", id: request.id, ok: true, payload: this.#listTools(request.params) };
-      }
-      if (request.type === "tool.invoke") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#invokeTool(request.params) };
-      }
-      if (request.type === "memory.candidates.list") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#listMemoryCandidates(request.params) };
-      }
-      if (request.type === "memory.candidate.promote") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#promoteMemoryCandidate(request.params) };
-      }
-      if (request.type === "memory.candidate.reject") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#rejectMemoryCandidate(request.params) };
-      }
-      if (request.type === "trajectory.list") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#listTrajectories(request.params) };
-      }
-      if (request.type === "trajectory.get") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#getTrajectory(request.params) };
-      }
-      if (request.type === "cron.jobs.list") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#listCronJobs() };
-      }
-      if (request.type === "cron.job.upsert") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#upsertCronJob(request.params) };
-      }
-      if (request.type === "cron.job.remove") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#removeCronJob(request.params) };
-      }
-      if (request.type === "cron.tick") {
-        return { type: "response", id: request.id, ok: true, payload: await this.#tickCron() };
-      }
-      if (request.type === "agent.wait") {
-        const payload = await this.#sessionCoordinator.waitForQueuedTurn(request.params.queueTurnId);
-        return { type: "response", id: request.id, ok: true, payload };
-      }
-      const payload = await this.#runAgent(request.params);
-      return { type: "response", id: request.id, ok: true, payload };
-    } catch (error) {
-      return {
-        type: "response",
-        id: request.id,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
+    return handleGatewayRpc(this.#rpcDeps(), request);
   }
 
   async #runAgent(params: GatewayAgentParams): Promise<AgentTurnResultPayload | { queued: true; queueTurnId: string; sessionId: string; position: number }> {
@@ -1112,84 +678,22 @@ export class HttpDragonGateway implements DragonGateway {
       agentParams => this.#executeAgentTurn(agentParams),
     );
   }
-
-  async #executeAgentTurn(params: GatewayAgentParams): Promise<AgentTurnResultPayload> {
-    const maxTurns = resolveQueryLoopMaxTurns(params.queryLoop, params.queryLoopMaxTurns);
-    const allEvents: DragonEvent[] = [];
-    let lastPayload: AgentTurnResultPayload | undefined;
-    let activeParams = params;
-
-    for (let turnIndex = 0; turnIndex < maxTurns; turnIndex += 1) {
-      const payload = await this.#executeSingleAgentTurn(activeParams);
-      allEvents.push(...payload.events);
-      lastPayload = payload;
-      const result = payload.result as DragonTurnResult;
-      if (!shouldContinueQueryLoop(result, turnIndex, maxTurns)) {
-        break;
-      }
-      activeParams = {
-        ...params,
-        message: QUERY_LOOP_CONTINUE_MESSAGE,
-        metadata: {
-          ...(params.metadata ?? {}),
-          queryLoopContinuation: turnIndex + 1,
-          queryLoopReason: "tool_iteration_limit",
-        },
-      };
-    }
-
-    if (!lastPayload) {
-      throw new Error("Agent turn produced no result.");
-    }
+  #agentTurnDeps(): import("./gateway-agent-turn.js").GatewayAgentTurnDeps {
     return {
-      result: lastPayload.result,
-      events: allEvents,
+      runtime: this.#runtime,
+      runInLane: (sessionId, task) => this.#runInLane(sessionId, task),
+      runs: {
+        registerRunStart: (runId, input, controller) => this.#registerRunStart(runId, input, controller),
+        completeRun: (runId, result) => this.#completeRun(runId, result),
+        failRun: (runId, error, state) => this.#failRun(runId, error, state),
+        deleteRunSession: runId => this.#runSessions.delete(runId),
+      },
     };
   }
 
-  async #executeSingleAgentTurn(params: GatewayAgentParams): Promise<AgentTurnResultPayload> {
-    const input = toTurnInput(params);
-    return await this.#runInLane(input.sessionId, async () => {
-      const events: DragonEvent[] = [];
-      const controller = new AbortController();
-      const unsubscribe = this.#runtime.subscribe(event => {
-        events.push(event);
-      });
-      let untrackRun: () => void = () => {};
-      try {
-        let runId: string | undefined;
-        untrackRun = this.#runtime.subscribe(event => {
-          if (event.type === "lifecycle" && event.phase === "start") {
-            runId = event.runId;
-            this.#registerRunStart(event.runId, input, controller);
-            untrackRun();
-          }
-        });
-        try {
-          const result = await this.#runtime.runTurn({ ...input, signal: controller.signal });
-          this.#completeRun(result.runId, result);
-          this.#runSessions.delete(result.runId);
-          if (runId !== undefined && runId !== result.runId) {
-            this.#runSessions.delete(runId);
-          }
-          return {
-            result,
-            events: events.filter(event => event.runId === result.runId),
-          };
-        } catch (error) {
-          if (runId !== undefined) {
-            this.#failRun(runId, error, controller.signal.aborted ? "cancelled" : "error");
-            this.#runSessions.delete(runId);
-          }
-          throw error;
-        }
-      } finally {
-        untrackRun();
-        unsubscribe();
-      }
-    });
+  async #executeAgentTurn(params: GatewayAgentParams): Promise<AgentTurnResultPayload> {
+    return executeGatewayAgentTurn(this.#agentTurnDeps(), params);
   }
-
   async #runWebhook(value: unknown): Promise<{ channel: string; result: unknown; events: DragonEvent[] }> {
     const webhook = parseGatewayWebhookParams(value);
     const outcome = await this.#runAgent(webhook);
@@ -1202,7 +706,6 @@ export class HttpDragonGateway implements DragonGateway {
       events: completed.events,
     };
   }
-
   #registerRunStart(runId: string, input: DragonTurnInput, controller: AbortController): void {
     const now = new Date().toISOString();
     this.#runSessions.set(runId, input.sessionId);
@@ -1219,7 +722,6 @@ export class HttpDragonGateway implements DragonGateway {
     });
     this.#pruneRuns();
   }
-
   #completeRun(runId: string, result: DragonTurnResult): void {
     const now = new Date().toISOString();
     const existing = this.#runs.get(runId);
@@ -1249,7 +751,6 @@ export class HttpDragonGateway implements DragonGateway {
     this.#runControllers.delete(runId);
     this.#pruneRuns();
   }
-
   #failRun(runId: string, error: unknown, state: Extract<GatewayRunState, "cancelled" | "error">): void {
     const now = new Date().toISOString();
     const existing = this.#runs.get(runId);
@@ -1278,7 +779,6 @@ export class HttpDragonGateway implements DragonGateway {
     this.#runControllers.delete(runId);
     this.#pruneRuns();
   }
-
   #getRunStatus(runId: string): GatewayRunRecord {
     const record = this.#runs.get(runId);
     if (!record) {
@@ -1286,7 +786,6 @@ export class HttpDragonGateway implements DragonGateway {
     }
     return record;
   }
-
   #cancelRun(runId: string, reason: string | undefined): { cancelled: boolean; run: GatewayRunRecord } {
     const record = this.#runs.get(runId);
     if (!record) {
@@ -1296,7 +795,6 @@ export class HttpDragonGateway implements DragonGateway {
     if (!controller) {
       return { cancelled: false, run: record };
     }
-
     controller.abort(reason ?? "Cancelled through gateway RPC.");
     const updated: GatewayRunRecord = {
       ...record,
@@ -1306,7 +804,6 @@ export class HttpDragonGateway implements DragonGateway {
     this.#runs.set(runId, updated);
     return { cancelled: true, run: updated };
   }
-
   #listRuns(params: { sessionId?: string; limit?: number } | undefined): { runs: GatewayRunRecord[] } {
     const limit = Math.min(Math.max(1, Math.floor(params?.limit ?? 50)), MAX_RUN_RECORDS);
     const runs = [...this.#runs.values()]
@@ -1315,7 +812,6 @@ export class HttpDragonGateway implements DragonGateway {
       .slice(0, limit);
     return { runs };
   }
-
   async #listTrajectories(params: GatewayTrajectoryListParams): Promise<unknown> {
     if (!this.#trajectoryStore) {
       throw new Error("Trajectory store is not configured.");
@@ -1328,7 +824,6 @@ export class HttpDragonGateway implements DragonGateway {
       ...(params.limit !== undefined ? { limit: params.limit } : {}),
     });
   }
-
   async #getTrajectory(params: GatewayTrajectoryGetParams): Promise<{ record: DragonTrajectoryRecord; eventsTruncated: boolean }> {
     if (!this.#trajectoryStore) {
       throw new Error("Trajectory store is not configured.");
@@ -1344,7 +839,6 @@ export class HttpDragonGateway implements DragonGateway {
       eventsTruncated,
     };
   }
-
   async #listCronJobs(): Promise<{ jobs: unknown[] }> {
     if (!this.#cronStore) {
       throw new Error("Cron store is not configured.");
@@ -1354,7 +848,6 @@ export class HttpDragonGateway implements DragonGateway {
       jobs: jobs.sort((left, right) => left.nextRunAt.localeCompare(right.nextRunAt)),
     };
   }
-
   async #upsertCronJob(params: GatewayCronJobUpsertParams): Promise<{ job: unknown }> {
     if (!this.#cronStore) {
       throw new Error("Cron store is not configured.");
@@ -1362,14 +855,12 @@ export class HttpDragonGateway implements DragonGateway {
     const job = await this.#cronStore.upsert(params);
     return { job };
   }
-
   async #removeCronJob(params: GatewayCronJobRemoveParams): Promise<{ removed: boolean }> {
     if (!this.#cronStore) {
       throw new Error("Cron store is not configured.");
     }
     return { removed: await this.#cronStore.remove(params.id) };
   }
-
   async #tickCron(): Promise<unknown> {
     const runner = this.#cronRunner;
     if (!runner) {
@@ -1380,7 +871,6 @@ export class HttpDragonGateway implements DragonGateway {
     // runner is already firing on the same instant.
     return await this.#runInLane("__cron__", () => runner.tick());
   }
-
   #pruneRuns(): void {
     if (this.#runs.size <= MAX_RUN_RECORDS) {
       return;
@@ -1394,126 +884,6 @@ export class HttpDragonGateway implements DragonGateway {
       }
       this.#runs.delete(runId);
     }
-  }
-
-  #openEventStream(
-    request: IncomingMessage,
-    response: ServerResponse,
-    url: URL,
-  ): void {
-    const filters = parseEventStreamFilters(url);
-    const clientId = randomUUID();
-    response.writeHead(200, {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-accel-buffering": "no",
-    });
-    response.write(": connected\n\n");
-    writeSse(response, "ready", {
-      type: "ready",
-      clientId,
-      filters,
-      serverTime: new Date().toISOString(),
-    });
-
-    const heartbeat = setInterval(() => {
-      if (!response.destroyed) {
-        response.write(": heartbeat\n\n");
-      }
-    }, 15_000);
-
-    const client: EventStreamClient = {
-      id: clientId,
-      response,
-      filters,
-      heartbeat,
-    };
-    this.#eventClients.set(clientId, client);
-
-    request.on("close", () => {
-      this.#removeEventStreamClient(clientId);
-    });
-  }
-
-  #broadcastRuntimeEvent(event: DragonEvent): void {
-    if (this.#eventClients.size === 0 && this.#webSocketClients.size === 0) {
-      return;
-    }
-    const sessionId = this.#runSessions.get(event.runId) ?? readEventSessionId(event);
-    const envelope: GatewayEventEnvelope = {
-      type: "event",
-      sequence: ++this.#eventSequence,
-      timestamp: new Date().toISOString(),
-      event,
-    };
-    if (sessionId !== undefined) {
-      envelope.sessionId = sessionId;
-    }
-
-    for (const client of this.#eventClients.values()) {
-      if (!matchesEventFilters(envelope, client.filters)) {
-        continue;
-      }
-      try {
-        writeSse(client.response, "dragon.event", envelope);
-      } catch {
-        this.#removeEventStreamClient(client.id);
-      }
-    }
-    for (const client of this.#webSocketClients.values()) {
-      if (!matchesEventFilters(envelope, client.filters)) {
-        continue;
-      }
-      if (!sendWebSocketJson(client, envelope)) {
-        sendWebSocketJson(client, {
-          type: "error",
-          error: `Gateway event exceeds ${MAX_WEBSOCKET_MESSAGE_BYTES} bytes and was skipped.`,
-        });
-      }
-    }
-  }
-
-  #removeEventStreamClient(clientId: string): void {
-    const client = this.#eventClients.get(clientId);
-    if (!client) {
-      return;
-    }
-    clearInterval(client.heartbeat);
-    this.#eventClients.delete(clientId);
-  }
-
-  #closeEventStreams(): void {
-    for (const client of this.#eventClients.values()) {
-      clearInterval(client.heartbeat);
-      if (!client.response.destroyed) {
-        writeSse(client.response, "close", {
-          type: "close",
-          reason: "gateway_stopped",
-          serverTime: new Date().toISOString(),
-        });
-        client.response.end();
-      }
-    }
-    this.#eventClients.clear();
-  }
-
-  #removeWebSocketClient(clientId: string): void {
-    const client = this.#webSocketClients.get(clientId);
-    if (!client) {
-      return;
-    }
-    clearInterval(client.heartbeat);
-    client.closed = true;
-    this.#webSocketClients.delete(clientId);
-  }
-
-  #closeWebSocketClients(): void {
-    for (const client of this.#webSocketClients.values()) {
-      clearInterval(client.heartbeat);
-      closeWebSocketClient(client, 1001, "Gateway stopped.");
-    }
-    this.#webSocketClients.clear();
   }
 
   async #runInLane<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
@@ -1758,26 +1128,52 @@ export class HttpDragonGateway implements DragonGateway {
     };
   }
 
+  async #listMcpServers(): Promise<{
+    servers: Array<{
+      id: string;
+      transport: "stdio" | "http";
+      toolCount: number;
+      disabled?: boolean;
+    }>;
+  }> {
+    const configured = await loadMcpConfig(defaultMcpConfigPath());
+    const toolNames = this.#toolRegistry.list().map(tool => tool.name);
+    return {
+      servers: configured.map(server => ({
+        id: server.id,
+        transport: server.url ? "http" : "stdio",
+        toolCount: toolNames.filter(name => name.startsWith(`mcp_${server.id}_`)).length,
+        ...(server.disabled ? { disabled: true } : {}),
+      })),
+    };
+  }
+
+  async #createPairingToken(params: { label?: string; ttlMs?: number } | undefined): Promise<{ token: string; expiresAt: string }> {
+    const label = typeof params?.label === "string" ? params.label : "device";
+    const ttlMs = typeof params?.ttlMs === "number" && Number.isFinite(params.ttlMs) ? params.ttlMs : undefined;
+    return await this.#pairingStore.createToken(label, ttlMs);
+  }
+
+  async #listPairedDevices(): Promise<{ devices: Awaited<ReturnType<PairingStore["listDevices"]>> }> {
+    return { devices: await this.#pairingStore.listDevices() };
+  }
+
+  async #registerPairedDevice(token: string): Promise<{ device: Awaited<ReturnType<PairingStore["consumeToken"]>> }> {
+    const device = await this.#pairingStore.consumeToken(token);
+    if (!device) {
+      badRequest("Invalid or expired pairing token.");
+    }
+    return { device };
+  }
+
+  async #revokePairedDevice(deviceId: string): Promise<{ revoked: boolean }> {
+    return { revoked: await this.#pairingStore.revokeDevice(deviceId) };
+  }
+
   #listTools(params: { includeSchemas?: boolean } | undefined): { tools: GatewayToolSummary[] } {
     const includeSchemas = params?.includeSchemas === true;
     return {
-      tools: this.#toolRegistry.list().map(tool => {
-        const summary: GatewayToolSummary = {
-          name: tool.name,
-          description: tool.description,
-          directInvokeAllowed: isDirectToolCandidate(tool, this.#directToolNames),
-        };
-        if (tool.capabilities !== undefined) {
-          summary.capabilities = [...tool.capabilities];
-        }
-        if (tool.permission !== undefined) {
-          summary.permission = tool.permission;
-        }
-        if (includeSchemas) {
-          summary.inputSchema = tool.inputSchema;
-        }
-        return summary;
-      }),
+      tools: this.#toolRegistry.list().map(tool => summarizeGatewayTool(tool, this.#directToolNames, includeSchemas)),
     };
   }
 
@@ -1883,966 +1279,6 @@ export class HttpDragonGateway implements DragonGateway {
   }
 }
 
-function normalizeConfig(config: GatewayConfig): NormalizedGatewayConfig {
-  const withAuth = applyProductionAuthDefaults({
-    ...config,
-    host: config.host ?? DEFAULT_HOST,
-  });
-  const authMode = withAuth.authMode ?? (withAuth.sharedSecret ? "shared-secret" : "none");
-  if (authMode === "shared-secret" && !withAuth.sharedSecret) {
-    throw new Error("Gateway shared-secret auth requires sharedSecret.");
-  }
-  const normalized: NormalizedGatewayConfig = {
-    host: withAuth.host ?? DEFAULT_HOST,
-    port: normalizePort(config.port),
-    authMode,
-  };
-  if (withAuth.sharedSecret !== undefined) {
-    normalized.sharedSecret = withAuth.sharedSecret;
-  }
-  return normalized;
-}
-
-function normalizePort(port: number | undefined): number {
-  if (port === undefined) {
-    return DEFAULT_PORT;
-  }
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    throw new Error(`Invalid gateway port: ${port}`);
-  }
-  return port;
-}
-
-function parseGatewayRequest(value: unknown): GatewayRequest {
-  if (!isRecord(value) || typeof value.type !== "string" || typeof value.id !== "string" || !value.id.trim()) {
-    badRequest("Gateway RPC request requires type and id.");
-  }
-  if (value.type === "health") {
-    return { type: "health", id: value.id };
-  }
-  if (value.type === "connect") {
-    return {
-      type: "connect",
-      id: value.id,
-      ...(isRecord(value.params) ? { params: value.params } : {}),
-    };
-  }
-  if (value.type === "agent") {
-    return {
-      type: "agent",
-      id: value.id,
-      params: parseGatewayAgentParams(value.params),
-    };
-  }
-  if (value.type === "agent.wait") {
-    if (!isRecord(value.params) || typeof value.params.queueTurnId !== "string" || !value.params.queueTurnId.trim()) {
-      badRequest("agent.wait requires params.queueTurnId.");
-    }
-    return {
-      type: "agent.wait",
-      id: value.id,
-      params: { queueTurnId: value.params.queueTurnId.trim() },
-    };
-  }
-  if (value.type === "run.status") {
-    return {
-      type: "run.status",
-      id: value.id,
-      params: parseRunStatusParams(value.params),
-    };
-  }
-  if (value.type === "run.cancel") {
-    return {
-      type: "run.cancel",
-      id: value.id,
-      params: parseRunCancelParams(value.params),
-    };
-  }
-  if (value.type === "runs.list") {
-    const params = parseRunsListParams(value.params);
-    const request: GatewayRequest = {
-      type: "runs.list",
-      id: value.id,
-    };
-    if (params !== undefined) {
-      request.params = params;
-    }
-    return request;
-  }
-  if (value.type === "providers.list") {
-    return { type: "providers.list", id: value.id };
-  }
-  if (value.type === "model.config.get") {
-    return { type: "model.config.get", id: value.id };
-  }
-  if (value.type === "model.config.save") {
-    return {
-      type: "model.config.save",
-      id: value.id,
-      params: parseModelConfigSaveParams(value.params),
-    };
-  }
-  if (value.type === "agent.config.get") {
-    return { type: "agent.config.get", id: value.id };
-  }
-  if (value.type === "agent.config.save") {
-    return {
-      type: "agent.config.save",
-      id: value.id,
-      params: parseAgentConfigSaveParams(value.params),
-    };
-  }
-  if (value.type === "org.get") {
-    return { type: "org.get", id: value.id };
-  }
-  if (value.type === "employee.list") {
-    return { type: "employee.list", id: value.id };
-  }
-  if (value.type === "employee.save") {
-    return {
-      type: "employee.save",
-      id: value.id,
-      params: parseEmployeeSaveParams(value.params),
-    };
-  }
-  if (value.type === "policy.tool.get") {
-    return { type: "policy.tool.get", id: value.id };
-  }
-  if (value.type === "policy.tool.save") {
-    return {
-      type: "policy.tool.save",
-      id: value.id,
-      params: parseToolPolicySaveParams(value.params),
-    };
-  }
-  if (value.type === "approval.list") {
-    return {
-      type: "approval.list",
-      id: value.id,
-      ...(value.params !== undefined ? { params: parseApprovalListParams(value.params) } : {}),
-    };
-  }
-  if (value.type === "approval.approve") {
-    return {
-      type: "approval.approve",
-      id: value.id,
-      params: parseApprovalResolveParams(value.params),
-    };
-  }
-  if (value.type === "approval.reject") {
-    return {
-      type: "approval.reject",
-      id: value.id,
-      params: parseApprovalResolveParams(value.params),
-    };
-  }
-  if (value.type === "ticket.list") {
-    return { type: "ticket.list", id: value.id };
-  }
-  if (value.type === "ticket.upsert") {
-    return {
-      type: "ticket.upsert",
-      id: value.id,
-      params: parseTicketUpsertParams(value.params),
-    };
-  }
-  if (value.type === "kpi.template.list") {
-    return { type: "kpi.template.list", id: value.id };
-  }
-  if (value.type === "kpi.snapshot.get") {
-    return {
-      type: "kpi.snapshot.get",
-      id: value.id,
-      params: parseKpiSnapshotParams(value.params),
-    };
-  }
-  if (value.type === "tier.config.get") {
-    return { type: "tier.config.get", id: value.id };
-  }
-  if (value.type === "tier.config.save") {
-    return {
-      type: "tier.config.save",
-      id: value.id,
-      params: parseTierConfigSaveParams(value.params),
-    };
-  }
-  if (value.type === "tier.classify") {
-    return {
-      type: "tier.classify",
-      id: value.id,
-      params: parseTierClassifyParams(value.params),
-    };
-  }
-  if (value.type === "plugins.list") {
-    return { type: "plugins.list", id: value.id };
-  }
-  if (value.type === "tools.catalog") {
-    const params = parseToolsCatalogParams(value.params);
-    const request: GatewayRequest = {
-      type: "tools.catalog",
-      id: value.id,
-    };
-    if (params !== undefined) {
-      request.params = params;
-    }
-    return request;
-  }
-  if (value.type === "tool.invoke") {
-    return {
-      type: "tool.invoke",
-      id: value.id,
-      params: parseToolInvokeParams(value.params),
-    };
-  }
-  if (value.type === "memory.candidates.list") {
-    const params = parseMemoryCandidateListParams(value.params);
-    const request: GatewayRequest = {
-      type: "memory.candidates.list",
-      id: value.id,
-    };
-    if (params !== undefined) {
-      request.params = params;
-    }
-    return request;
-  }
-  if (value.type === "memory.candidate.promote") {
-    return {
-      type: "memory.candidate.promote",
-      id: value.id,
-      params: parseMemoryCandidatePromoteParams(value.params),
-    };
-  }
-  if (value.type === "memory.candidate.reject") {
-    return {
-      type: "memory.candidate.reject",
-      id: value.id,
-      params: parseMemoryCandidateRejectParams(value.params),
-    };
-  }
-  if (value.type === "trajectory.list") {
-    return {
-      type: "trajectory.list",
-      id: value.id,
-      params: parseTrajectoryListParams(value.params),
-    };
-  }
-  if (value.type === "trajectory.get") {
-    return {
-      type: "trajectory.get",
-      id: value.id,
-      params: parseTrajectoryGetParams(value.params),
-    };
-  }
-  if (value.type === "cron.jobs.list") {
-    return { type: "cron.jobs.list", id: value.id };
-  }
-  if (value.type === "cron.job.upsert") {
-    return {
-      type: "cron.job.upsert",
-      id: value.id,
-      params: parseCronJobUpsertParams(value.params),
-    };
-  }
-  if (value.type === "cron.job.remove") {
-    return {
-      type: "cron.job.remove",
-      id: value.id,
-      params: parseCronJobRemoveParams(value.params),
-    };
-  }
-  if (value.type === "cron.tick") {
-    return { type: "cron.tick", id: value.id };
-  }
-  badRequest(`Unknown Gateway RPC type: ${value.type}`);
-}
-
-function parseRunStatusParams(value: unknown): { runId: string } {
-  if (!isRecord(value) || typeof value.runId !== "string" || !value.runId.trim()) {
-    badRequest("run.status requires params.runId.");
-  }
-  return { runId: value.runId };
-}
-
-function parseRunCancelParams(value: unknown): { runId: string; reason?: string } {
-  if (!isRecord(value) || typeof value.runId !== "string" || !value.runId.trim()) {
-    badRequest("run.cancel requires params.runId.");
-  }
-  return {
-    runId: value.runId,
-    ...(typeof value.reason === "string" && value.reason.trim() ? { reason: value.reason } : {}),
-  };
-}
-
-function parseRunsListParams(value: unknown): { sessionId?: string; limit?: number } | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!isRecord(value)) {
-    badRequest("runs.list params must be an object.");
-  }
-  return {
-    ...(typeof value.sessionId === "string" && value.sessionId.trim() ? { sessionId: value.sessionId } : {}),
-    ...(typeof value.limit === "number" ? { limit: value.limit } : {}),
-  };
-}
-
-function parseToolsCatalogParams(value: unknown): { includeSchemas?: boolean } | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!isRecord(value)) {
-    badRequest("tools.catalog params must be an object.");
-  }
-  return {
-    ...(typeof value.includeSchemas === "boolean" ? { includeSchemas: value.includeSchemas } : {}),
-  };
-}
-
-function parseModelConfigSaveParams(value: unknown): GatewayModelConfigSaveParams {
-  if (!isRecord(value) || !Array.isArray(value.providers)) {
-    badRequest("model.config.save requires params.providers.");
-  }
-  return {
-    providers: value.providers.map((provider, index) => parseModelProviderConfig(provider, index)),
-  };
-}
-
-function normalizeProviderBaseUrl(input: string, index: number): string {
-  const trimmed = normalizeShortText(input, "baseUrl", 1000);
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    badRequest(`model.config.save provider ${index + 1} baseUrl is not a valid URL.`);
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    badRequest(`model.config.save provider ${index + 1} baseUrl must use http or https.`);
-  }
-  if (url.username || url.password) {
-    badRequest(`model.config.save provider ${index + 1} baseUrl must not contain credentials.`);
-  }
-  if (url.search || url.hash) {
-    badRequest(`model.config.save provider ${index + 1} baseUrl must not contain query string or fragment.`);
-  }
-  return trimmed;
-}
-
-function parseModelProviderConfig(value: unknown, index: number): GatewayModelProviderConfig {
-  if (!isRecord(value)) {
-    badRequest(`model.config.save provider ${index + 1} must be an object.`);
-  }
-  if (typeof value.id !== "string" || !value.id.trim()) {
-    badRequest(`model.config.save provider ${index + 1} requires id.`);
-  }
-  if (!isGatewayModelProviderType(value.type)) {
-    badRequest(`model.config.save provider ${index + 1} type is invalid.`);
-  }
-  const provider: GatewayModelProviderConfig = {
-    id: normalizeShortText(value.id, "provider id", 120),
-    type: value.type,
-  };
-  if (typeof value.displayName === "string" && value.displayName.trim()) {
-    provider.displayName = normalizeShortText(value.displayName, "displayName", 160);
-  }
-  if (typeof value.apiKey === "string" && value.apiKey.trim()) {
-    provider.apiKey = normalizeBoundedText(value.apiKey, "apiKey", 4000);
-  }
-  if (typeof value.apiKeyConfigured === "boolean") {
-    provider.apiKeyConfigured = value.apiKeyConfigured;
-  }
-  if (typeof value.baseUrl === "string" && value.baseUrl.trim()) {
-    provider.baseUrl = normalizeProviderBaseUrl(value.baseUrl, index);
-  }
-  if (typeof value.defaultModel === "string" && value.defaultModel.trim()) {
-    provider.defaultModel = normalizeShortText(value.defaultModel, "defaultModel", 200);
-  }
-  if (typeof value.supportsToolCalling === "boolean") {
-    provider.supportsToolCalling = value.supportsToolCalling;
-  }
-  if (typeof value.enabled === "boolean") {
-    provider.enabled = value.enabled;
-  }
-  return provider;
-}
-
-function parseAgentConfigSaveParams(value: unknown): GatewayAgentConfigSaveParams {
-  if (!isRecord(value) || !Array.isArray(value.profiles)) {
-    badRequest("agent.config.save requires params.profiles.");
-  }
-  const params: GatewayAgentConfigSaveParams = {
-    profiles: value.profiles.map((profile, index) => parseAgentProfileConfig(profile, index)),
-  };
-  if (typeof value.defaultProfileId === "string" && value.defaultProfileId.trim()) {
-    params.defaultProfileId = normalizeShortText(value.defaultProfileId, "defaultProfileId", 120);
-  }
-  return params;
-}
-
-function parseEmployeeSaveParams(value: unknown): GatewayEmployeeSaveParams {
-  if (!isRecord(value) || !Array.isArray(value.employees)) {
-    badRequest("employee.save requires params.employees.");
-  }
-  const params: GatewayEmployeeSaveParams = {
-    employees: value.employees as GatewayEmployeeSaveParams["employees"],
-  };
-  if (typeof value.defaultEmployeeId === "string" && value.defaultEmployeeId.trim()) {
-    params.defaultEmployeeId = normalizeShortText(value.defaultEmployeeId, "defaultEmployeeId", 120);
-  }
-  return params;
-}
-
-function parseToolPolicySaveParams(value: unknown): GatewayToolPolicySaveParams {
-  if (!isRecord(value) || !Array.isArray(value.policies)) {
-    badRequest("policy.tool.save requires params.policies.");
-  }
-  return {
-    policies: value.policies as GatewayToolPolicySaveParams["policies"],
-  };
-}
-
-function parseApprovalListParams(value: unknown): GatewayApprovalListParams {
-  if (value === undefined) {
-    return {};
-  }
-  if (!isRecord(value)) {
-    badRequest("approval.list params must be an object.");
-  }
-  const status = value.status;
-  const params: GatewayApprovalListParams = {};
-  if (status !== undefined) {
-    if (status !== "pending" && status !== "approved" && status !== "rejected" && status !== "expired") {
-      badRequest("approval.list status is invalid.");
-    }
-    params.status = status;
-  }
-  if (typeof value.assignedApproverId === "string" && value.assignedApproverId.trim()) {
-    params.assignedApproverId = normalizeShortText(value.assignedApproverId, "assignedApproverId", 120);
-  }
-  return params;
-}
-
-function parseTicketUpsertParams(value: unknown): GatewayTicketUpsertParams {
-  if (!isRecord(value)) {
-    badRequest("ticket.upsert params must be an object.");
-  }
-  const status = value.status;
-  if (
-    status !== "open"
-    && status !== "in_progress"
-    && status !== "blocked"
-    && status !== "done"
-    && status !== "cancelled"
-  ) {
-    badRequest("ticket.upsert status is invalid.");
-  }
-  if (typeof value.id !== "string" || !value.id.trim()) {
-    badRequest("ticket.upsert requires params.id.");
-  }
-  if (typeof value.title !== "string" || !value.title.trim()) {
-    badRequest("ticket.upsert requires params.title.");
-  }
-  const ticket: GatewayTicketUpsertParams = {
-    id: normalizeShortText(value.id, "ticketId", 120),
-    title: normalizeShortText(value.title, "ticketTitle", 240),
-    status,
-    createdAt: typeof value.createdAt === "string" ? value.createdAt : new Date().toISOString(),
-    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(),
-  };
-  if (typeof value.assigneeEmployeeId === "string" && value.assigneeEmployeeId.trim()) {
-    ticket.assigneeEmployeeId = normalizeShortText(value.assigneeEmployeeId, "assigneeEmployeeId", 120);
-  }
-  if (typeof value.createdByEmployeeId === "string" && value.createdByEmployeeId.trim()) {
-    ticket.createdByEmployeeId = normalizeShortText(value.createdByEmployeeId, "createdByEmployeeId", 120);
-  }
-  if (typeof value.runId === "string" && value.runId.trim()) {
-    ticket.runId = normalizeShortText(value.runId, "runId", 120);
-  }
-  if (typeof value.toolName === "string" && value.toolName.trim()) {
-    ticket.toolName = normalizeShortText(value.toolName, "toolName", 120);
-  }
-  if (typeof value.description === "string" && value.description.trim()) {
-    ticket.description = normalizeShortText(value.description, "description", 2000);
-  }
-  return ticket;
-}
-
-function parseKpiSnapshotParams(value: unknown): GatewayKpiSnapshotParams {
-  if (!isRecord(value) || typeof value.templateId !== "string" || !value.templateId.trim()) {
-    badRequest("kpi.snapshot.get requires params.templateId.");
-  }
-  const params: GatewayKpiSnapshotParams = {
-    templateId: normalizeShortText(value.templateId, "templateId", 120),
-  };
-  if (typeof value.employeeId === "string" && value.employeeId.trim()) {
-    params.employeeId = normalizeShortText(value.employeeId, "employeeId", 120);
-  }
-  return params;
-}
-
-function parseApprovalResolveParams(value: unknown): GatewayApprovalResolveParams {
-  if (!isRecord(value) || typeof value.id !== "string" || !value.id.trim()) {
-    badRequest("approval resolve requires params.id.");
-  }
-  const params: GatewayApprovalResolveParams = {
-    id: normalizeShortText(value.id, "approvalId", 120),
-  };
-  if (typeof value.resolvedBy === "string" && value.resolvedBy.trim()) {
-    params.resolvedBy = normalizeShortText(value.resolvedBy, "resolvedBy", 120);
-  }
-  if (typeof value.note === "string" && value.note.trim()) {
-    params.note = normalizeShortText(value.note, "note", 500);
-  }
-  return params;
-}
-
-function parseAgentProfileConfig(value: unknown, index: number): GatewayAgentProfileConfig {
-  if (!isRecord(value)) {
-    badRequest(`agent.config.save profile ${index + 1} must be an object.`);
-  }
-  if (typeof value.id !== "string" || !value.id.trim()) {
-    badRequest(`agent.config.save profile ${index + 1} requires id.`);
-  }
-  if (typeof value.name !== "string" || !value.name.trim()) {
-    badRequest(`agent.config.save profile ${index + 1} requires name.`);
-  }
-  const profile: GatewayAgentProfileConfig = {
-    id: normalizeShortText(value.id, "profile id", 120),
-    name: normalizeShortText(value.name, "profile name", 160),
-  };
-  if (typeof value.description === "string" && value.description.trim()) {
-    profile.description = normalizeBoundedText(value.description, "description", 1000);
-  }
-  if (typeof value.defaultModel === "string" && value.defaultModel.trim()) {
-    profile.defaultModel = normalizeShortText(value.defaultModel, "defaultModel", 200);
-  }
-  if (typeof value.workspace === "string" && value.workspace.trim()) {
-    profile.workspace = normalizeShortText(value.workspace, "workspace", 4000);
-  }
-  if (value.thinking !== undefined) {
-    if (!isDragonThinking(value.thinking)) {
-      badRequest("agent.config.save profile thinking is invalid.");
-    }
-    profile.thinking = value.thinking;
-  }
-  if (typeof value.memoryEnabled === "boolean") {
-    profile.memoryEnabled = value.memoryEnabled;
-  }
-  if (typeof value.toolsEnabled === "boolean") {
-    profile.toolsEnabled = value.toolsEnabled;
-  }
-  if (typeof value.systemPrompt === "string" && value.systemPrompt.trim()) {
-    profile.systemPrompt = normalizeBoundedText(value.systemPrompt, "systemPrompt", 16_000);
-  }
-  return profile;
-}
-
-function parseTierConfigSaveParams(value: unknown): GatewayTierConfigSaveParams {
-  if (!isRecord(value)) {
-    badRequest("tier.config.save params must be an object.");
-  }
-  const enabled = typeof value.enabled === "boolean" ? value.enabled : false;
-  const tiers: GatewayTierConfigSaveParams["tiers"] = {};
-  if (isRecord(value.tiers)) {
-    for (const name of ["fast", "standard", "deep"] as const) {
-      const spec = parseTierSpec((value.tiers as Record<string, unknown>)[name], `tier.config.save tiers.${name}`);
-      if (spec !== undefined) tiers[name] = spec;
-    }
-  }
-  const classifier: GatewayTierConfigSaveParams["classifier"] = { mode: "heuristic" };
-  if (isRecord(value.classifier)) {
-    const raw = value.classifier;
-    if (raw.mode === "heuristic" || raw.mode === "fixed") {
-      classifier.mode = raw.mode;
-    }
-    if (raw.fixedTier === "fast" || raw.fixedTier === "standard" || raw.fixedTier === "deep") {
-      classifier.fixedTier = raw.fixedTier;
-    }
-    if (Array.isArray(raw.keywordHints)) {
-      const hints: GatewayTierKeywordHint[] = [];
-      for (const [index, item] of raw.keywordHints.entries()) {
-        if (!isRecord(item)) {
-          badRequest(`tier.config.save classifier.keywordHints[${index}] must be an object.`);
-        }
-        if (item.tier !== "fast" && item.tier !== "standard" && item.tier !== "deep") {
-          badRequest(`tier.config.save classifier.keywordHints[${index}].tier is invalid.`);
-        }
-        if (!Array.isArray(item.words)) {
-          badRequest(`tier.config.save classifier.keywordHints[${index}].words must be an array.`);
-        }
-        const words: string[] = [];
-        for (const [wi, word] of item.words.entries()) {
-          if (typeof word !== "string" || !word.trim()) {
-            badRequest(`tier.config.save classifier.keywordHints[${index}].words[${wi}] must be a non-empty string.`);
-          }
-          words.push(normalizeShortText(word, "keyword", 80));
-        }
-        if (words.length > 0) {
-          hints.push({ tier: item.tier, words });
-        }
-      }
-      if (hints.length > 0) classifier.keywordHints = hints;
-    }
-  }
-  return { enabled, tiers, classifier };
-}
-
-function parseTierSpec(value: unknown, ctx: string): GatewayTierSpec | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (!isRecord(value)) {
-    badRequest(`${ctx} must be an object.`);
-  }
-  const spec: GatewayTierSpec = {};
-  if (typeof value.model === "string" && value.model.trim()) {
-    spec.model = normalizeShortText(value.model, "model", 200);
-  }
-  if (Array.isArray(value.modelFallbacks)) {
-    const fallbacks: string[] = [];
-    for (const [i, fb] of value.modelFallbacks.entries()) {
-      if (typeof fb !== "string" || !fb.trim()) {
-        badRequest(`${ctx}.modelFallbacks[${i}] must be a non-empty string.`);
-      }
-      fallbacks.push(normalizeShortText(fb, "modelFallback", 200));
-    }
-    if (fallbacks.length > 0) spec.modelFallbacks = fallbacks;
-  }
-  if (value.thinking !== undefined) {
-    if (!isDragonThinking(value.thinking)) {
-      badRequest(`${ctx}.thinking is invalid.`);
-    }
-    spec.thinking = value.thinking;
-  }
-  if (value.maxContextChars !== undefined) {
-    if (typeof value.maxContextChars !== "number" || !Number.isFinite(value.maxContextChars) || value.maxContextChars <= 0) {
-      badRequest(`${ctx}.maxContextChars must be a positive number.`);
-    }
-    spec.maxContextChars = Math.floor(Math.min(value.maxContextChars, 200_000));
-  }
-  if (typeof value.toolsEnabled === "boolean") {
-    spec.toolsEnabled = value.toolsEnabled;
-  }
-  if (typeof value.memoryEnabled === "boolean") {
-    spec.memoryEnabled = value.memoryEnabled;
-  }
-  if (typeof value.systemPromptAddendum === "string" && value.systemPromptAddendum.trim()) {
-    spec.systemPromptAddendum = normalizeBoundedText(value.systemPromptAddendum, "systemPromptAddendum", 16_000);
-  }
-  return Object.keys(spec).length > 0 ? spec : undefined;
-}
-
-function parseTierClassifyParams(value: unknown): GatewayTierClassifyParams {
-  if (!isRecord(value)) {
-    badRequest("tier.classify params must be an object.");
-  }
-  if (typeof value.message !== "string") {
-    badRequest("tier.classify requires params.message.");
-  }
-  const params: GatewayTierClassifyParams = {
-    message: normalizeBoundedText(value.message, "message", 64_000),
-  };
-  if (Array.isArray(value.attachments)) {
-    const atts: { kind: "image" | "text" | "document"; mimeType: string; size?: number }[] = [];
-    for (const [i, att] of value.attachments.entries()) {
-      if (!isRecord(att)) {
-        badRequest(`tier.classify attachments[${i}] must be an object.`);
-      }
-      if (att.kind !== "image" && att.kind !== "text" && att.kind !== "document") {
-        badRequest(`tier.classify attachments[${i}].kind is invalid.`);
-      }
-      if (typeof att.mimeType !== "string" || !att.mimeType.trim()) {
-        badRequest(`tier.classify attachments[${i}].mimeType is invalid.`);
-      }
-      const entry: { kind: "image" | "text" | "document"; mimeType: string; size?: number } = {
-        kind: att.kind,
-        mimeType: normalizeShortText(att.mimeType, "mimeType", 200),
-      };
-      if (typeof att.size === "number" && att.size >= 0) {
-        entry.size = att.size;
-      }
-      atts.push(entry);
-    }
-    params.attachments = atts;
-  }
-  if (typeof value.workspace === "string" && value.workspace.trim()) {
-    params.workspace = normalizeShortText(value.workspace, "workspace", 4000);
-  }
-  if (typeof value.toolsEnabled === "boolean") params.toolsEnabled = value.toolsEnabled;
-  if (typeof value.memoryRecallCount === "number" && value.memoryRecallCount >= 0) {
-    params.memoryRecallCount = Math.floor(value.memoryRecallCount);
-  }
-  if (typeof value.hasSkillLoaded === "boolean") params.hasSkillLoaded = value.hasSkillLoaded;
-  return params;
-}
-
-function parseToolInvokeParams(value: unknown): GatewayToolInvokeParams {
-  if (!isRecord(value)) {
-    badRequest("tool.invoke params must be an object.");
-  }
-  if (typeof value.toolName !== "string" || !value.toolName.trim()) {
-    badRequest("tool.invoke requires params.toolName.");
-  }
-  const params: GatewayToolInvokeParams = {
-    toolName: normalizeShortText(value.toolName, "toolName", 120),
-    input: value.input ?? {},
-  };
-  if (typeof value.sessionId === "string" && value.sessionId.trim()) {
-    params.sessionId = normalizeShortText(value.sessionId, "sessionId", 200);
-  }
-  if (typeof value.workspace === "string" && value.workspace.trim()) {
-    params.workspace = normalizeShortText(value.workspace, "workspace", 4000);
-  }
-  if (value.metadata !== undefined) {
-    if (!isRecord(value.metadata)) {
-      badRequest("tool.invoke metadata must be an object.");
-    }
-    params.metadata = value.metadata;
-  }
-  return params;
-}
-
-function parseMemoryCandidateListParams(value: unknown): GatewayMemoryCandidateListParams | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!isRecord(value)) {
-    badRequest("memory.candidates.list params must be an object.");
-  }
-  const params: GatewayMemoryCandidateListParams = {};
-  if (value.status !== undefined) {
-    if (!isMemoryCandidateStatusFilter(value.status)) {
-      badRequest("memory.candidates.list status is invalid.");
-    }
-    params.status = value.status;
-  }
-  if (value.dateFrom !== undefined) {
-    if (typeof value.dateFrom !== "string" || !value.dateFrom.trim()) {
-      badRequest("memory.candidates.list dateFrom must use YYYY-MM-DD.");
-    }
-    params.dateFrom = normalizeDate(value.dateFrom, "dateFrom");
-  }
-  if (value.dateTo !== undefined) {
-    if (typeof value.dateTo !== "string" || !value.dateTo.trim()) {
-      badRequest("memory.candidates.list dateTo must use YYYY-MM-DD.");
-    }
-    params.dateTo = normalizeDate(value.dateTo, "dateTo");
-  }
-  if (params.dateFrom !== undefined && params.dateTo !== undefined && params.dateFrom > params.dateTo) {
-    badRequest("memory.candidates.list dateFrom must be before or equal to dateTo.");
-  }
-  if (value.limit !== undefined) {
-    if (typeof value.limit !== "number" || !Number.isFinite(value.limit)) {
-      badRequest("memory.candidates.list limit must be a number.");
-    }
-    params.limit = Math.min(Math.max(1, Math.floor(value.limit)), 100);
-  }
-  return params;
-}
-
-function parseMemoryCandidatePromoteParams(value: unknown): GatewayMemoryCandidatePromoteParams {
-  if (!isRecord(value)) {
-    badRequest("memory.candidate.promote params must be an object.");
-  }
-  if (typeof value.id !== "string" || !value.id.trim()) {
-    badRequest("memory.candidate.promote requires params.id.");
-  }
-  const params: GatewayMemoryCandidatePromoteParams = {
-    id: normalizeShortText(value.id, "id", 200),
-  };
-  if (value.scope !== undefined) {
-    if (!isMemoryScope(value.scope)) {
-      badRequest("memory.candidate.promote scope is invalid.");
-    }
-    params.scope = value.scope;
-  }
-  if (value.content !== undefined) {
-    if (typeof value.content !== "string" || !value.content.trim()) {
-      badRequest("memory.candidate.promote content must be a non-empty string.");
-    }
-    params.content = normalizeBoundedText(value.content, "content", 4000);
-  }
-  if (value.source !== undefined) {
-    if (typeof value.source !== "string" || !value.source.trim()) {
-      badRequest("memory.candidate.promote source must be a non-empty string.");
-    }
-    params.source = normalizeShortText(value.source, "source", 200);
-  }
-  if (value.metadata !== undefined) {
-    if (!isRecord(value.metadata)) {
-      badRequest("memory.candidate.promote metadata must be an object.");
-    }
-    params.metadata = value.metadata;
-  }
-  return params;
-}
-
-function parseMemoryCandidateRejectParams(value: unknown): GatewayMemoryCandidateRejectParams {
-  if (!isRecord(value)) {
-    badRequest("memory.candidate.reject params must be an object.");
-  }
-  if (typeof value.id !== "string" || !value.id.trim()) {
-    badRequest("memory.candidate.reject requires params.id.");
-  }
-  const params: GatewayMemoryCandidateRejectParams = {
-    id: normalizeShortText(value.id, "id", 200),
-  };
-  if (value.reason !== undefined) {
-    if (typeof value.reason !== "string" || !value.reason.trim()) {
-      badRequest("memory.candidate.reject reason must be a non-empty string.");
-    }
-    params.reason = normalizeBoundedText(value.reason, "reason", 1000);
-  }
-  return params;
-}
-
-function parseTrajectoryListParams(value: unknown): GatewayTrajectoryListParams {
-  if (!isRecord(value)) {
-    badRequest("trajectory.list params must be an object.");
-  }
-  if (typeof value.sessionId !== "string" || !value.sessionId.trim()) {
-    badRequest("trajectory.list requires params.sessionId.");
-  }
-  const params: GatewayTrajectoryListParams = {
-    sessionId: normalizeShortText(value.sessionId, "sessionId", 200),
-  };
-  if (value.status !== undefined) {
-    if (!isTurnStatus(value.status)) {
-      badRequest("trajectory.list status is invalid.");
-    }
-    params.status = value.status;
-  }
-  if (value.dateFrom !== undefined) {
-    if (typeof value.dateFrom !== "string" || !value.dateFrom.trim()) {
-      badRequest("trajectory.list dateFrom must use YYYY-MM-DD.");
-    }
-    params.dateFrom = normalizeDate(value.dateFrom, "dateFrom");
-  }
-  if (value.dateTo !== undefined) {
-    if (typeof value.dateTo !== "string" || !value.dateTo.trim()) {
-      badRequest("trajectory.list dateTo must use YYYY-MM-DD.");
-    }
-    params.dateTo = normalizeDate(value.dateTo, "dateTo");
-  }
-  if (params.dateFrom !== undefined && params.dateTo !== undefined && params.dateFrom > params.dateTo) {
-    badRequest("trajectory.list dateFrom must be before or equal to dateTo.");
-  }
-  if (value.limit !== undefined) {
-    if (typeof value.limit !== "number" || !Number.isFinite(value.limit)) {
-      badRequest("trajectory.list limit must be a number.");
-    }
-    params.limit = Math.min(Math.max(1, Math.floor(value.limit)), 100);
-  }
-  return params;
-}
-
-function parseTrajectoryGetParams(value: unknown): GatewayTrajectoryGetParams {
-  if (!isRecord(value)) {
-    badRequest("trajectory.get params must be an object.");
-  }
-  if (typeof value.sessionId !== "string" || !value.sessionId.trim()) {
-    badRequest("trajectory.get requires params.sessionId.");
-  }
-  if (typeof value.runId !== "string" || !value.runId.trim()) {
-    badRequest("trajectory.get requires params.runId.");
-  }
-  const params: GatewayTrajectoryGetParams = {
-    sessionId: normalizeShortText(value.sessionId, "sessionId", 200),
-    runId: normalizeShortText(value.runId, "runId", 200),
-  };
-  if (value.maxEvents !== undefined) {
-    if (typeof value.maxEvents !== "number" || !Number.isFinite(value.maxEvents)) {
-      badRequest("trajectory.get maxEvents must be a number.");
-    }
-    params.maxEvents = Math.min(Math.max(1, Math.floor(value.maxEvents)), 1000);
-  }
-  return params;
-}
-
-function parseCronJobUpsertParams(value: unknown): GatewayCronJobUpsertParams {
-  if (!isRecord(value)) {
-    badRequest("cron.job.upsert params must be an object.");
-  }
-  if (typeof value.id !== "string" || !value.id.trim()) {
-    badRequest("cron.job.upsert requires params.id.");
-  }
-  if (typeof value.sessionId !== "string" || !value.sessionId.trim()) {
-    badRequest("cron.job.upsert requires params.sessionId.");
-  }
-  if (typeof value.message !== "string" || !value.message.trim()) {
-    badRequest("cron.job.upsert requires params.message.");
-  }
-  if (typeof value.schedule !== "string" || !value.schedule.trim()) {
-    badRequest("cron.job.upsert requires params.schedule.");
-  }
-  const schedule = normalizeShortText(value.schedule, "schedule", 200);
-  try {
-    parseCronSchedule(schedule);
-  } catch (error) {
-    badRequest(`cron.job.upsert schedule is invalid: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  const params: GatewayCronJobUpsertParams = {
-    id: normalizeShortText(value.id, "id", 200),
-    sessionId: normalizeShortText(value.sessionId, "sessionId", 200),
-    message: normalizeBoundedText(value.message, "message", 16_000),
-    schedule,
-  };
-  if (typeof value.enabled === "boolean") {
-    params.enabled = value.enabled;
-  }
-  if (typeof value.workspace === "string" && value.workspace.trim()) {
-    params.workspace = normalizeShortText(value.workspace, "workspace", 4000);
-  }
-  if (typeof value.model === "string" && value.model.trim()) {
-    params.model = normalizeShortText(value.model, "model", 200);
-  }
-  if (typeof value.nextRunAt === "string" && value.nextRunAt.trim()) {
-    params.nextRunAt = normalizeIsoTimestamp(value.nextRunAt, "nextRunAt");
-  }
-  if (value.metadata !== undefined) {
-    if (!isRecord(value.metadata)) {
-      badRequest("cron.job.upsert metadata must be an object.");
-    }
-    params.metadata = value.metadata;
-  }
-  return params;
-}
-
-function parseCronJobRemoveParams(value: unknown): GatewayCronJobRemoveParams {
-  if (!isRecord(value) || typeof value.id !== "string" || !value.id.trim()) {
-    badRequest("cron.job.remove requires params.id.");
-  }
-  return { id: normalizeShortText(value.id, "id", 200) };
-}
-
-function parseEventStreamFilters(url: URL): EventStreamFilters {
-  const filters: EventStreamFilters = {};
-  const sessionId = url.searchParams.get("sessionId")?.trim();
-  const runId = url.searchParams.get("runId")?.trim();
-  if (sessionId) {
-    filters.sessionId = sessionId;
-  }
-  if (runId) {
-    filters.runId = runId;
-  }
-  return filters;
-}
-
-function matchesEventFilters(envelope: GatewayEventEnvelope, filters: EventStreamFilters): boolean {
-  if (filters.runId !== undefined && envelope.event.runId !== filters.runId) {
-    return false;
-  }
-  if (filters.sessionId !== undefined && envelope.sessionId !== filters.sessionId) {
-    return false;
-  }
-  return true;
-}
-
-function readEventSessionId(event: DragonEvent): string | undefined {
-  if (event.type === "permission") {
-    return event.payload.sessionId;
-  }
-  const metadataSessionId = event.type === "lifecycle" ? event.metadata?.sessionId : undefined;
-  return typeof metadataSessionId === "string" ? metadataSessionId : undefined;
-}
-
 function resultStatusToRunState(status: DragonTurnResult["status"]): GatewayRunState {
   if (status === "ok") {
     return "completed";
@@ -2873,283 +1309,8 @@ function previewMessage(message: string): string {
   return message.length > 160 ? `${message.slice(0, 160)}... [${message.length} chars]` : message;
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  let size = 0;
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += buffer.byteLength;
-    if (size > MAX_REQUEST_BYTES) {
-      throw new GatewayHttpError(413, `Request body exceeds ${MAX_REQUEST_BYTES} bytes.`);
-    }
-    chunks.push(buffer);
-  }
-  const raw = Buffer.concat(chunks).toString("utf8").trim();
-  if (!raw) {
-    throw new GatewayHttpError(400, "Request body cannot be empty.");
-  }
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    throw new GatewayHttpError(400, `Invalid JSON request body: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-function writeJson(response: ServerResponse, statusCode: number, payload: unknown): void {
-  const body = JSON.stringify(payload);
-  response.writeHead(statusCode, {
-    "content-type": "application/json; charset=utf-8",
-    "content-length": Buffer.byteLength(body),
-  });
-  response.end(body);
-}
-
-function writeHtml(response: ServerResponse, statusCode: number, html: string): void {
-  response.writeHead(statusCode, {
-    "content-type": "text/html; charset=utf-8",
-    "content-length": Buffer.byteLength(html),
-  });
-  response.end(html);
-}
-
-function writeSse(response: ServerResponse, eventName: string, payload: unknown): void {
-  const body = JSON.stringify(payload);
-  response.write(`event: ${eventName}\n`);
-  for (const line of body.split(/\r?\n/)) {
-    response.write(`data: ${line}\n`);
-  }
-  response.write("\n");
-}
-
-interface ParsedWebSocketFrame {
-  opcode: number;
-  payload: Buffer;
-}
-
-interface ParsedWebSocketFrames {
-  frames: ParsedWebSocketFrame[];
-  remaining: Buffer;
-}
-
-function isValidWebSocketUpgrade(request: IncomingMessage, key: string | undefined): key is string {
-  if (request.method !== "GET") {
-    return false;
-  }
-  const upgrade = readSingleHeader(request, "upgrade")?.toLowerCase();
-  const connection = readSingleHeader(request, "connection")?.toLowerCase();
-  const version = readSingleHeader(request, "sec-websocket-version");
-  if (upgrade !== "websocket" || version !== "13" || !connection?.split(",").some(item => item.trim() === "upgrade")) {
-    return false;
-  }
-  if (!key) {
-    return false;
-  }
-  try {
-    return Buffer.from(key, "base64").byteLength === 16;
-  } catch {
-    return false;
-  }
-}
-
-function readSingleHeader(request: IncomingMessage, name: string): string | undefined {
-  const value = request.headers[name.toLowerCase()];
-  if (Array.isArray(value)) {
-    return value[0];
-  }
-  return value;
-}
-
-function readWebSocketProtocols(request: IncomingMessage): string[] {
-  const header = readSingleHeader(request, "sec-websocket-protocol");
-  if (!header) {
-    return [];
-  }
-  return header.split(",").map(item => item.trim()).filter(Boolean);
-}
-
-function rejectWebSocketUpgrade(socket: Duplex, statusCode: number, reason: string): void {
-  const body = `${reason}\n`;
-  socket.end([
-    `HTTP/1.1 ${statusCode} ${reason}`,
-    "Connection: close",
-    "Content-Type: text/plain; charset=utf-8",
-    `Content-Length: ${Buffer.byteLength(body, "utf8")}`,
-    "",
-    body,
-  ].join("\r\n"));
-}
-
-function parseWebSocketFrames(buffer: Buffer): ParsedWebSocketFrames {
-  const frames: ParsedWebSocketFrame[] = [];
-  let offset = 0;
-  while (buffer.byteLength - offset >= 2) {
-    const first = buffer[offset];
-    const second = buffer[offset + 1];
-    if (first === undefined || second === undefined) {
-      break;
-    }
-    const fin = (first & 0x80) !== 0;
-    const reserved = first & 0x70;
-    const opcode = first & 0x0f;
-    const masked = (second & 0x80) !== 0;
-    let payloadLength = second & 0x7f;
-    let headerLength = 2;
-
-    if (reserved !== 0) {
-      throw new Error("WebSocket extensions are not supported.");
-    }
-    if (!fin) {
-      throw new Error("Fragmented WebSocket messages are not supported.");
-    }
-    if (!masked) {
-      throw new Error("Client WebSocket frames must be masked.");
-    }
-    if (opcode !== 0x1 && opcode !== 0x8 && opcode !== 0x9 && opcode !== 0xA) {
-      throw new Error("Unsupported WebSocket opcode.");
-    }
-    if (payloadLength === 126) {
-      if (buffer.byteLength - offset < headerLength + 2) {
-        break;
-      }
-      payloadLength = buffer.readUInt16BE(offset + headerLength);
-      headerLength += 2;
-    } else if (payloadLength === 127) {
-      if (buffer.byteLength - offset < headerLength + 8) {
-        break;
-      }
-      const extendedLength = buffer.readBigUInt64BE(offset + headerLength);
-      if (extendedLength > BigInt(Number.MAX_SAFE_INTEGER)) {
-        throw new Error("WebSocket frame is too large.");
-      }
-      payloadLength = Number(extendedLength);
-      headerLength += 8;
-    }
-    if (opcode >= 0x8 && payloadLength > 125) {
-      throw new Error("WebSocket control frames must be 125 bytes or fewer.");
-    }
-    if (payloadLength > MAX_REQUEST_BYTES) {
-      throw new Error(`WebSocket message exceeds ${MAX_REQUEST_BYTES} bytes.`);
-    }
-    const frameLength = headerLength + 4 + payloadLength;
-    if (buffer.byteLength - offset < frameLength) {
-      break;
-    }
-    const mask = buffer.subarray(offset + headerLength, offset + headerLength + 4);
-    const payload = Buffer.from(buffer.subarray(offset + headerLength + 4, offset + frameLength));
-    for (let index = 0; index < payload.length; index += 1) {
-      payload[index] = payload[index]! ^ mask[index % 4]!;
-    }
-    frames.push({ opcode, payload });
-    offset += frameLength;
-  }
-  return {
-    frames,
-    remaining: offset === 0 ? buffer : buffer.subarray(offset),
-  };
-}
-
-function sendWebSocketJson(client: WebSocketClient, payload: GatewayWebSocketEnvelope): boolean {
-  if (client.closed) {
-    return false;
-  }
-  const body = JSON.stringify(payload);
-  if (Buffer.byteLength(body, "utf8") > MAX_WEBSOCKET_MESSAGE_BYTES) {
-    return false;
-  }
-  sendWebSocketFrame(client, 0x1, Buffer.from(body, "utf8"));
-  return true;
-}
-
-function sendWebSocketFrame(client: WebSocketClient, opcode: number, payload: Buffer): void {
-  if (client.closed) {
-    return;
-  }
-  try {
-    client.socket.write(createWebSocketFrame(opcode, payload));
-  } catch {
-    client.closed = true;
-  }
-}
-
-function closeWebSocketClient(client: WebSocketClient, statusCode: number, reason: string): void {
-  if (client.closed) {
-    return;
-  }
-  const reasonBytes = Buffer.from(fitUtf8Text(reason, 120, "[truncated]"), "utf8");
-  const payload = Buffer.alloc(2 + reasonBytes.byteLength);
-  payload.writeUInt16BE(statusCode, 0);
-  reasonBytes.copy(payload, 2);
-  client.closed = true;
-  client.socket.end(createWebSocketFrame(0x8, payload));
-  setTimeout(() => {
-    client.socket.destroy();
-  }, 1000).unref();
-}
-
-function createWebSocketFrame(opcode: number, payload: Buffer): Buffer {
-  const payloadLength = payload.byteLength;
-  if (payloadLength < 126) {
-    return Buffer.concat([Buffer.from([0x80 | opcode, payloadLength]), payload]);
-  }
-  if (payloadLength <= 0xffff) {
-    const header = Buffer.alloc(4);
-    header[0] = 0x80 | opcode;
-    header[1] = 126;
-    header.writeUInt16BE(payloadLength, 2);
-    return Buffer.concat([header, payload]);
-  }
-  const header = Buffer.alloc(10);
-  header[0] = 0x80 | opcode;
-  header[1] = 127;
-  header.writeBigUInt64BE(BigInt(payloadLength), 2);
-  return Buffer.concat([header, payload]);
-}
-
-function applyCors(request: IncomingMessage, response: ServerResponse): void {
-  const host = request.headers.host?.split(":")[0]?.toLowerCase();
-  const origin = host === "127.0.0.1"
-    ? "http://127.0.0.1"
-    : "http://localhost";
-  response.setHeader("access-control-allow-origin", origin);
-  response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-  response.setHeader("access-control-allow-headers", "content-type,authorization,x-dragon-secret");
-}
-
 function isTurnStatus(value: unknown): value is DragonTurnResult["status"] {
   return ["ok", "error", "cancelled", "timeout"].includes(String(value));
-}
-
-function isMemoryCandidateStatusFilter(value: unknown): value is NonNullable<GatewayMemoryCandidateListParams["status"]> {
-  return ["pending", "promoted", "rejected", "all"].includes(String(value));
-}
-
-function isMemoryScope(value: unknown): value is NonNullable<GatewayMemoryCandidatePromoteParams["scope"]> {
-  return ["user", "project", "session", "skill"].includes(String(value));
-}
-
-function isGatewayModelProviderType(value: unknown): value is GatewayModelProviderType {
-  return value === "openai-compatible" || value === "anthropic";
-}
-
-function normalizeDate(value: string, fieldName: string): string {
-  const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    badRequest(`${fieldName} must use YYYY-MM-DD.`);
-  }
-  const parsed = new Date(`${trimmed}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== trimmed) {
-    badRequest(`${fieldName} must use YYYY-MM-DD.`);
-  }
-  return trimmed;
-}
-
-function normalizeIsoTimestamp(value: string, fieldName: string): string {
-  const trimmed = value.trim();
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) {
-    badRequest(`${fieldName} must be a valid ISO timestamp.`);
-  }
-  return parsed.toISOString();
 }
 
 function sanitizeModelConfig(config: GatewayModelConfig): GatewayModelConfig {
@@ -3179,46 +1340,6 @@ function sanitizeModelConfig(config: GatewayModelConfig): GatewayModelConfig {
     }),
     appliesOn: "restart",
   };
-  if (config.configPath !== undefined) {
-    sanitized.configPath = trimBounded(config.configPath, 1000);
-  }
-  return sanitized;
-}
-
-function sanitizeAgentConfig(config: GatewayAgentConfig): GatewayAgentConfig {
-  const sanitized: GatewayAgentConfig = {
-    profiles: config.profiles.map(profile => {
-      const summary: GatewayAgentProfileConfig = {
-        id: trimBounded(profile.id, 120),
-        name: trimBounded(profile.name, 160),
-      };
-      if (profile.description !== undefined) {
-        summary.description = trimBounded(profile.description, 1000);
-      }
-      if (profile.defaultModel !== undefined) {
-        summary.defaultModel = trimBounded(profile.defaultModel, 200);
-      }
-      if (profile.workspace !== undefined) {
-        summary.workspace = trimBounded(profile.workspace, 4000);
-      }
-      if (profile.thinking !== undefined) {
-        summary.thinking = profile.thinking;
-      }
-      if (profile.memoryEnabled !== undefined) {
-        summary.memoryEnabled = profile.memoryEnabled;
-      }
-      if (profile.toolsEnabled !== undefined) {
-        summary.toolsEnabled = profile.toolsEnabled;
-      }
-      if (profile.systemPrompt !== undefined) {
-        summary.systemPrompt = trimBounded(profile.systemPrompt, 16_000);
-      }
-      return summary;
-    }),
-  };
-  if (config.defaultProfileId !== undefined) {
-    sanitized.defaultProfileId = trimBounded(config.defaultProfileId, 120);
-  }
   if (config.configPath !== undefined) {
     sanitized.configPath = trimBounded(config.configPath, 1000);
   }
@@ -3500,22 +1621,6 @@ function normalizeModelCapabilities(capabilities: DragonModelCapabilities): Drag
   return Object.freeze(summary);
 }
 
-function isDirectToolCandidate(tool: ToolDefinition, directToolNames: ReadonlySet<string>): boolean {
-  if (!directToolNames.has(tool.name) || tool.permission !== "allow") {
-    return false;
-  }
-  const capabilities = tool.capabilities ?? [];
-  if (
-    capabilities.includes("write")
-    || capabilities.includes("custom")
-    || capabilities.includes("network")
-    || capabilities.includes("memory")
-  ) {
-    return false;
-  }
-  return true;
-}
-
 function sanitizeDirectToolResult(result: unknown, permission: ToolPermissionResult): unknown {
   const permissionSummary = {
     decision: permission.decision,
@@ -3587,28 +1692,6 @@ function sanitizeToolOutput(result: ToolResult, permission: ToolPermissionResult
   }
 }
 
-function fitUtf8Text(value: string, maxBytes: number, suffix: string): string {
-  const suffixBytes = Buffer.byteLength(suffix, "utf8");
-  if (maxBytes <= suffixBytes) {
-    return Buffer.from(suffix, "utf8").subarray(0, Math.max(0, maxBytes)).toString("utf8");
-  }
-  if (Buffer.byteLength(value, "utf8") <= maxBytes) {
-    return value;
-  }
-  const budget = maxBytes - suffixBytes;
-  let low = 0;
-  let high = value.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    if (Buffer.byteLength(value.slice(0, mid), "utf8") <= budget) {
-      low = mid;
-    } else {
-      high = mid - 1;
-    }
-  }
-  return `${value.slice(0, low)}${suffix}`;
-}
-
 function jsonSafeReplacer(_key: string, value: unknown): unknown {
   if (typeof value === "bigint") {
     return value.toString();
@@ -3646,3 +1729,6 @@ export {
   resolveAgentParamsWithProfile,
   toTurnInput,
 } from "./agent-params.js";
+
+
+

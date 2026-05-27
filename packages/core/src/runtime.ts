@@ -41,6 +41,8 @@ import {
   isTurnCancelled,
   repairModelMessagesAfterCancel,
 } from "./turn-cancel.js";
+import { resolveSessionCompactionForTurn } from "./session-compaction-config.js";
+import type { SessionMessageCompactionOptions } from "./session-message-compaction.js";
 import { prepareSessionHistoryForModel } from "./session-history-prep.js";
 import type {
   ToolDefinition,
@@ -104,6 +106,8 @@ export interface DragonRuntimeOptions {
   modelTimeoutMs?: number;
   /** When true (default), apply in-turn context prep before each model call. */
   turnPrepEnabled?: boolean;
+  /** L2 cross-turn compaction for session history; `false` disables. */
+  sessionCompaction?: SessionMessageCompactionOptions | false;
   /** When true, denied tool permissions fail the turn instead of returning a soft tool error. */
   failOnPermissionDeny?: boolean;
 }
@@ -137,6 +141,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   readonly #permissionEvaluator: DragonRuntimeOptions["permissionEvaluator"];
   readonly #modelTimeoutMs: number;
   readonly #turnPrepEnabled: boolean;
+  readonly #sessionCompaction: SessionMessageCompactionOptions | false;
   readonly #failOnPermissionDeny: boolean;
   #tierConfig: ModelTierConfig | undefined;
   readonly #maxToolResultChars = 64_000;
@@ -162,6 +167,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#permissionEvaluator = options.permissionEvaluator;
     this.#modelTimeoutMs = options.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
     this.#turnPrepEnabled = options.turnPrepEnabled !== false;
+    this.#sessionCompaction = options.sessionCompaction === false ? false : (options.sessionCompaction ?? {});
     this.#failOnPermissionDeny = options.failOnPermissionDeny === true;
     this.#tierConfig = options.tierConfig;
   }
@@ -263,7 +269,23 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       );
       const userContent = buildUserMessageContent(activeInput.message, resolvedAttachments);
       const rawHistory = toModelHistory(history);
-      const sessionHistoryPrep = prepareSessionHistoryForModel(rawHistory, turnMaxContextChars);
+      const sessionHistoryPrep = prepareSessionHistoryForModel(
+        rawHistory,
+        turnMaxContextChars,
+        resolveSessionCompactionForTurn(this.#sessionCompaction, activeInput),
+      );
+      if (sessionHistoryPrep.report.sessionCompaction?.compactedToolMessages) {
+        this.#emit({
+          type: "context",
+          runId,
+          providerName: "session_message_compaction",
+          phase: "end",
+          payload: {
+            ok: true,
+            ...sessionHistoryPrep.report.sessionCompaction,
+          },
+        });
+      }
       if (
         sessionHistoryPrep.report.truncatedToolResults > 0
         || sessionHistoryPrep.report.truncatedAssistantMessages > 0
@@ -804,12 +826,16 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       const toolResults: Array<{ content: string } | undefined> = new Array(toolCalls.length);
       let cancelled = false;
       try {
+        const parallelTotal = toolCalls.length;
+        let parallelCompleted = 0;
         await Promise.all(toolCalls.map(async (toolCall, index) => {
           if (input.signal?.aborted) {
             cancelled = true;
             return;
           }
           toolResults[index] = await this.#runToolCall(toolCall, input, runId);
+          parallelCompleted += 1;
+          this.#emitParallelReadToolProgress(runId, toolCall, parallelCompleted, parallelTotal, toolResults[index]?.content);
           if (input.signal?.aborted) {
             cancelled = true;
           }
@@ -991,6 +1017,35 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       });
       return { content: safeStringifyToolResult(result, this.#maxToolResultChars) };
     }
+  }
+
+  /** Streams parallel read-only tool completion to subscribers (Gateway SSE / Dashboard). */
+  #emitParallelReadToolProgress(
+    runId: string,
+    toolCall: ModelToolCall,
+    completed: number,
+    total: number,
+    resultContent: string | undefined,
+  ): void {
+    const toolName = toolCall.function?.name?.trim() || toolCall.id;
+    const preview = resultContent === undefined
+      ? undefined
+      : resultContent.length > 400
+        ? `${resultContent.slice(0, 400)}…`
+        : resultContent;
+    this.#emit({
+      type: "tool",
+      runId,
+      toolName,
+      phase: "update",
+      payload: {
+        toolCallId: toolCall.id,
+        parallelBatch: true,
+        completed,
+        total,
+        ...(preview !== undefined ? { resultPreview: preview } : {}),
+      },
+    });
   }
 
   async #resolvePermission(

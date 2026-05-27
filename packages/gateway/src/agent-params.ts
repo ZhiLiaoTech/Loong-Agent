@@ -1,4 +1,4 @@
-import type { DragonSource, DragonThinkingLevel, DragonTurnInput } from "@dragon/core";
+import { mergeAgentProfileIntoTurnInput, type DragonSource, type DragonThinkingLevel, type DragonTurnInput } from "@dragon/core";
 import { assertDragonGatewayWebhookPayload } from "./channels-webhook.js";
 import { badRequest } from "./gateway-http.js";
 import {
@@ -97,6 +97,9 @@ export function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
   }
   if (typeof value.queryLoopMaxTurns === "number" && Number.isFinite(value.queryLoopMaxTurns)) {
     params.queryLoopMaxTurns = Math.min(10, Math.max(1, Math.floor(value.queryLoopMaxTurns)));
+  }
+  if (value.forceQueryLoop === true) {
+    params.metadata = { ...(params.metadata ?? {}), forceQueryLoop: true };
   }
   return params;
 }
@@ -211,14 +214,40 @@ export async function resolveAgentParamsWithProfile(
   if (!profile) {
     return params;
   }
+  const mergedTurn = mergeAgentProfileIntoTurnInput(
+    {
+      sessionId: params.sessionId,
+      source: params.source ?? "gateway",
+      message: params.message,
+      ...(params.workspace !== undefined ? { workspace: params.workspace } : {}),
+      ...(params.model !== undefined ? { model: params.model } : {}),
+      ...(params.thinking !== undefined ? { thinking: params.thinking } : {}),
+      ...(params.systemPrompt !== undefined ? { systemPrompt: params.systemPrompt } : {}),
+      ...(params.toolsEnabled !== undefined ? { toolsEnabled: params.toolsEnabled } : {}),
+      ...(params.memoryEnabled !== undefined ? { memoryEnabled: params.memoryEnabled } : {}),
+      ...(params.metadata !== undefined ? { metadata: params.metadata } : {}),
+    },
+    {
+      id: profile.id,
+      name: profile.name,
+      ...(profile.defaultModel !== undefined ? { defaultModel: profile.defaultModel } : {}),
+      ...(profile.workspace !== undefined ? { workspace: profile.workspace } : {}),
+      ...(profile.thinking !== undefined ? { thinking: profile.thinking } : {}),
+      ...(profile.systemPrompt !== undefined ? { systemPrompt: profile.systemPrompt } : {}),
+      ...(profile.toolsEnabled !== undefined ? { toolsEnabled: profile.toolsEnabled } : {}),
+      ...(profile.memoryEnabled !== undefined ? { memoryEnabled: profile.memoryEnabled } : {}),
+      ...(profile.sessionCompaction !== undefined ? { sessionCompaction: profile.sessionCompaction } : {}),
+    },
+  );
   return {
     ...params,
-    ...(params.model === undefined && profile.defaultModel !== undefined ? { model: profile.defaultModel } : {}),
-    ...(params.workspace === undefined && profile.workspace !== undefined ? { workspace: profile.workspace } : {}),
-    ...(params.thinking === undefined && profile.thinking !== undefined ? { thinking: profile.thinking } : {}),
-    ...(params.systemPrompt === undefined && profile.systemPrompt !== undefined ? { systemPrompt: profile.systemPrompt } : {}),
-    ...(params.toolsEnabled === undefined && profile.toolsEnabled !== undefined ? { toolsEnabled: profile.toolsEnabled } : {}),
-    ...(params.memoryEnabled === undefined && profile.memoryEnabled !== undefined ? { memoryEnabled: profile.memoryEnabled } : {}),
+    ...(params.model === undefined && mergedTurn.model !== undefined ? { model: mergedTurn.model } : {}),
+    ...(params.workspace === undefined && mergedTurn.workspace !== undefined ? { workspace: mergedTurn.workspace } : {}),
+    ...(params.thinking === undefined && mergedTurn.thinking !== undefined ? { thinking: mergedTurn.thinking } : {}),
+    ...(params.systemPrompt === undefined && mergedTurn.systemPrompt !== undefined ? { systemPrompt: mergedTurn.systemPrompt } : {}),
+    ...(params.toolsEnabled === undefined && mergedTurn.toolsEnabled !== undefined ? { toolsEnabled: mergedTurn.toolsEnabled } : {}),
+    ...(params.memoryEnabled === undefined && mergedTurn.memoryEnabled !== undefined ? { memoryEnabled: mergedTurn.memoryEnabled } : {}),
+    ...(mergedTurn.metadata !== undefined ? { metadata: mergedTurn.metadata } : {}),
   };
 }
 

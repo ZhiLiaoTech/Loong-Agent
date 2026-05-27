@@ -20,6 +20,8 @@ const DEFAULT_SETTINGS: RunSettings = {
   thinking: "",
   workspace: "",
   queryLoop: false,
+  finishTask: false,
+  queryLoopMaxTurns: 3,
 };
 
 export function RunWorkspace() {

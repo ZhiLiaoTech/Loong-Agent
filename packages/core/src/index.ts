@@ -89,3 +89,36 @@ export {
   prepareSessionHistoryForModel,
   type SessionHistoryPrepReport,
 } from "./session-history-prep.js";
+export {
+  compactSessionMessagesByTurn,
+  splitModelMessagesIntoTurns,
+  type SessionMessageCompactionOptions,
+  type SessionMessageCompactionReport,
+} from "./session-message-compaction.js";
+export {
+  mergeSessionCompactionLayers,
+  parseSessionCompactionValue,
+  resolveSessionCompactionForTurn,
+} from "./session-compaction-config.js";
+export {
+  findAgentProfile,
+  mergeAgentProfileIntoTurnInput,
+  type DragonAgentConfigSnapshot,
+  type DragonAgentProfile,
+} from "./agent-profile.js";
+export {
+  DEFAULT_QUERY_LOOP_MAX_TURNS,
+  MAX_QUERY_LOOP_TURNS,
+  QUERY_LOOP_CONTINUE_MESSAGE,
+  isForceQueryLoopMetadata,
+  resolveQueryLoopMaxTurns,
+  shouldContinueQueryLoop,
+  type ShouldContinueQueryLoopOptions,
+} from "./query-loop.js";
+export {
+  buildQueryLoopContinuationInput,
+  runTurnWithQueryLoop,
+  type QueryLoopContinuationContext,
+  type RunTurnWithQueryLoopOptions,
+  type RunTurnWithQueryLoopResult,
+} from "./session-runner.js";

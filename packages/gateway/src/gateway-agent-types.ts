@@ -1,4 +1,4 @@
-import type { DragonSource, DragonThinkingLevel } from "@dragon/core";
+import type { DragonSource, DragonThinkingLevel, SessionMessageCompactionOptions } from "@dragon/core";
 
 export type GatewayTierName = "fast" | "standard" | "deep";
 
@@ -45,15 +45,23 @@ export interface GatewayAgentProfileConfig {
   memoryEnabled?: boolean;
   toolsEnabled?: boolean;
   systemPrompt?: string;
+  sessionCompaction?: SessionMessageCompactionOptions | false;
 }
 
 export interface GatewayAgentConfig {
   profiles: readonly GatewayAgentProfileConfig[];
   defaultProfileId?: string;
   configPath?: string;
+  sessionCompaction?: SessionMessageCompactionOptions | false;
+}
+
+export interface GatewayAgentConfigSaveParams {
+  profiles: readonly GatewayAgentProfileConfig[];
+  defaultProfileId?: string;
+  sessionCompaction?: SessionMessageCompactionOptions | false;
 }
 
 export interface GatewayAgentConfigStore {
   load(): Promise<GatewayAgentConfig>;
-  save(config: { profiles: readonly GatewayAgentProfileConfig[]; defaultProfileId?: string }): Promise<GatewayAgentConfig>;
+  save(config: GatewayAgentConfigSaveParams): Promise<GatewayAgentConfig>;
 }

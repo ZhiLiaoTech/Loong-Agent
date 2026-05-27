@@ -21,6 +21,9 @@ export interface RunSettings {
   workspace: string;
   /** Gateway query loop: auto-continue after tool-iteration cap. */
   queryLoop: boolean;
+  /** Finish-task mode: query loop + forceQueryLoop until done or max turns. */
+  finishTask: boolean;
+  queryLoopMaxTurns: number;
 }
 
 export interface DigitalEmployeeSummary {

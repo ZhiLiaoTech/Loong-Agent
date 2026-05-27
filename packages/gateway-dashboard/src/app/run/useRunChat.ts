@@ -356,28 +356,23 @@ export function useRunChat(
       if (settings.employeeId.trim()) {
         params.employeeId = settings.employeeId.trim();
       }
-      if (selectedProfile?.systemPrompt) {
-        params.systemPrompt = selectedProfile.systemPrompt;
+      if (settings.workspace.trim()) {
+        params.workspace = settings.workspace.trim();
       }
-      if (selectedProfile?.toolsEnabled === false) {
-        params.toolsEnabled = false;
-      }
-      if (selectedProfile?.memoryEnabled === false) {
-        params.memoryEnabled = false;
-      }
-      const workspace = settings.workspace.trim() || selectedProfile?.workspace || "";
-      if (workspace) {
-        params.workspace = workspace;
-      }
-      const model = settings.model.trim() || selectedProfile?.defaultModel || "";
-      if (model) {
-        params.model = model;
+      if (settings.model.trim()) {
+        params.model = settings.model.trim();
       }
       if (settings.thinking) {
         params.thinking = settings.thinking;
       }
-      if (settings.queryLoop) {
+      if (settings.finishTask || settings.queryLoop) {
         params.queryLoop = true;
+      }
+      if (settings.finishTask) {
+        params.forceQueryLoop = true;
+      }
+      if (settings.queryLoopMaxTurns > 0) {
+        params.queryLoopMaxTurns = Math.min(10, Math.max(1, Math.floor(settings.queryLoopMaxTurns)));
       }
       if (attachments.length > 0) {
         params.attachments = attachments.map(a => ({

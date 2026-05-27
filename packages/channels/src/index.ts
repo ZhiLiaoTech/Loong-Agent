@@ -399,3 +399,10 @@ function readResponseError(payload: unknown): string | undefined {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+export {
+  createGatewayBridgeHandler,
+  startGatewayBridgeServer,
+  type GatewayBridgeServerHandle,
+  type GatewayBridgeServerOptions,
+} from "./gateway-bridge-server.js";

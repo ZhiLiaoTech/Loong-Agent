@@ -19,6 +19,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@dragon/channels": "workspace:*",
     "@dragon/core": "workspace:*",
     "@dragon/cron": "workspace:*",
     "@dragon/delegation": "workspace:*",

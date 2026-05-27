@@ -64,35 +64,52 @@
 
 ### 已实现的优势
 
-相对「只有 CLI 的编码助手」或「只有聊天网关的 Bot」，Dragon 已经把 **控制面 + 运行时内核 + 可扩展工具链** 连成一条可审计的本地链路：
+> **一句话**：潜龙让您在自家环境里，用得上、管得住、换得了模型的 AI 帮手——少踩「演示很美、上线很惨」的坑。
 
-- **架构清晰、可嵌入**：`@dragon/core` 不依赖 Gateway/Memory，单回合 `runTurn` 可嵌入 CLI、Gateway、委托 Worker；统一 `DragonEvent`（lifecycle / assistant_delta / tool / permission）便于 Dashboard 与轨迹回放。
-- **本地控制面完整**：Gateway 提供 `agent`、`run.cancel`、`runs.list`、Cron/插件/Provider 观测 RPC；按 `sessionId` 串行 Lane，避免同会话并发踩踏。
-- **模型层韧性强**：多 Provider 插件（OpenAI / Anthropic / OpenRouter 兼容）、可重试 Fallback 链、Tier 启发式选模、流式增量转发；回合内 **Turn Prep** 控制上下文体积，溢出时可 reactive 重试。
-- **工具与安全默认值**：工作区约束、Shell 白名单、Sandbox（本地/Docker/SSH）策略档、密钥脱敏；写操作默认 `ask`，Gateway/CLI 可挂接权限 Handler。
-- **工具循环工程化**：达到迭代上限时 **优雅收尾**（合成 `tool_iteration_limit` + 无工具总结），取消时 **补齐 tool 协议**（`turn_cancelled`），避免 Provider 400 与悬空 `tool_use`。
-- **记忆与技能可进化且可审计**：Markdown + 可选 SQLite/FTS；「记住」先入 **待审核候选**，经 promote/reject 再落盘；`skill_create` / `skill_improve` 支持技能迭代。
-- **多智能体与自动化**：`@dragon/delegation` 依赖图编排 + `delegation_run`；Cron 文件存储与 Gateway Tick；`@dragon/channels` 适配 Telegram/Slack Webhook；可选 `@dragon/org` 员工路由与审批工单。
-- **回归覆盖广**：`@dragon/test-suite` 覆盖 Gateway WS、Provider 工具翻译/流式、记忆审核、委托、Cron、Sandbox、取消协议等高风险路径。
+相对「只有聊天页的 Bot」或「只能在终端里用的编码助手」，潜龙把能力连成一条**在您掌控下、可审计**的本地链路。下面说明**对您意味着什么**（实现细节见 [模块文档](docs/modules/README.md)）。
 
-### 待突破的技术难点
+| 您关心的 | 潜龙带来的价值 |
+|----------|----------------|
+| 怕数据出去、怕乱动 | 主要在自己环境跑；谁在干活、干到哪一步，看得见、停得住 |
+| 怕被一家 AI 绑死 | 换模型、换厂商不用推倒重来；一家不稳还能自动换，业务少停摆 |
+| 怕 AI 删错改错 | 动您的东西前先问人；敏感信息尽量不露在记录里，过内审更有底 |
+| 怕只会聊、干不了活 | 能查资料、能执行步骤，忙完会收尾；中途叫停也不把后面聊废 |
+| 怕 AI 记错、记歪 | 说要「记住」的须您点头才进知识库，避免错话变成「官方记忆」 |
+| 怕只能一个人用 | 复杂事可分工协作，能定时跑，能在群里接活，从个人玩具变团队帮手 |
+| 怕买回去演示行、上线崩 | 关键能力有反复自检，降低「验收好看、真用就跪」的采购风险 |
 
-对照 OpenClaw / Hermes / Claude Code 的纵深能力，Dragon 下一阶段应优先攻克：
+1. **一次投入，多处能用** — 不必为聊天页、管理台、内部系统各买一套助手，省采购、省对接、省培训。
+2. **掌控感在自己手里** — 任务进度、何时停止您说了算；同一件事不会两头同时乱改。
+3. **选型自由，少被卡脖子** — 今天用哪家模型、明天换哪家，业务不用大改；长对话也不容易突然断档。
+4. **默认当「谨慎员工」** — 改文件、跑命令先请示；日志尽量不裸奔密钥，更像守规矩的实习生。
+5. **能收尾、能叫停** — 不会无限查资料烧额度；您喊停后还能接着谈，少白烧钱。
+6. **记忆可信、可管** — AI 不会悄悄把胡话写进公司长期记忆；该记的您批，不该记的您拦。
+7. **从聊天升级到办事** — 大活能拆、能定时、能在常用聊天软件里接需求，少靠人盯。
+8. **敢签、敢上线** — 核心流程有自检，买的不是 Demo，而是能长期用的底气。
 
-| 优先级 | 难点 | 说明 |
-|--------|------|------|
-| **P0** | **会话级 Query Loop** | Claude Code 以 `queryLoop` 驱动整段会话；Dragon 目前是「每用户消息一次 `runTurn`」。需在 Gateway 引入 **SessionTurnCoordinator**（排队、续跑、跨轮状态），统一 CLI/Gateway/委托的会话语义。 |
-| **P0** | **跨轮 Tool 上下文治理** | 长会话中历史 tool 结果占满上下文。需会话级摘要/压缩策略（类似 Hermes compaction + Claude 的 prep），并与 Turn Prep 分层协作。 |
-| **P0** | **Gateway 生产化硬化** | 默认 `authMode: none` 适合本机开发，共享/远程部署需默认认证、速率限制与更严格的直连工具白名单。 |
-| **P1** | **MCP 一等公民** | 业界工具生态正向 MCP 汇聚；需在 `@dragon/tools` 增加协议适配、发现与权限映射，而不是仅内置工具。 |
-| **P1** | **配置与能力贯通** | Agent Profile、`thinking` 档位、`toolsEnabled`/`memoryEnabled` 等需在 `runTurn` 与 Gateway `toTurnInput` 全链路生效，避免 Dashboard 配置「看得见用不了」。 |
-| **P1** | **通道与节点一体化** | Channels 适配器已存在，但 Gateway 仍依赖外部 bridge；多节点配对、远程 Worker 尚未落地（见 Roadmap）。 |
-| **P2** | **浏览器与并行工具** | 现有 `browser_snapshot` / `browser_form_submit` 偏轻量；Rich Browser（Playwright 级）与 **只读工具并行**、流式并行读仍需加强。 |
-| **P2** | **IDE 原生集成** | Claude Code 深度绑定终端/IDE；Dragon 暂以 CLI + Gateway Dashboard 为主，缺少编辑器侧无缝嵌入。 |
-| **P2** | **模块化与 CI 效率** | `memory`/`cli`/`gateway` 大文件待拆分；test-suite 可并行分片以缩短 CI。 |
+### 待补齐的能力
+
+> **产品定位**：潜龙是**通用 AI Agent**（命令行、网关控制台、聊天渠道、多智能体分工），**不以 IDE/编辑器深度绑定为目标**（见 [路线图](docs/ROADMAP.md) Phase 5）。
+
+对照当前代码库，与「能长期跑在生产环境里的通用助手」相比，大致 **六成底座已具备、四成需补齐或拉通**（P0 多为「有雏形、未贯通」，P1/P2 为生态与工程效率）。下表按**工程现状**核对，避免把已实现能力误写成缺口。
+
+| 优先级 | 能力缺口 | 代码里已有 | 仍须补齐 |
+|--------|----------|------------|----------|
+| **P0** | **一件事办完（会话续跑）** | 网关：`SessionTurnCoordinator` 排队 + `agent.wait`；`queryLoop` 可在工具触顶后续跑（`gateway/query-loop.ts`） | CLI、`delegation` 与网关**同一套**会话语义；用户一句「帮我把这事办完」的跨轮续跑（不限于工具触顶） |
+| **P0** | **长聊不爆上下文** | 单轮 `Turn Prep` 截断（`core/turn-prep.ts`）；`session_compaction` 注入较早会话摘要（`memory`） | 历史 **tool 结果** 跨轮压缩/摘要并写回模型消息，与 Turn Prep **分层**协作 |
+| **P0** | **对外部署敢开** | `shared-secret` 认证、按路由限速（`gateway/rate-limit.ts`）、非本机监听告警 | 共享/远程部署**默认要求认证**；直连 `tool.invoke` 策略可配置且默认更严 |
+| **P1** | **接上 MCP 工具生态** | stdio/HTTP 客户端、`mcp.json`、`registerMcpTools`（`tools/mcp/*`）；**CLI 启动时已加载** | **网关 / Dashboard 智能体默认加载 MCP**；服务发现、权限与运行观测一体化 |
+| **P1** | **控制台配置真生效** | 网关侧 Profile 合并进 `toTurnInput`（`thinking` / `toolsEnabled` / `memoryEnabled` 等） | **`dragon agent` CLI** 走同一套 Profile；Tier / Dashboard 开关在全链路无遗漏 |
+| **P1** | **渠道与多机协同** | Telegram/Slack 适配、`POST /channels/webhook`、Cron 投递 | 减少对外部 bridge 的硬依赖；设备配对、远程 Worker（见 Roadmap） |
+| **P2** | **浏览器与读并行** | 轻量 `browser_*`；可选 `browser_playwright_snapshot`；只读工具**同轮并行**（`core/tool-parallel.ts`） | Playwright 可选依赖的安装与文档；富交互浏览器、流式并行读加强 |
+| **P2** | **工程可维护 / CI** | 功能可用但 `gateway` / `cli` / `memory` 单文件约 2.4k–3.4k 行 | 模块拆分；`test-suite` 分片并行以缩短 CI |
+
+**不在范围内**：IDE 插件、编辑器无缝嵌入（对标 Claude Code 终端/IDE 体验）——与通用 Agent 定位无关，**不纳入路线图**。
+
+**落地与任务清单**：[能力补齐技术方案](docs/GAP_CLOSURE_PLAN.md)（分 Epic、验收标准、可跟踪任务 ID）。
 
 > [!TIP]
-> 延伸阅读：[架构说明](docs/ARCHITECTURE.md) · [技术架构](docs/TECHNICAL_ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [模块文档](docs/modules/README.md) · [插件指南](docs/PLUGINS.md) · [部署说明](docs/DEPLOYMENT.md)
+> 延伸阅读：[能力补齐方案](docs/GAP_CLOSURE_PLAN.md) · [架构说明](docs/ARCHITECTURE.md) · [技术架构](docs/TECHNICAL_ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [模块文档](docs/modules/README.md) · [插件指南](docs/PLUGINS.md) · [部署说明](docs/DEPLOYMENT.md)
 >
 > 文档语言：[简体中文](README.md)（本页）· [English](README.en.md)
 
@@ -155,6 +172,7 @@ dragon chat [--session <id>] [--session-dir <path>] [--no-session] \
   [--model <ref>] [--model-fallback <ref>] [--plugin-root <path>] <message>
 
 dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] \
+  [--profile <id>] [--query-loop] [--finish-task] [--query-loop-max-turns <n>] \
   [--model <ref>] [--model-fallback <ref>] [--skill-root <path>] [--plugin-root <path>] \
   [--memory-dir <path>] [--memory-backend <id>] <message>
 
@@ -164,6 +182,8 @@ dragon gateway [--host <host>] [--port <port>] [--secret <value>] \
 
 dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] \
   [--once] [--interval-ms <ms>]
+
+dragon channels serve [--port <port>] [--gateway-url <url>] [--secret <value>]
 ```
 
 <details>
