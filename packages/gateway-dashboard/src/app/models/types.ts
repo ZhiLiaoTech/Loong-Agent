@@ -1,4 +1,4 @@
-import type { GatewayProviderSummary } from "../../api/types.js";
+import type { GatewayProviderSummary } from "../../api/index.js";
 
 export type ModelProviderType = "openai-compatible" | "anthropic";
 
@@ -16,7 +16,7 @@ export interface ModelProviderConfig {
 
 export interface ModelConfigState {
   providers: readonly ModelProviderConfig[];
-  appliesOn: "restart";
+  appliesOn: "restart" | "next-turn";
   configPath?: string;
 }
 

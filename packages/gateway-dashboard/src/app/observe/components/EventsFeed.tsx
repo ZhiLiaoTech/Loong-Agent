@@ -1,4 +1,4 @@
-import type { GatewayEventEnvelope, SseConnectionStatus } from "../../../api/types.js";
+import type { GatewayEventEnvelope, SseConnectionStatus } from "../../../api/index.js";
 import { formatTime, shortId } from "../../shared/format.js";
 import styles from "./EventsFeed.module.css";
 

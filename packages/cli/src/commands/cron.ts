@@ -1,4 +1,5 @@
 import path from "node:path";
+import { resolveDragonDataRoot } from "../dragon-paths.js";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
 import { parseIntervalMs } from "../parse-cli-args.js";
 import { waitForShutdown } from "../shutdown.js";
@@ -12,7 +13,8 @@ export interface ParsedCronArgs {
 }
 
 export function parseCronArgs(args: string[]): ParsedCronArgs {
-  let jobsFile = process.env.DRAGON_CRON_JOBS?.trim() || path.join(process.cwd(), ".dragon", "cron", "jobs.json");
+  const dataRoot = resolveDragonDataRoot();
+  let jobsFile = process.env.DRAGON_CRON_JOBS?.trim() || path.join(dataRoot, "cron", "jobs.json");
   let gatewayUrl = process.env.DRAGON_GATEWAY_URL?.trim() || "http://127.0.0.1:17357";
   let secret = process.env.DRAGON_GATEWAY_SECRET?.trim() || undefined;
   let once = false;

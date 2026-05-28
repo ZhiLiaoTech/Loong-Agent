@@ -33,7 +33,9 @@ export function LoadedProvidersTable({
         </button>
       </div>
       {!providers.length ? (
-        <p className={styles.empty}>No providers loaded. Save config and restart Gateway.</p>
+        <p className={styles.empty}>
+          No providers loaded yet. Add a provider above or click Refresh after saving.
+        </p>
       ) : (
         <div className={styles.tableWrap}>
           <table className={styles.table}>

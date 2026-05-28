@@ -235,4 +235,8 @@ export type DragonEvent =
 export interface DragonAgentRuntime {
   runTurn(input: DragonTurnInput): Promise<DragonTurnResult>;
   subscribe(listener: (event: DragonEvent) => void): () => void;
+  /** Hot-swap tier scheduling for subsequent turns (optional on concrete runtimes). */
+  setTierConfig?(config: import("./tiers.js").ModelTierConfig | undefined): void;
+  /** Hot-swap model providers for subsequent turns (optional on concrete runtimes). */
+  setProviderRegistry?(registry: import("@dragon/providers").ProviderRegistry): void;
 }

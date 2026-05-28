@@ -16,7 +16,8 @@ export function ModelsWorkspace() {
         <div>
           <h2 className={styles.title}>Models</h2>
           <p className={styles.lead}>
-            Configure provider credentials. Changes apply after Gateway restart.
+            Configure provider credentials. Add, update, or remove providers to save to disk;
+            the Gateway reloads providers on save when hot reload is enabled.
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -55,7 +56,7 @@ export function ModelsWorkspace() {
             ? { configPath: page.modelConfig.configPath }
             : {})}
           onEdit={page.editProvider}
-          onRemove={page.removeProvider}
+          onRemove={id => void page.removeProvider(id)}
         />
       </div>
 

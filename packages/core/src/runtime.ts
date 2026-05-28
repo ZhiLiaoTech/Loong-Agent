@@ -123,7 +123,7 @@ interface ModelAttemptFailure {
 }
 
 export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
-  readonly #providerRegistry: ProviderRegistry;
+  #providerRegistry: ProviderRegistry;
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
   readonly #permissionHandler: DragonPermissionHandler | undefined;
@@ -186,6 +186,14 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
    */
   setTierConfig(config: ModelTierConfig | undefined): void {
     this.#tierConfig = config;
+  }
+
+  /**
+   * Hot-swap the provider registry. Takes effect on the NEXT turn — runs already
+   * in flight keep the previous registry.
+   */
+  setProviderRegistry(registry: ProviderRegistry): void {
+    this.#providerRegistry = registry;
   }
 
   /** Returns a shallow copy of the active tier config, or undefined. */

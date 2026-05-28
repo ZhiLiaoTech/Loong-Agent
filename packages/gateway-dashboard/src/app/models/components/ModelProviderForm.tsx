@@ -17,6 +17,7 @@ export function ModelProviderForm({ form, onChange, onUpsert, onClear }: ModelPr
   return (
     <section className={styles.card}>
       <h3 className={styles.title}>Add / update provider</h3>
+      <p className={styles.hint}>Saves to disk when you add, update, or remove a provider.</p>
       <div className={styles.grid}>
         <label className={styles.field}>
           <span>Type</span>

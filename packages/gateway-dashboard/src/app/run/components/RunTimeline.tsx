@@ -1,4 +1,4 @@
-import type { GatewayEventEnvelope } from "../../../api/types.js";
+import type { GatewayEventEnvelope } from "../../../api/index.js";
 import styles from "./RunTimeline.module.css";
 
 function labelForEvent(event: GatewayEventEnvelope["event"]): string {

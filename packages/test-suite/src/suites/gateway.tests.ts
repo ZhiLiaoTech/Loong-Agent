@@ -151,7 +151,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
     modelConfigStore: {
       async load() {
         return {
-          appliesOn: "restart",
+          appliesOn: "next-turn",
           configPath: "/tmp/dragon/providers.json",
           providers: [{
             id: "openai",
@@ -168,7 +168,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
       async save(config) {
         savedModelConfig = config;
         return {
-          appliesOn: "restart",
+          appliesOn: "next-turn",
           configPath: "/tmp/dragon/providers.json",
           providers: config.providers,
         };
@@ -243,6 +243,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
       }],
     });
     assert(saved.status === 200 && saved.json.ok === true, "model.config.save should succeed");
+    assert(readPath(saved.json, ["payload", "appliesOn"]) === "next-turn", "saved model config should advertise next-turn hot apply");
     assert(readPath(saved.json, ["payload", "providers", 0, "apiKeyConfigured"]) === true, "saved model config should expose secret presence");
     assert(!JSON.stringify(saved.json).includes("new-secret"), "saved model config must not return raw API keys");
     assert(readPath(savedModelConfig, ["providers", 0, "apiKey"]) === "new-secret", "model config store should receive submitted API key");

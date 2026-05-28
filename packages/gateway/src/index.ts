@@ -236,7 +236,7 @@ export interface GatewayModelSummary {
 
 export interface GatewayModelConfig {
   providers: readonly GatewayModelProviderConfig[];
-  appliesOn: "restart";
+  appliesOn: "next-turn";
   configPath?: string;
 }
 
@@ -344,6 +344,11 @@ export interface HttpDragonGatewayOptions {
    * effect on the next turn without process restart.
    */
   onTierConfigChange?: (config: GatewayTierConfig) => void;
+  /**
+   * Notified when model.config.save completes. The CLI binds this to reload
+   * providers from disk into the runtime registry for the next turn.
+   */
+  onModelConfigChange?: (config: GatewayModelConfig) => void | Promise<void>;
   tools?: readonly ToolDefinition[];
   toolRegistry?: ToolRegistry;
   permissionEngine?: ToolPermissionEngine;
@@ -369,8 +374,8 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #cronRunner: DragonCronRunner | undefined;
   readonly #trajectoryStore: GatewayTrajectoryStore | undefined;
   readonly #plugins: readonly GatewayPluginSummary[];
-  readonly #providers: readonly GatewayProviderSummary[];
-  readonly #modelCatalog: DragonModelCatalog | undefined;
+  #providers: GatewayProviderSummary[];
+  #modelCatalog: DragonModelCatalog | undefined;
   readonly #modelConfigStore: GatewayModelConfigStore | undefined;
   readonly #agentConfigStore: GatewayAgentConfigStore | undefined;
   readonly #orgStore: OrgStore | undefined;
@@ -382,6 +387,7 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #kpiTemplateStore: KpiTemplateStore | undefined;
   readonly #tierConfigStore: GatewayTierConfigStore | undefined;
   readonly #onTierConfigChange: ((config: GatewayTierConfig) => void) | undefined;
+  readonly #onModelConfigChange: ((config: GatewayModelConfig) => void | Promise<void>) | undefined;
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
   #directToolNames: Set<string>;
@@ -406,7 +412,7 @@ export class HttpDragonGateway implements DragonGateway {
     this.#cronRunner = options.cronRunner;
     this.#trajectoryStore = options.trajectoryStore;
     this.#plugins = normalizePluginSummaries(options.pluginSummaries ?? []);
-    this.#providers = normalizeProviderSummaries(options.providerSummaries ?? []);
+    this.#providers = [...normalizeProviderSummaries(options.providerSummaries ?? [])];
     this.#modelCatalog =
       this.#providers.length > 0
         ? createModelCatalogFromProviderSummaries(this.#providers)
@@ -422,6 +428,7 @@ export class HttpDragonGateway implements DragonGateway {
     this.#kpiTemplateStore = options.kpiTemplateStore;
     this.#tierConfigStore = options.tierConfigStore;
     this.#onTierConfigChange = options.onTierConfigChange;
+    this.#onModelConfigChange = options.onModelConfigChange;
     this.#toolRegistry = options.toolRegistry ?? createToolRegistry([...(options.tools ?? [])]);
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
@@ -919,6 +926,14 @@ export class HttpDragonGateway implements DragonGateway {
     };
   }
 
+  replaceLoadedProviders(summaries: readonly GatewayProviderSummary[]): void {
+    this.#providers = [...normalizeProviderSummaries(summaries)];
+    this.#modelCatalog =
+      this.#providers.length > 0
+        ? createModelCatalogFromProviderSummaries(this.#providers)
+        : undefined;
+  }
+
   #listProviders(): { providers: readonly GatewayProviderSummary[] } {
     return {
       providers: this.#providers.map(provider => ({ ...provider })),
@@ -936,7 +951,16 @@ export class HttpDragonGateway implements DragonGateway {
     if (!this.#modelConfigStore) {
       throw new GatewayHttpError(404, "Model configuration store is not available.");
     }
-    return sanitizeModelConfig(await this.#modelConfigStore.save(params));
+    const saved = await this.#modelConfigStore.save(params);
+    const sanitized = sanitizeModelConfig(saved);
+    if (this.#onModelConfigChange) {
+      try {
+        await this.#onModelConfigChange(saved);
+      } catch (error) {
+        console.error(`[${this.#name}] onModelConfigChange listener threw:`, error);
+      }
+    }
+    return sanitized;
   }
 
   async #loadAgentConfig(): Promise<GatewayAgentConfig> {
@@ -1338,7 +1362,7 @@ function sanitizeModelConfig(config: GatewayModelConfig): GatewayModelConfig {
       }
       return summary;
     }),
-    appliesOn: "restart",
+    appliesOn: "next-turn",
   };
   if (config.configPath !== undefined) {
     sanitized.configPath = trimBounded(config.configPath, 1000);

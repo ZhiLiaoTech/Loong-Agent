@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GatewayApiError } from "../../api/errors.js";
-import type { GatewayProviderSummary } from "../../api/types.js";
+import { GatewayApiError, type GatewayProviderSummary } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
 import type { AgentProfile } from "../run/types.js";
 import { buildModelSuggestions } from "./buildModelSuggestions.js";
@@ -55,6 +54,33 @@ export function useAgentsPage() {
     void load();
   }, [load]);
 
+  const persistProfiles = useCallback(
+    async (config: AgentsConfigState) => {
+      setSaving(true);
+      setStatus(null);
+      setError(null);
+      try {
+        const payload = await client.rpc<AgentsConfigState>("agent.config.save", {
+          profiles: config.profiles,
+          ...(config.defaultProfileId ? { defaultProfileId: config.defaultProfileId } : {}),
+        });
+        setAgentConfig({
+          profiles: payload.profiles ?? [],
+          ...(payload.defaultProfileId ? { defaultProfileId: payload.defaultProfileId } : {}),
+          ...(payload.configPath ? { configPath: payload.configPath } : {}),
+        });
+        setStatus("Saved.");
+      } catch (caught) {
+        const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+        setError(message);
+        throw caught;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [client],
+  );
+
   const clearForm = useCallback(() => {
     setForm(EMPTY_AGENT_PROFILE_FORM);
   }, []);
@@ -79,22 +105,26 @@ export function useAgentsPage() {
     });
   }, [agentConfig.defaultProfileId, agentConfig.profiles]);
 
-  const removeProfile = useCallback((id: string) => {
-    setAgentConfig(current => {
-      const next: AgentsConfigState = {
-        profiles: current.profiles.filter(entry => entry.id !== id),
-        ...(current.configPath ? { configPath: current.configPath } : {}),
-      };
-      if (current.defaultProfileId && current.defaultProfileId !== id) {
-        next.defaultProfileId = current.defaultProfileId;
+  const removeProfile = useCallback(
+    async (id: string) => {
+      const nextProfiles = agentConfig.profiles.filter(entry => entry.id !== id);
+      let defaultProfileId = agentConfig.defaultProfileId;
+      if (defaultProfileId === id) {
+        defaultProfileId = undefined;
       }
-      return next;
-    });
-    setForm(current => (current.editingId === id ? EMPTY_AGENT_PROFILE_FORM : current));
-    setStatus(null);
-  }, []);
+      const nextConfig: AgentsConfigState = {
+        profiles: nextProfiles,
+        ...(agentConfig.configPath ? { configPath: agentConfig.configPath } : {}),
+        ...(defaultProfileId ? { defaultProfileId } : {}),
+      };
+      setAgentConfig(nextConfig);
+      setForm(current => (current.editingId === id ? EMPTY_AGENT_PROFILE_FORM : current));
+      await persistProfiles(nextConfig);
+    },
+    [agentConfig.configPath, agentConfig.defaultProfileId, agentConfig.profiles, persistProfiles],
+  );
 
-  const upsertDraft = useCallback(() => {
+  const upsertDraft = useCallback(async () => {
     const id = form.id.trim();
     const name = form.name.trim();
     if (!id || !name) {
@@ -139,43 +169,24 @@ export function useAgentsPage() {
     } else if (defaultProfileId === id && !form.isDefault) {
       defaultProfileId = undefined;
     }
-    if (defaultProfileId && !next.some(entry => entry.id === defaultProfileId)) {
+    const sorted = sortProfiles(next);
+    if (defaultProfileId && !sorted.some(entry => entry.id === defaultProfileId)) {
       defaultProfileId = undefined;
     }
 
-    setAgentConfig(current => ({
-      ...current,
-      profiles: sortProfiles(next),
+    const nextConfig: AgentsConfigState = {
+      profiles: sorted,
+      ...(agentConfig.configPath ? { configPath: agentConfig.configPath } : {}),
       ...(defaultProfileId ? { defaultProfileId } : {}),
-    }));
+    };
+    setAgentConfig(nextConfig);
     clearForm();
-    setStatus("Draft updated locally. Click Save to persist.");
-  }, [agentConfig.defaultProfileId, agentConfig.profiles, clearForm, form]);
+    await persistProfiles(nextConfig);
+  }, [agentConfig, clearForm, form, persistProfiles]);
 
   const saveConfig = useCallback(async () => {
-    setSaving(true);
-    setStatus(null);
-    setError(null);
-    try {
-      const payload = await client.rpc<AgentsConfigState>("agent.config.save", {
-        profiles: agentConfig.profiles,
-        ...(agentConfig.defaultProfileId
-          ? { defaultProfileId: agentConfig.defaultProfileId }
-          : {}),
-      });
-      setAgentConfig({
-        profiles: payload.profiles ?? [],
-        ...(payload.defaultProfileId ? { defaultProfileId: payload.defaultProfileId } : {}),
-        ...(payload.configPath ? { configPath: payload.configPath } : {}),
-      });
-      setStatus("Saved.");
-    } catch (caught) {
-      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
-      setError(message);
-    } finally {
-      setSaving(false);
-    }
-  }, [agentConfig.defaultProfileId, agentConfig.profiles, client]);
+    await persistProfiles(agentConfig);
+  }, [agentConfig, persistProfiles]);
 
   return {
     agentConfig,

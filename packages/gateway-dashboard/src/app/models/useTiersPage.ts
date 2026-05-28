@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { GatewayApiError } from "../../api/errors.js";
+import { GatewayApiError } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
 import {
   EMPTY_TIER_CONFIG,

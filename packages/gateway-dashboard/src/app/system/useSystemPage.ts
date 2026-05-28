@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { GatewayApiError } from "../../api/errors.js";
-import type { GatewayHealthPayload } from "../../api/types.js";
+import { GatewayApiError, type GatewayHealthPayload } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
 import { defaultToolInput } from "./defaultToolInput.js";
 import {

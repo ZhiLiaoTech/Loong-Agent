@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { GatewayApiError } from "../../api/errors.js";
-import type { GatewayProviderSummary } from "../../api/types.js";
+import { GatewayApiError, type GatewayProviderSummary } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
+import { getStudioGatewayReadiness } from "../studioBridge.js";
 import { sanitizeProvidersForSave } from "./sanitizeProvidersForSave.js";
 import {
   EMPTY_MODEL_PROVIDER_FORM,
@@ -14,8 +14,17 @@ function sortProviders(providers: readonly ModelProviderConfig[]): ModelProvider
   return [...providers].sort((left, right) => String(left.id).localeCompare(String(right.id)));
 }
 
+function saveStatusFor(appliesOn: ModelConfigState["appliesOn"]): string {
+  if (appliesOn === "next-turn") {
+    return "Saved. Provider changes apply on the next agent turn (no restart).";
+  }
+  return "Saved. Restart Gateway to apply provider changes.";
+}
+
 export function useModelsPage() {
   const client = useGatewayClient();
+  // Registered by Loong Studio when embedded; no-op in standalone gateway-dashboard.
+  const studioReadiness = getStudioGatewayReadiness();
   const [modelConfig, setModelConfig] = useState<ModelConfigState>({
     providers: [],
     appliesOn: "restart",
@@ -54,6 +63,40 @@ export function useModelsPage() {
     void load();
   }, [load]);
 
+  const persistProviders = useCallback(
+    async (providers: readonly ModelProviderConfig[]) => {
+      setSaving(true);
+      setStatus(null);
+      setError(null);
+      try {
+        const payload = await client.rpc<ModelConfigState>("model.config.save", {
+          providers: sanitizeProvidersForSave(providers),
+        });
+        const appliesOn = payload.appliesOn ?? "restart";
+        setModelConfig({
+          providers: payload.providers ?? [],
+          appliesOn,
+          ...(payload.configPath ? { configPath: payload.configPath } : {}),
+        });
+        setStatus(saveStatusFor(appliesOn));
+        if (studioReadiness) {
+          await studioReadiness.ensureReady({ hotReloadSettleMs: 500 }).catch(() => false);
+        }
+        const providerList = await client
+          .listProviders()
+          .catch(() => [] as readonly GatewayProviderSummary[]);
+        setLiveProviders(providerList);
+      } catch (caught) {
+        const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+        setError(message);
+        throw caught;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [client, studioReadiness],
+  );
+
   const clearForm = useCallback(() => {
     setForm(EMPTY_MODEL_PROVIDER_FORM);
   }, []);
@@ -76,16 +119,20 @@ export function useModelsPage() {
     });
   }, [modelConfig.providers]);
 
-  const removeProvider = useCallback((id: string) => {
-    setModelConfig(current => ({
-      ...current,
-      providers: current.providers.filter(entry => entry.id !== id),
-    }));
-    setForm(current => (current.editingId === id ? EMPTY_MODEL_PROVIDER_FORM : current));
-    setStatus(null);
-  }, []);
+  const removeProvider = useCallback(
+    async (id: string) => {
+      const nextProviders = modelConfig.providers.filter(entry => entry.id !== id);
+      setModelConfig(current => ({
+        ...current,
+        providers: nextProviders,
+      }));
+      setForm(current => (current.editingId === id ? EMPTY_MODEL_PROVIDER_FORM : current));
+      await persistProviders(nextProviders);
+    },
+    [modelConfig.providers, persistProviders],
+  );
 
-  const upsertDraft = useCallback(() => {
+  const upsertDraft = useCallback(async () => {
     const id = form.id.trim();
     if (!id) {
       return;
@@ -127,37 +174,18 @@ export function useModelsPage() {
     );
     next.push(provider);
 
+    const nextProviders = sortProviders(next);
     setModelConfig(current => ({
       ...current,
-      providers: sortProviders(next),
+      providers: nextProviders,
     }));
     clearForm();
-    setStatus("Draft updated locally. Click Save to persist.");
-  }, [clearForm, form, modelConfig.providers]);
+    await persistProviders(nextProviders);
+  }, [clearForm, form, modelConfig.providers, persistProviders]);
 
   const saveConfig = useCallback(async () => {
-    setSaving(true);
-    setStatus(null);
-    setError(null);
-    try {
-      const payload = await client.rpc<ModelConfigState>("model.config.save", {
-        providers: sanitizeProvidersForSave(modelConfig.providers),
-      });
-      setModelConfig({
-        providers: payload.providers ?? [],
-        appliesOn: payload.appliesOn ?? "restart",
-        ...(payload.configPath ? { configPath: payload.configPath } : {}),
-      });
-      setStatus("Saved. Restart Gateway to apply provider changes.");
-      const providerList = await client.listProviders().catch(() => [] as readonly GatewayProviderSummary[]);
-      setLiveProviders(providerList);
-    } catch (caught) {
-      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
-      setError(message);
-    } finally {
-      setSaving(false);
-    }
-  }, [client, modelConfig.providers]);
+    await persistProviders(modelConfig.providers);
+  }, [modelConfig.providers, persistProviders]);
 
   return {
     modelConfig,

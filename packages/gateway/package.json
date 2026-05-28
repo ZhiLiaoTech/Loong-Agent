@@ -18,6 +18,7 @@
   "dependencies": {
     "@dragon/channels": "workspace:*",
     "@dragon/gateway-dashboard": "workspace:*",
+    "@dragon/studio": "workspace:*",
     "@dragon/core": "workspace:*",
     "@dragon/cron": "workspace:*",
     "@dragon/model-catalog": "workspace:*",

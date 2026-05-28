@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GatewayApiError } from "../../api/errors.js";
+import { GatewayApiError } from "../../api/index.js";
 import { useDragonEvents } from "../events/EventsContext.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
 import { pickAssistantDisplayText, stripTextToolBlocks } from "./chatDisplay.js";
@@ -392,6 +392,9 @@ export function useRunChat(
         payload = await client.rpc<{ result: AgentRunResult; events?: unknown[] }>("agent.wait", {
           queueTurnId: payload.queueTurnId,
         });
+      }
+      if (!payload || typeof payload !== "object" || !("result" in payload)) {
+        return;
       }
       const result = payload.result;
       if (result?.runId) {

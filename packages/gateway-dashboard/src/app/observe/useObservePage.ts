@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GatewayApiError } from "../../api/errors.js";
+import { GatewayApiError } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
 import { useDragonEvents } from "../events/EventsContext.js";
 import type { GatewayRunRecord } from "../run/types.js";

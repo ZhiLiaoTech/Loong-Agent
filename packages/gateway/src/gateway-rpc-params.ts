@@ -24,7 +24,7 @@ export interface GatewayModelProviderConfig {
 
 export interface GatewayModelConfig {
   providers: readonly GatewayModelProviderConfig[];
-  appliesOn: "restart";
+  appliesOn: "next-turn";
   configPath?: string;
 }
 

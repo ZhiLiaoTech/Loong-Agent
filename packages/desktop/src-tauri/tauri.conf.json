@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Loong",
+  "version": "0.0.0",
+  "identifier": "com.loong.studio",
+  "build": {
+    "beforeDevCommand": "corepack pnpm --filter @dragon/studio dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "corepack pnpm --filter @dragon/studio build",
+    "frontendDist": "../../studio/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Loong Studio",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

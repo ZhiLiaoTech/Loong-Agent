@@ -1,4 +1,4 @@
-import type { DragonEvent, GatewayProviderSummary } from "../../api/types.js";
+import type { DragonEvent, GatewayProviderSummary } from "../../api/index.js";
 
 export type ThinkingLevel = "" | "none" | "low" | "medium" | "high";
 

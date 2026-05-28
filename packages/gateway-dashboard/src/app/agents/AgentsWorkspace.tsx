@@ -53,7 +53,7 @@ export function AgentsWorkspace() {
             : {})}
           {...(page.agentConfig.configPath ? { configPath: page.agentConfig.configPath } : {})}
           onEdit={page.editProfile}
-          onRemove={page.removeProfile}
+          onRemove={id => void page.removeProfile(id)}
         />
       </div>
     </div>

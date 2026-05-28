@@ -1,4 +1,4 @@
-import type { GatewayHealthPayload } from "../../api/types.js";
+import type { GatewayHealthPayload } from "../../api/index.js";
 
 export interface CronJob {
   id: string;

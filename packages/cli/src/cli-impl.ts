@@ -19,6 +19,7 @@ import {
   parseModelTimeoutSecArg,
   resolveModelTimeoutMs,
 } from "./gateway-settings.js";
+import { dragonConfigDir, resolveDragonDataRoot } from "./dragon-paths.js";
 import { parsePort } from "./parse-cli-args.js";
 import { bootstrapAgentToolRegistry } from "./bootstrap-agent-tool-registry.js";
 import { loadContextConfig } from "./context-config.js";
@@ -170,9 +171,10 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
   }
 
   let allowWrite = false;
-  let sessionDir = process.env.DRAGON_SESSION_DIR?.trim() || path.join(process.cwd(), ".dragon", "sessions");
-  let memoryDir = process.env.DRAGON_MEMORY_DIR?.trim() || path.join(process.cwd(), ".dragon", "memory");
-  let cronJobsFile = process.env.DRAGON_CRON_JOBS?.trim() || path.join(process.cwd(), ".dragon", "cron", "jobs.json");
+  const dataRoot = resolveDragonDataRoot();
+  let sessionDir = process.env.DRAGON_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
+  let memoryDir = process.env.DRAGON_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");
+  let cronJobsFile = process.env.DRAGON_CRON_JOBS?.trim() || path.join(dataRoot, "cron", "jobs.json");
   let memoryBackendId = process.env.DRAGON_MEMORY_BACKEND?.trim() || undefined;
   const defaultSkillRoots = configuredSkillRoots();
   const skillRoots: string[] = [];
@@ -394,12 +396,12 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
 
 export function configuredModelConfigPath(): string {
   const configured = process.env.DRAGON_MODEL_CONFIG?.trim();
-  return path.resolve(configured || path.join(process.cwd(), ".dragon", "config", "providers.json"));
+  return path.resolve(configured || path.join(dragonConfigDir(), "providers.json"));
 }
 
 export function configuredTierConfigPath(): string {
   const configured = process.env.DRAGON_TIER_CONFIG?.trim();
-  return path.resolve(configured || path.join(process.cwd(), ".dragon", "config", "tiers.json"));
+  return path.resolve(configured || path.join(dragonConfigDir(), "tiers.json"));
 }
 
 export function createModelConfigStore(filePath: string): GatewayModelConfigStore {
@@ -632,7 +634,7 @@ function toSafeModelConfig(config: { providers: readonly GatewayModelProviderCon
       }
       return safe;
     }),
-    appliesOn: "restart",
+    appliesOn: "next-turn",
     configPath: filePath,
   };
 }
@@ -717,7 +719,7 @@ function readModelProviderType(value: unknown, source: string): GatewayModelProv
 
 export function configuredAgentConfigPath(): string {
   const configured = process.env.DRAGON_AGENT_CONFIG?.trim();
-  return path.resolve(configured || path.join(process.cwd(), ".dragon", "config", "agents.json"));
+  return path.resolve(configured || path.join(dragonConfigDir(), "agents.json"));
 }
 
 export function createAgentConfigStore(filePath: string): GatewayAgentConfigStore {
@@ -960,7 +962,7 @@ function formatLoadedSkill(skill: LoadedSkill): string {
 
 export function configuredSkillRoots(): string[] {
   const envRoots = parseRootList(process.env.DRAGON_SKILL_ROOTS);
-  const defaultRoot = path.join(process.cwd(), ".dragon", "skills");
+  const defaultRoot = path.join(resolveDragonDataRoot(), "skills");
   if (envRoots.length > 0) {
     return [...envRoots.map(resolveSkillRoot), path.resolve(defaultRoot)];
   }
@@ -973,9 +975,11 @@ export function configuredPluginRoots(): string[] {
     return envRoots.map(resolveExistingPluginRoot);
   }
 
-  const defaultRoot = path.join(process.cwd(), ".dragon", "plugins");
+  const defaultRoot = path.join(resolveDragonDataRoot(), "plugins");
   return existsSync(defaultRoot) && isExistingDirectory(defaultRoot) ? [path.resolve(defaultRoot)] : [];
 }
+
+export { resolveDragonDataRoot } from "./dragon-paths.js";
 
 function parseRootList(value: string | undefined): string[] {
   const trimmed = value?.trim();

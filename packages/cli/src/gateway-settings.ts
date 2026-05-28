@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_MODEL_TIMEOUT_MS } from "@dragon/core";
 import type { GatewayConfig } from "@dragon/gateway";
+import { dragonConfigDir } from "./dragon-paths.js";
 
 export interface GatewaySettingsFile {
   modelTimeoutMs?: number;
@@ -13,16 +14,16 @@ export interface GatewaySettingsFile {
   toolInvokeAllowlist?: string[];
 }
 
-export function gatewaySettingsPath(cwd = process.cwd()): string {
+export function gatewaySettingsPath(): string {
   const fromEnv = process.env.DRAGON_GATEWAY_CONFIG?.trim();
   if (fromEnv) {
     return path.resolve(fromEnv);
   }
-  return path.join(cwd, ".dragon", "config", "gateway.json");
+  return path.join(dragonConfigDir(), "gateway.json");
 }
 
-export async function loadGatewaySettingsFile(cwd = process.cwd()): Promise<GatewaySettingsFile> {
-  const filePath = gatewaySettingsPath(cwd);
+export async function loadGatewaySettingsFile(): Promise<GatewaySettingsFile> {
+  const filePath = gatewaySettingsPath();
   try {
     const raw = await fs.readFile(filePath, "utf8");
     const parsed = JSON.parse(raw) as unknown;

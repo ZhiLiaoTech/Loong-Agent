@@ -17,7 +17,7 @@ import {
   defaultTicketConfigPath,
   defaultToolPolicyConfigPath,
 } from "@dragon/org";
-import { createHttpGateway, type GatewayConfig } from "@dragon/gateway";
+import { createHttpGateway, type GatewayConfig, type HttpDragonGateway } from "@dragon/gateway";
 import { createFileTrajectoryStore } from "@dragon/memory";
 import {
   loadGatewaySettingsFile,
@@ -39,11 +39,13 @@ import {
   createTierConfigStore,
   loadPersistedTierConfig,
   resolveExistingPluginRoot,
+  resolveDragonDataRoot,
   resolveSkillRoot,
   summarizeLoadedPlugins,
   summarizeProviders,
   uniquePaths,
 } from "../cli-impl.js";
+import { applyGatewayProviderHotReload } from "../provider-hot-reload.js";
 import { createRuntime, deactivateLoadedPlugins } from "../runtime-factory.js";
 import { gatewayUrlFromConfig } from "../gateway-url.js";
 import { parsePort } from "../parse-cli-args.js";
@@ -63,6 +65,7 @@ export interface ParsedGatewayArgs {
 
 export async function runGateway(args: string[]): Promise<void> {
   const parsed = await parseGatewayArgs(args);
+  const dataRoot = resolveDragonDataRoot();
   const modelConfigPath = configuredModelConfigPath();
   const agentConfigPath = configuredAgentConfigPath();
   const tierConfigPath = configuredTierConfigPath();
@@ -108,7 +111,11 @@ export async function runGateway(args: string[]): Promise<void> {
     ticketLifecycleHook: createTicketLifecycleHook({ ticketStore }),
     modelTimeoutMs: parsed.modelTimeoutMs,
   });
-  const gateway = createHttpGateway({
+  const pluginProviders = runtimeBundle.plugins.flatMap(
+    plugin => [...plugin.providers] as import("@dragon/providers").ModelProvider[],
+  );
+  let gateway!: HttpDragonGateway;
+  gateway = createHttpGateway({
     runtime: runtimeBundle.runtime,
     cronStore,
     cronRunner,
@@ -134,13 +141,23 @@ export async function runGateway(args: string[]): Promise<void> {
         runtime.setTierConfig(next);
       }
     },
+    onModelConfigChange: async () => {
+      await applyGatewayProviderHotReload({
+        runtime: runtimeBundle.runtime,
+        pluginProviders,
+        replaceSummaries: summaries => gateway.replaceLoadedProviders(summaries),
+      });
+    },
     toolRegistry: runtimeBundle.toolRegistry,
     ...(runtimeBundle.permissionEngine ? { permissionEngine: runtimeBundle.permissionEngine } : {}),
-  });
+  }) as HttpDragonGateway;
   try {
     await gateway.start(parsed.config);
     const address = gateway.address();
     process.stderr.write(`Dragon gateway listening on ${address?.url ?? "unknown address"}\n`);
+    process.stderr.write(`Dragon data root: ${dataRoot}\n`);
+    process.stderr.write(`Dragon model config: ${modelConfigPath}\n`);
+    process.stderr.write(`Dragon agent config: ${agentConfigPath}\n`);
     process.stderr.write(`Dragon model timeout: ${Math.round(parsed.modelTimeoutMs / 1000)}s\n`);
     await cronRunner.tick();
     cronRunner.start();
@@ -174,9 +191,10 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
   }
 
   let allowWrite = false;
-  let sessionDir = process.env.DRAGON_SESSION_DIR?.trim() || path.join(process.cwd(), ".dragon", "sessions");
-  let memoryDir = process.env.DRAGON_MEMORY_DIR?.trim() || path.join(process.cwd(), ".dragon", "memory");
-  let cronJobsFile = process.env.DRAGON_CRON_JOBS?.trim() || path.join(process.cwd(), ".dragon", "cron", "jobs.json");
+  const dataRoot = resolveDragonDataRoot();
+  let sessionDir = process.env.DRAGON_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
+  let memoryDir = process.env.DRAGON_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");
+  let cronJobsFile = process.env.DRAGON_CRON_JOBS?.trim() || path.join(dataRoot, "cron", "jobs.json");
   let memoryBackendId = process.env.DRAGON_MEMORY_BACKEND?.trim() || undefined;
   const defaultSkillRoots = configuredSkillRoots();
   const skillRoots: string[] = [];

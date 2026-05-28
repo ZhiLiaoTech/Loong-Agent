@@ -122,7 +122,8 @@ async function assertDashboard(target: SmokeTarget): Promise<void> {
   assert(html.includes('data-tab="agents"'), "Dashboard Agents workspace was not rendered.");
   assert(html.includes('data-tab="observe"'), "Dashboard Observe workspace was not rendered.");
   assert(html.includes('data-tab="system"'), "Dashboard System workspace was not rendered.");
-  assert(!html.includes("localStorage") && !html.includes("sessionStorage"), "Dashboard must not persist secrets in browser storage.");
+  assert(!html.includes("localStorage"), "Dashboard must not persist secrets in localStorage.");
+  assert(html.includes("dragon.gateway.secret"), "Dashboard should persist gateway shared secret in sessionStorage for the tab.");
 }
 
 async function assertHealth(target: SmokeTarget): Promise<void> {

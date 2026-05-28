@@ -7,10 +7,48 @@ const require = createRequire(import.meta.url);
 let cachedHtml: string | undefined;
 let dashboardRoot: string | undefined;
 
+/** `studio` | `dashboard` (default). Also accepts `LOONG_UI=studio`. */
+function resolveUiMode(): "studio" | "dashboard" {
+  const raw = (process.env.LOONG_UI ?? process.env.DRAGON_UI ?? "dashboard").trim().toLowerCase();
+  if (raw === "studio" || raw === "loong") {
+    return "studio";
+  }
+  return "dashboard";
+}
+
+function resolveStudioDist(): string | undefined {
+  try {
+    const pkgJson = require.resolve("@dragon/studio/package.json");
+    const dist = join(dirname(pkgJson), "dist");
+    if (existsSync(join(dist, "index.html"))) {
+      return dist;
+    }
+  } catch {
+    // studio package not installed
+  }
+  return undefined;
+}
+
+function resolveDashboardDist(): string {
+  const pkgJson = require.resolve("@dragon/gateway-dashboard/package.json");
+  return join(dirname(pkgJson), "dist");
+}
+
 export function getDashboardRoot(): string {
   if (!dashboardRoot) {
-    const pkgJson = require.resolve("@dragon/gateway-dashboard/package.json");
-    dashboardRoot = join(dirname(pkgJson), "dist");
+    const mode = resolveUiMode();
+    if (mode === "studio") {
+      const studioDist = resolveStudioDist();
+      if (studioDist) {
+        dashboardRoot = studioDist;
+        return dashboardRoot;
+      }
+      console.warn(
+        "[dragon-gateway] LOONG_UI=studio but @dragon/studio dist is missing. " +
+          "Run: corepack pnpm --filter @dragon/studio build. Falling back to gateway-dashboard.",
+      );
+    }
+    dashboardRoot = resolveDashboardDist();
   }
   return dashboardRoot;
 }
@@ -19,9 +57,12 @@ export function getDashboardHtml(): string {
   if (!cachedHtml) {
     const indexPath = join(getDashboardRoot(), "index.html");
     if (!existsSync(indexPath)) {
-      throw new Error(
-        "Dashboard bundle missing. Run: corepack pnpm --filter @dragon/gateway-dashboard build",
-      );
+      const mode = resolveUiMode();
+      const buildHint =
+        mode === "studio"
+          ? "corepack pnpm --filter @dragon/studio build"
+          : "corepack pnpm --filter @dragon/gateway-dashboard build";
+      throw new Error(`Dashboard bundle missing. Run: ${buildHint}`);
     }
     cachedHtml = readFileSync(indexPath, "utf8");
   }
@@ -63,6 +104,12 @@ function contentTypeForPath(pathname: string): string {
   }
   if (ext === ".svg") {
     return "image/svg+xml";
+  }
+  if (ext === ".woff2") {
+    return "font/woff2";
+  }
+  if (ext === ".map") {
+    return "application/json; charset=utf-8";
   }
   return "application/octet-stream";
 }

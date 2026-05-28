@@ -1,5 +1,7 @@
 # Dragon Roadmap
 
+> **Loong 桌面一体化**（Host + Studio + Desktop Surface）的详细阶段与任务 ID 见 [LOONG_PRODUCT_ARCHITECTURE.md](./LOONG_PRODUCT_ARCHITECTURE.md)。
+
 ## Phase 0: Foundation
 
 Goal: establish the TypeScript workspace and design boundaries.

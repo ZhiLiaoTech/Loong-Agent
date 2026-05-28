@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { GatewayApiError } from "../../api/errors.js";
-import type { GatewayProviderSummary } from "../../api/types.js";
+import { GatewayApiError, type GatewayProviderSummary } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
 import type { AgentConfigState, EmployeeCatalogState, GatewayRunRecord } from "./types.js";
 

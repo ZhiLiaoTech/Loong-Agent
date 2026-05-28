@@ -234,7 +234,10 @@ async function testDashboardMemoryReviewSmoke(): Promise<void> {
     assert(html.includes("cron.tick"), "dashboard should call cron tick RPC");
     assert(html.includes("Requires write permission"), "dashboard should label disabled memory review actions");
     assert(!html.includes("localStorage"), "dashboard must not persist secrets to localStorage");
-    assert(!html.includes("sessionStorage"), "dashboard must not persist secrets to sessionStorage");
+    assert(
+      html.includes("dragon.gateway.secret") || html.includes("GATEWAY_SECRET_STORAGE_KEY"),
+      "dashboard or studio bundle should reference gateway session secret storage",
+    );
   } finally {
     await gateway.stop();
   }

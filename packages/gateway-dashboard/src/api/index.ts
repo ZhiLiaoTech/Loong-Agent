@@ -1,9 +1,22 @@
-export type { GatewayClientConfig } from "./config.js";
-export { createGatewayClient, type GatewayClient } from "./client.js";
-export { GatewayApiError } from "./errors.js";
-export { gatewayRpc } from "./rpc.js";
-export { fetchGatewayHealth, type GatewayHealthResult } from "./health.js";
-export { openDragonEventStream, type DragonEventStreamHandle, type DragonEventStreamOptions } from "./sse.js";
+export type { GatewayClientConfig } from "@dragon/client";
+export {
+  apiUrl,
+  buildAuthHeaders,
+  createGatewayClient,
+  createRequestId,
+  type GatewayClient,
+  GatewayApiError,
+  gatewayRpc,
+  fetchGatewayHealth,
+  type GatewayHealthResult,
+  openDragonEventStream,
+  type DragonEventStreamHandle,
+  type DragonEventStreamOptions,
+  resolveBaseUrl,
+  resolveGatewayUrl,
+  DEFAULT_GATEWAY_HOST,
+  DEFAULT_GATEWAY_PORT,
+} from "@dragon/client";
 export type {
   DragonEvent,
   GatewayConnectPayload,
@@ -12,4 +25,4 @@ export type {
   GatewayProviderSummary,
   GatewayProvidersListPayload,
   SseConnectionStatus,
-} from "./types.js";
+} from "@dragon/client";

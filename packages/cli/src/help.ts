@@ -15,8 +15,9 @@ Provider:
   Optional: DRAGON_ANTHROPIC_BASE_URL, DRAGON_ANTHROPIC_MODEL, DRAGON_ANTHROPIC_PROVIDER_ID.
   Provider plugins can also be loaded from .dragon/plugins, DRAGON_PLUGIN_ROOTS, or --plugin-root <path>.
   Model refs with a registered provider prefix, such as openai:gpt-4o or anthropic:claude-sonnet-4-5, route explicitly to that provider.
-  Dashboard model provider config is stored in .dragon/config/providers.json by default; override with DRAGON_MODEL_CONFIG.
-  Dashboard agent profile config is stored in .dragon/config/agents.json by default; override with DRAGON_AGENT_CONFIG.
+  Durable data defaults to <workspace>/.dragon (walk up to pnpm-workspace.yaml); override root with DRAGON_DATA_ROOT.
+  Dashboard model provider config: .dragon/config/providers.json (override with DRAGON_MODEL_CONFIG).
+  Dashboard agent profile config: .dragon/config/agents.json (override with DRAGON_AGENT_CONFIG).
   Optional: DRAGON_MODEL, --model <ref>, DRAGON_MODEL_FALLBACKS, --model-fallback <ref>.
 
 Tiers (multi-model scheduling):

@@ -1,4 +1,5 @@
 ﻿import path from "node:path";
+import { resolveDragonDataRoot } from "./dragon-paths.js";
 import type { DragonTierHint } from "@dragon/core";
 import { configuredPluginRoots, configuredSkillRoots, resolveExistingPluginRoot, resolveSkillRoot, uniquePaths } from "./cli-impl.js";
 export interface ParsedChatArgs {
@@ -29,8 +30,9 @@ interface ParsedAttachmentSpec {
 export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
   const messageParts: string[] = [];
   let sessionId = process.env.DRAGON_SESSION_ID?.trim() || "cli";
-  let sessionDir = process.env.DRAGON_SESSION_DIR?.trim() || path.join(process.cwd(), ".dragon", "sessions");
-  let memoryDir = process.env.DRAGON_MEMORY_DIR?.trim() || path.join(process.cwd(), ".dragon", "memory");
+  const dataRoot = resolveDragonDataRoot();
+  let sessionDir = process.env.DRAGON_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
+  let memoryDir = process.env.DRAGON_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");
   let memoryBackendId = mode === "agent" ? process.env.DRAGON_MEMORY_BACKEND?.trim() || undefined : undefined;
   let model = process.env.DRAGON_MODEL?.trim() || undefined;
   const modelFallbacks = parseListEnv(process.env.DRAGON_MODEL_FALLBACKS);

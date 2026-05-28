@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchGatewayHealth } from "../../api/health.js";
+import { fetchGatewayHealth } from "../../api/index.js";
 import { useSecret } from "../secret/SecretContext.js";
 import { useGatewayClient } from "./useGatewayClient.js";
 

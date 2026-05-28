@@ -6,6 +6,8 @@
   "type": "module",
   "packageManager": "pnpm@10.11.0",
   "scripts": {
+    "studio:dev": "corepack pnpm --filter @dragon/studio dev",
+    "studio:build": "corepack pnpm --filter @dragon/studio build",
     "build": "corepack pnpm -r build",
     "check": "corepack pnpm -r check",
     "clean": "corepack pnpm -r clean",
