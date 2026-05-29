@@ -1,1 +1,6 @@
-export { getDashboardHtml, getDashboardRoot, readDashboardAsset } from "./dashboard-static.js";
+export {
+  getDashboardHtml,
+  getDashboardRoot,
+  readDashboardAsset,
+  resetDashboardStaticCache,
+} from "./dashboard-static.js";

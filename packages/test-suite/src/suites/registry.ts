@@ -6,11 +6,14 @@ import { runtimeTestCases } from "./runtime.tests.js";
 /** Core / misc tests registered in index.ts */
 export type CoreTestCases = TestCase[];
 
+import { studioTestCases } from "./studio.tests.js";
+
 export function mergeAllTestCases(core: CoreTestCases): TestCase[] {
   return [
     ...core,
     ...cliTestCases,
     ...runtimeTestCases,
     ...gatewayTestCases,
+    ...studioTestCases,
   ];
 }

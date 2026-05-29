@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@dragon/channels": "workspace:*",
+    "@dragon/client": "workspace:*",
     "@dragon/core": "workspace:*",
     "@dragon/cron": "workspace:*",
     "@dragon/delegation": "workspace:*",
@@ -23,6 +24,7 @@
     "@dragon/tools": "workspace:*"
   },
   "devDependencies": {
+    "@dragon/studio": "workspace:*",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }

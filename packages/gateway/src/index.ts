@@ -1753,6 +1753,10 @@ export {
   resolveAgentParamsWithProfile,
   toTurnInput,
 } from "./agent-params.js";
-
-
+export {
+  getDashboardHtml,
+  getDashboardRoot,
+  readDashboardAsset,
+  resetDashboardStaticCache,
+} from "./dashboard.js";
 

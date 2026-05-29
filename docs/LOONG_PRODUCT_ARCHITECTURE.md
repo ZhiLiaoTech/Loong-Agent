@@ -88,18 +88,26 @@ Studio 内统一：`host.getCapabilities()`，禁止散落 `window.__TAURI__` �
 
 状态图例：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成
 
-**实施进度（2026-05-28）**：P0–P2 骨架完成；P3-01–11 完成（Studio 工作台 + Gateway `LOONG_UI=studio`）；P3-12 E2E 草案待补；P4-01 Tauri 骨架已建，Watchdog/安装包待续。
+**实施进度（2026-05-28）**：P0–P2 骨架完成；P3 完成（含 P3-12 冒烟）；P4-01/05/06 Watchdog+IPC POC；P4-02–04、P4-07+ 待续。
+
+### P0-01 决策记录（v1，2026-05-28）
+
+| 决策 | 结论 |
+|------|------|
+| Studio v1 路由范围 | **瘦路由**：Chat / Models / Agents / Settings / About；Observe/System/Channels 延后 P6 |
+| Host Watchdog | **Rust 优先**（`packages/desktop/src-tauri`），Browser 仍手动 `dragon gateway` |
+| 对外产品名 | 窗口与 Studio 品牌 **Loong**；代码包与 CLI 暂保留 **Dragon** 代号 |
 
 ### P0 — 契约与仓库骨架
 
 | ID | 任务 | 依赖 | 交付物 | 验收标准 |
 |----|------|------|--------|----------|
-| P0-01 | 评审并冻结本文档 v1.0 | — | 团队确认的架构章节 | 无「核+壳」双仓长期方案 |
+| P0-01 | 评审并冻结本文档 v1.0 | — | 团队确认的架构章节 | 无「核+壳」双仓长期方案 | [x] |
 | P0-02 | 在 `pnpm-workspace.yaml` 注册新包目录 | P0-01 | `packages/client` `host` `ui` `studio` `desktop` | `pnpm -r build` 空包可过 | [x] |
 | P0-03 | 定义 `@dragon/host` 能力接口 | P0-01 | `HostCapabilities`、`HostRuntime` 类型 | 覆盖：gateway、paths、crypto、tray、update、autostart | [x] |
 | P0-04 | 定义 `@dragon/client` 公共 API 面 | P0-01 | `GatewayClient`、`CloudClient` 接口草案 | 与现有 `gateway-dashboard/src/api` 对齐 | [x] |
 | P0-05 | 定义 Studio 路由表 v1 | P0-01 | `docs/studio-routes.md` | `/` `/chat` `/models` `/agents` `/settings` `/login?` | [x] |
-| P0-06 | 数据目录规范写入文档 | P0-01 | 扩展 `dragon-paths` 说明 | `.dragon` 与 `%APPDATA%/Loong/data` 映射表 | [~] |
+| P0-06 | 数据目录规范写入文档 | P0-01 | `docs/LOONG_DATA_DIRECTORIES.md` | `.dragon` 与桌面 `%APPDATA%` 映射表 | [x] |
 | P0-07 | 从 ClawWorks 整理「禁止带入」清单 | P0-01 | `docs/clawworks-migration-exclusions.md` | 列出 openclaw.mjs、openclaw.json 语义等 | [x] |
 
 **P0 里程碑**：接口 PR 合并，空包 CI 绿。
@@ -284,11 +292,16 @@ pnpm --filter @dragon/desktop release
 | ClawWorks 与 Loong 双品牌 | P2-07 统一 Loong；Cloud API 可暂兼容 clawworks.cn |
 | 安装包体积 | P4-12 只 bundling Node + cli dist，不 bundling 全量 OpenClaw |
 
-**待决策**（在 P0-01 评审拍板）：
+**待决策**（P0-01 已拍板 v1，见文首「P0-01 决策记录」；重大变更走 v1.1 评审）：
 
-1. Desktop 第一版路由范围：**瘦**（Chat/Models/Agents/Settings）还是 **胖**（含 Channels/Suite）？  
-2. Host 实现：**Rust Watchdog 优先** 还是 **Node 子进程守护** 先行？  
-3. 对外产品名：**Loong** 与 **Dragon** 代号如何并列（安装包/窗口标题）？
+1. ~~Desktop 第一版路由范围~~ → 瘦路由  
+2. ~~Host 实现~~ → Rust Watchdog 优先  
+3. ~~对外产品名~~ → Loong（产品）/ Dragon（代号）
+
+遗留：
+
+1. `gateway-dashboard` 退役截止日：**2026-08-31**（之后 Gateway 仅 embed `studio/dist`）  
+2. Cloud API 域名与 ClawWorks 兼容窗口
 
 ---
 

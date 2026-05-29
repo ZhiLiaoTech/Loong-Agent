@@ -400,6 +400,9 @@ importers:
       '@dragon/channels':
         specifier: workspace:*
         version: link:../channels
+      '@dragon/client':
+        specifier: workspace:*
+        version: link:../client
       '@dragon/core':
         specifier: workspace:*
         version: link:../core
@@ -428,6 +431,9 @@ importers:
         specifier: workspace:*
         version: link:../tools
     devDependencies:
+      '@dragon/studio':
+        specifier: workspace:*
+        version: link:../studio
       tsx:
         specifier: ^4.20.6
         version: 4.22.0

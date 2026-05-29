@@ -15,6 +15,7 @@ import {
   toGatewayWebhookPayload,
 } from "@dragon/channels";
 import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
+import { resetDashboardStaticCache } from "@dragon/gateway";
 import {
   appendCancelledToolResults,
   appendWorkspaceToolGuidance,
@@ -203,6 +204,10 @@ async function testOpenRouterProviderPlugin(): Promise<void> {
 }
 
 async function testDashboardMemoryReviewSmoke(): Promise<void> {
+  const previousUi = process.env.LOONG_UI;
+  process.env.LOONG_UI = "dashboard";
+  resetDashboardStaticCache();
+
   const gateway = createHttpGateway({ runtime: createNoopRuntime() });
   await gateway.start({ host: "127.0.0.1", port: 0 });
   const address = gateway.address();
@@ -240,6 +245,12 @@ async function testDashboardMemoryReviewSmoke(): Promise<void> {
     );
   } finally {
     await gateway.stop();
+    if (previousUi === undefined) {
+      delete process.env.LOONG_UI;
+    } else {
+      process.env.LOONG_UI = previousUi;
+    }
+    resetDashboardStaticCache();
   }
 }
 

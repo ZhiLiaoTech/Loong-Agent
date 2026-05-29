@@ -7,7 +7,7 @@
 | `/chat` | chat | 对话 / Run（`RunWorkspace`） | P3-04 已实现 |
 | `/models` | models | 模型提供商配置（`ModelsWorkspace`） | P3-05 已实现 |
 | `/agents` | agents | Agent 档案（`AgentsWorkspace`） | P3-06 已实现 |
-| `/settings` | settings | Gateway URL、Shared secret | 已实现 |
+| `/settings` | settings | Gateway URL、Shared secret、configPath | P3-07 已实现 |
 
 开发：`pnpm studio:dev` → http://127.0.0.1:1420
 

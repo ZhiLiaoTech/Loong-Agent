@@ -13,7 +13,7 @@
     "clean": "corepack pnpm -r clean",
     "smoke:gateway": "tsx scripts/smoke-gateway.ts",
     "sync:readme-i18n": "node scripts/sync-readme-i18n.mjs",
-    "test": "corepack pnpm -r build && corepack pnpm --filter @dragon/test-suite test"
+    "test": "corepack pnpm -r build && corepack pnpm studio:build && corepack pnpm --filter @dragon/test-suite test"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

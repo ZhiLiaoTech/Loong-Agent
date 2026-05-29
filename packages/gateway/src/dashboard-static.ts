@@ -7,13 +7,22 @@ const require = createRequire(import.meta.url);
 let cachedHtml: string | undefined;
 let dashboardRoot: string | undefined;
 
-/** `studio` | `dashboard` (default). Also accepts `LOONG_UI=studio`. */
+/** Test-only: clear cached UI root when `LOONG_UI` changes between cases. */
+export function resetDashboardStaticCache(): void {
+  cachedHtml = undefined;
+  dashboardRoot = undefined;
+}
+
+/** Prefer studio when built; override with LOONG_UI=dashboard|studio. */
 function resolveUiMode(): "studio" | "dashboard" {
-  const raw = (process.env.LOONG_UI ?? process.env.DRAGON_UI ?? "dashboard").trim().toLowerCase();
+  const raw = (process.env.LOONG_UI ?? process.env.DRAGON_UI ?? "").trim().toLowerCase();
+  if (raw === "dashboard" || raw === "legacy") {
+    return "dashboard";
+  }
   if (raw === "studio" || raw === "loong") {
     return "studio";
   }
-  return "dashboard";
+  return resolveStudioDist() ? "studio" : "dashboard";
 }
 
 function resolveStudioDist(): string | undefined {
