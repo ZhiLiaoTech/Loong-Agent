@@ -52,15 +52,6 @@
 
 **Loong（潜龙 / Qianlong）** 是 **原生 TypeScript、本地优先** 的智能体框架。名称中的「龙」指 **中国龙（🐉）** —— 象征深潜蓄势、审时度势、终而智驭八方（*潜龙在渊，智驭八方*）。
 
-我们在工程上对标并吸收业界主流本地/编码智能体的成熟做法，在 **单一 TypeScript 运行时** 内落地，避免 Python 与 Node 双栈割裂：
-
-| 来源 | 借鉴能力 | Loong 中的对应实现 |
-|------|----------|---------------------|
-| **OpenClaw** | 网关、插件、会话、本地优先 | `@loong/gateway`（HTTP/WS/SSE RPC）、插件发现、按会话队列（Lane）、Dashboard |
-| **Hermes Agent** | 技能进化、记忆、模型路由、轨迹 | `SKILL.md` 与技能工具、可审核记忆候选、Tier 路由与 Fallback、Trajectory 持久化 |
-| **Claude Code** | 编码交互、权限、工程化工具链 | 文件/补丁/Shell/Sandbox、交互式 `ask` 审批、回合级工具循环与事件流 |
-
-与 Hermes 相关的概念在合适处 **用 TypeScript 重新实现**；运行时 **不引入 Python**。
 
 ### 已实现的优势
 
@@ -87,27 +78,9 @@
 7. **从聊天升级到办事** — 大活能拆、能定时、能在常用聊天软件里接需求，少靠人盯。
 8. **敢签、敢上线** — 核心流程有自检，买的不是 Demo，而是能长期用的底气。
 
-### 待补齐的能力
+
 
 > **产品定位**：潜龙是**通用 AI Agent**（命令行、网关控制台、聊天渠道、多智能体分工），**不以 IDE/编辑器深度绑定为目标**（见 [路线图](docs/ROADMAP.md) Phase 5）。
-
-对照当前代码库，与「能长期跑在生产环境里的通用助手」相比，大致 **六成底座已具备、四成需补齐或拉通**（P0 多为「有雏形、未贯通」，P1/P2 为生态与工程效率）。下表按**工程现状**核对，避免把已实现能力误写成缺口。
-
-| 优先级 | 能力缺口 | 代码里已有 | 仍须补齐 |
-|--------|----------|------------|----------|
-| **P0** | **一件事办完（会话续跑）** | 网关：`SessionTurnCoordinator` 排队 + `agent.wait`；`queryLoop` 可在工具触顶后续跑（`gateway/query-loop.ts`） | CLI、`delegation` 与网关**同一套**会话语义；用户一句「帮我把这事办完」的跨轮续跑（不限于工具触顶） |
-| **P0** | **长聊不爆上下文** | 单轮 `Turn Prep` 截断（`core/turn-prep.ts`）；`session_compaction` 注入较早会话摘要（`memory`） | 历史 **tool 结果** 跨轮压缩/摘要并写回模型消息，与 Turn Prep **分层**协作 |
-| **P0** | **对外部署敢开** | `shared-secret` 认证、按路由限速（`gateway/rate-limit.ts`）、非本机监听告警 | 共享/远程部署**默认要求认证**；直连 `tool.invoke` 策略可配置且默认更严 |
-| **P1** | **接上 MCP 工具生态** | stdio/HTTP 客户端、`mcp.json`、`registerMcpTools`（`tools/mcp/*`）；**CLI 启动时已加载** | **网关 / Dashboard 智能体默认加载 MCP**；服务发现、权限与运行观测一体化 |
-| **P1** | **控制台配置真生效** | 网关侧 Profile 合并进 `toTurnInput`（`thinking` / `toolsEnabled` / `memoryEnabled` 等） | **`loong agent` CLI** 走同一套 Profile；Tier / Dashboard 开关在全链路无遗漏 |
-| **P1** | **渠道与多机协同** | Telegram/Slack 适配、`POST /channels/webhook`、Cron 投递 | 减少对外部 bridge 的硬依赖；设备配对、远程 Worker（见 Roadmap） |
-| **P2** | **浏览器与读并行** | 轻量 `browser_*`；可选 `browser_playwright_snapshot`；只读工具**同轮并行**（`core/tool-parallel.ts`） | Playwright 可选依赖的安装与文档；富交互浏览器、流式并行读加强 |
-| **P2** | **工程可维护 / CI** | 功能可用但 `gateway` / `cli` / `memory` 单文件约 2.4k–3.4k 行 | 模块拆分；`test-suite` 分片并行以缩短 CI |
-
-**不在范围内**：IDE 插件、编辑器无缝嵌入（对标 Claude Code 终端/IDE 体验）——与通用 Agent 定位无关，**不纳入路线图**。
-
-**落地与任务清单**：[能力补齐技术方案](docs/GAP_CLOSURE_PLAN.md)（分 Epic、验收标准、可跟踪任务 ID）。
-
 > [!TIP]
 > 延伸阅读：[能力补齐方案](docs/GAP_CLOSURE_PLAN.md) · [架构说明](docs/ARCHITECTURE.md) · [技术架构](docs/TECHNICAL_ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [模块文档](docs/modules/README.md) · [插件指南](docs/PLUGINS.md) · [部署说明](docs/DEPLOYMENT.md)
 >
