@@ -30,7 +30,7 @@
   --><a href="https://pnpm.io/">
     <img src="https://img.shields.io/badge/pnpm-10.11-F69220?style=flat-square&logo=pnpm&logoColor=white" alt="pnpm">
   </a><!--
-  --><img src="https://img.shields.io/badge/架构-本地优先-C41E3A?style=flat-square" alt="本地优先"><!--
+  --><img src="https://img.shields.io/badge/架构-本地优先-C41E3A?style=flat-square" alt="本地优先">
 </p>
 
 <p align="center">
