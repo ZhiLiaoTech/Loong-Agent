@@ -19,6 +19,8 @@ export interface FileReadOutput {
 export interface FileSearchInput {
   query: string;
   path?: string;
+  regex?: boolean;
+  caseInsensitive?: boolean;
   maxResults?: number;
   maxFiles?: number;
   maxBytesPerFile?: number;
@@ -61,6 +63,8 @@ const fileSearchSchema: ToolJsonSchema = {
   properties: {
     query: { type: "string" },
     path: { type: "string" },
+    regex: { type: "boolean" },
+    caseInsensitive: { type: "boolean" },
     maxResults: { type: "number" },
     maxFiles: { type: "number" },
     maxBytesPerFile: { type: "number" },
@@ -124,6 +128,7 @@ export function createFileSearchTool(): ToolDefinition<FileSearchInput, FileSear
           input.maxBytesPerFile ?? DEFAULT_SEARCH_MAX_BYTES_PER_FILE,
           ABSOLUTE_MAX_BYTES_PER_FILE,
         );
+        const matcher = buildLineMatcher(input);
         const matches: FileSearchMatch[] = [];
         let filesScanned = 0;
 
@@ -136,7 +141,7 @@ export function createFileSearchTool(): ToolDefinition<FileSearchInput, FileSear
           const lines = textFile.content.split(/\r?\n/);
           for (let index = 0; index < lines.length; index += 1) {
             const text = lines[index] ?? "";
-            if (text.includes(input.query)) {
+            if (matcher(text)) {
               matches.push({
                 path: path.relative(workspaceRoot, filePath),
                 line: index + 1,
@@ -163,6 +168,29 @@ export function createFileSearchTool(): ToolDefinition<FileSearchInput, FileSear
       });
     },
   };
+}
+
+// Build a per-line predicate. Default is a plain substring scan; `regex: true`
+// compiles the query as a JavaScript RegExp. The regex runs per line against
+// bounded file content, which limits catastrophic-backtracking exposure.
+function buildLineMatcher(input: FileSearchInput): (text: string) => boolean {
+  if (input.regex) {
+    let pattern: RegExp;
+    try {
+      pattern = new RegExp(input.query, input.caseInsensitive ? "i" : "");
+    } catch (error) {
+      throw new Error(`Invalid regex: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return text => {
+      pattern.lastIndex = 0;
+      return pattern.test(text);
+    };
+  }
+  if (input.caseInsensitive) {
+    const needle = input.query.toLowerCase();
+    return text => text.toLowerCase().includes(needle);
+  }
+  return text => text.includes(input.query);
 }
 
 async function safelyInvoke<TOutput>(
@@ -201,6 +229,8 @@ function parseFileSearchInput(input: unknown): FileSearchInput {
   return {
     query: input.query,
     ...(typeof input.path === "string" ? { path: input.path } : {}),
+    ...(typeof input.regex === "boolean" ? { regex: input.regex } : {}),
+    ...(typeof input.caseInsensitive === "boolean" ? { caseInsensitive: input.caseInsensitive } : {}),
     ...(typeof input.maxResults === "number" ? { maxResults: Math.max(1, Math.floor(input.maxResults)) } : {}),
     ...(typeof input.maxFiles === "number" ? { maxFiles: Math.max(1, Math.floor(input.maxFiles)) } : {}),
     ...(typeof input.maxBytesPerFile === "number"

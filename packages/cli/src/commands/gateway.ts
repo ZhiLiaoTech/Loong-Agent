@@ -55,6 +55,7 @@ import { waitForShutdown } from "../shutdown.js";
 export interface ParsedGatewayArgs {
   config: GatewayConfig;
   allowWrite: boolean;
+  allowExec: boolean;
   sessionDir: string;
   memoryDir: string;
   cronJobsFile: string;
@@ -96,6 +97,7 @@ export async function runGateway(args: string[]): Promise<void> {
   const runtimeBundle = await createRuntime({
     mode: "agent",
     allowWrite: parsed.allowWrite,
+    ...(parsed.allowExec ? { allowExec: true } : {}),
     sessionDir: parsed.sessionDir,
     memoryDir: parsed.memoryDir,
     ...(parsed.memoryBackendId !== undefined ? { memoryBackendId: parsed.memoryBackendId } : {}),
@@ -196,6 +198,7 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
   }
 
   let allowWrite = false;
+  let allowExec = process.env.LOONG_ALLOW_EXEC?.trim() === "1";
   const dataRoot = resolveLoongDataRoot();
   let sessionDir = process.env.LOONG_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
   let memoryDir = process.env.LOONG_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");
@@ -209,6 +212,10 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
     const arg = args[index];
     if (arg === "--allow-write") {
       allowWrite = true;
+      continue;
+    }
+    if (arg === "--allow-exec") {
+      allowExec = true;
       continue;
     }
     if (arg === "--host") {
@@ -409,6 +416,7 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
   return {
     config,
     allowWrite,
+    allowExec,
     sessionDir: path.resolve(sessionDir),
     memoryDir: path.resolve(memoryDir),
     cronJobsFile: path.resolve(cronJobsFile),

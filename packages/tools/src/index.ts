@@ -69,9 +69,29 @@ export {
   type FilePatchOutput,
 } from "./builtin/patch.js";
 export {
+  createFileWriteTool,
+  type FileWriteInput,
+  type FileWriteOutput,
+} from "./builtin/file-write.js";
+export {
+  createShellRunTool,
+  type ShellRunInput,
+  type ShellRunOutput,
+} from "./builtin/shell-run.js";
+export {
+  createWebSearchTool,
+  type WebSearchConfig,
+  type WebSearchConfigResolver,
+  type WebSearchInput,
+  type WebSearchOutput,
+  type WebSearchProvider,
+  type WebSearchResult,
+} from "./builtin/web-search.js";
+export {
   isPathInside,
   resolveWorkspacePath,
   resolveScopedPath,
+  resolveScopedPathForCreate,
   resolveScopedRoot,
 } from "./builtin/workspace.js";
 export {

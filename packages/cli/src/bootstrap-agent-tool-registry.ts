@@ -6,9 +6,12 @@ import {
   createFilePatchTool,
   createFileReadTool,
   createFileSearchTool,
+  createFileWriteTool,
   createSandboxExecTool,
   createShellExecTool,
+  createShellRunTool,
   createToolRegistry,
+  createWebSearchTool,
   defaultMcpConfigPath,
   loadMcpConfig,
   registerMcpTools,
@@ -31,6 +34,8 @@ export interface BootstrapAgentToolRegistryOptions {
   memoryDir: string;
   trajectoryStore?: TrajectoryStore;
   runtime?: (() => LoongAgentRuntime | undefined);
+  /** When true, register the arbitrary-command shell_run tool. Default false. */
+  allowExec?: boolean;
   /** When true (default), register MCP tools from config. */
   registerMcp?: boolean;
   mcpConfigPath?: string;
@@ -52,9 +57,17 @@ export function createAgentToolDefinitions(options: BootstrapAgentToolRegistryOp
     createShellExecTool(),
     createSandboxExecTool(),
     createFilePatchTool(),
+    createFileWriteTool(),
+    createWebSearchTool(),
     ...createMemoryTools(options.memoryStore),
     ...createMemoryCandidateTools({ rootDir: options.memoryDir, store: options.memoryStore }),
   ];
+  if (options.allowExec) {
+    // Arbitrary command execution is opt-in: only register when explicitly
+    // enabled so the tool does not even exist by default. It stays permission
+    // "ask", so each call is still approved.
+    tools.push(createShellRunTool());
+  }
   if (options.runtime !== undefined) {
     tools.push(createRuntimeDelegationTool({
       runtime: options.runtime,

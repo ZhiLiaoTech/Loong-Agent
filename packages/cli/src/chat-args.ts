@@ -12,6 +12,7 @@ export interface ParsedChatArgs {
   modelFallbacks?: string[];
   noSession: boolean;
   allowWrite: boolean;
+  allowExec: boolean;
   failOnAsk: boolean;
   skillRoots?: string[];
   pluginRoots: string[];
@@ -43,6 +44,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
   let profileId = mode === "agent" ? process.env.LOONG_AGENT_PROFILE?.trim() || undefined : undefined;
   let noSession = false;
   let allowWrite = false;
+  let allowExec = mode === "agent" && process.env.LOONG_ALLOW_EXEC?.trim() === "1";
   let failOnAsk = false;
   const defaultSkillRoots = mode === "agent" ? configuredSkillRoots() : [];
   const skillRoots: string[] = [];
@@ -57,6 +59,10 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     }
     if (arg === "--allow-write") {
       allowWrite = true;
+      continue;
+    }
+    if (mode === "agent" && arg === "--allow-exec") {
+      allowExec = true;
       continue;
     }
     if (arg === "--fail-on-ask") {
@@ -310,6 +316,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     ...(modelFallbacks.length > 0 ? { modelFallbacks } : {}),
     noSession,
     allowWrite,
+    allowExec,
     failOnAsk,
     pluginRoots: uniquePaths(pluginRoots),
     ...(mode === "agent" ? { skillRoots: uniquePaths([...skillRoots, ...defaultSkillRoots]) } : {}),

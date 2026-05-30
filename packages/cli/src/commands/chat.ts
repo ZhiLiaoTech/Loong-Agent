@@ -48,6 +48,7 @@ export async function runChat(mode: "chat" | "agent", args: string[]): Promise<v
   const runtimeBundle = await createRuntime({
     mode,
     allowWrite: parsed.allowWrite,
+    ...(parsed.allowExec ? { allowExec: true } : {}),
     ...(parsed.failOnAsk ? { failOnPermissionDeny: true } : {}),
     sessionDir: parsed.sessionDir,
     memoryDir: parsed.memoryDir,

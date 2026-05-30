@@ -53,6 +53,7 @@ const MAX_PLUGIN_MEMORY_METADATA_OBJECT_KEYS = 100;
 export interface RuntimeFactoryOptions {
   mode: "chat" | "agent";
   allowWrite: boolean;
+  allowExec?: boolean;
   failOnPermissionDeny?: boolean;
   sessionDir: string;
   memoryDir: string;
@@ -166,6 +167,7 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
             ...(options.allowWrite
               ? [
                   { toolName: "file_patch", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
+                  { toolName: "file_write", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
                   { toolName: "skill_create", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
                   { toolName: "skill_improve", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
                   { toolName: "memory_candidate_promote", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
@@ -183,6 +185,7 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
         memoryDir: options.memoryDir,
         ...(trajectoryStore ? { trajectoryStore } : {}),
         runtime: () => runtime,
+        ...(options.allowExec ? { allowExec: true } : {}),
       });
       toolRegistry = bootstrapped.registry;
       for (const tool of pluginTools) {
@@ -219,8 +222,13 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
               "Only use shell_exec for conservative read-only commands.",
               "Use sandbox_exec for conservative read-only commands in local, Docker, or SSH sandboxes when the user provides the target; keep the default inspect profile unless broader git-read, search-read, or repo-read access is explicitly useful.",
               "Use browser_snapshot for bounded HTTP(S) page inspection, browser_playwright_snapshot for JavaScript-rendered pages when Playwright is installed, and browser_form_submit for basic GET/POST HTML forms when the user asks to inspect or submit a web page.",
+              "Use file_search with regex:true for pattern-based code search when a plain substring is not enough.",
+              "Use web_search to look up information on the web when configured (SearXNG, Tavily, or Brave).",
+              options.allowExec
+                ? "Use shell_run to execute arbitrary commands (build, test, install, scripts) inside the workspace; each call requires approval. Prefer the read-only shell_exec/sandbox_exec for inspection."
+                : undefined,
               options.allowWrite
-                ? "You may use file_patch for exact text replacements and skill_create/skill_improve for reviewable skill updates when requested."
+                ? "You may use file_patch for exact text replacements, file_write to create or overwrite files, and skill_create/skill_improve for reviewable skill updates when requested."
                 : "Write tools require CLI approval and may be denied.",
               "Summarize findings clearly and mention any tool errors.",
             ].filter(Boolean).join("\n"),
@@ -297,10 +305,11 @@ async function discoverPluginRoots(pluginRoots: string[]): Promise<string[]> {
   const discovered: string[] = [];
   const seen = new Set<string>();
   for (const rootInput of pluginRoots) {
-    const root = await realpath(path.resolve(rootInput));
-    const rootStat = await stat(root);
-    if (!rootStat.isDirectory()) {
-      throw new Error(`Plugin root must be a directory: ${root}`);
+    // A configured plugin root that does not exist yet (e.g. a fresh workspace
+    // without .loong/plugins) is skipped silently rather than crashing the run.
+    const root = await tryRealDirectory(path.resolve(rootInput));
+    if (!root) {
+      continue;
     }
 
     if (await hasPluginManifest(root)) {

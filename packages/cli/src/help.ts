@@ -3,8 +3,8 @@ export function printHelp(): void {
 
 Usage:
   loong chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--plugin-root <path>] [--attach <path>]... <message>
-  loong agent [--session <id>] [--session-dir <path>] [--no-session] [--profile <id>] [--allow-write] [--fail-on-ask] [--query-loop] [--finish-task] [--query-loop-max-turns <n>] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--attach <path>]... <message>
-  loong gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>] [--model-timeout-ms <ms>] [--model-timeout-sec <sec>]
+  loong agent [--session <id>] [--session-dir <path>] [--no-session] [--profile <id>] [--allow-write] [--allow-exec] [--fail-on-ask] [--query-loop] [--finish-task] [--query-loop-max-turns <n>] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--attach <path>]... <message>
+  loong gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--allow-exec] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>] [--model-timeout-ms <ms>] [--model-timeout-sec <sec>]
   loong cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] [--once] [--interval-ms <ms>]
   loong plugins list
   loong plugins install [-l|--link] <plugin-path>
@@ -29,8 +29,14 @@ Tiers (multi-model scheduling):
 
 Permissions:
   Write tools prompt for approval in an interactive terminal.
-  Use --allow-write to allow file_patch, skill_create, skill_improve, and memory candidate promote/reject without prompting.
+  Use --allow-write to allow file_patch, file_write, skill_create, skill_improve, and memory candidate promote/reject without prompting.
+  Use --allow-exec (or LOONG_ALLOW_EXEC=1) to register shell_run for arbitrary commands (build/test/install/scripts), confined to the workspace and still approved per call. Off by default; without it only the read-only shell_exec/sandbox_exec allowlist is available.
   Use --fail-on-ask to fail the turn when a tool needs permission but no interactive CLI handler is available (CI/non-TTY).
+
+Web search:
+  web_search is available in agent mode and resolves its backend from the environment.
+  Set LOONG_SEARXNG_URL for a self-hosted SearXNG, LOONG_TAVILY_API_KEY for Tavily, or LOONG_BRAVE_API_KEY for Brave.
+  Pin a backend with LOONG_WEB_SEARCH_PROVIDER=searxng|tavily|brave; otherwise the first configured one is used.
 
 Session:
   Sessions are stored as JSONL under .loong/sessions by default.
