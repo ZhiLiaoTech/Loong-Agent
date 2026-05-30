@@ -631,12 +631,12 @@ export function useRunChat(
         }));
       }
 
-      type AgentRpcPayload =
-        | { result: AgentRunResult; events?: unknown[] }
-        | { queued: true; queueTurnId: string; sessionId: string; position: number };
-      let payload = await client.rpc<AgentRpcPayload>("agent", params);
+      type AgentRpcResolved = { result: AgentRunResult; events?: unknown[] };
+      type AgentRpcQueued = { queued: true; queueTurnId: string; sessionId: string; position: number };
+      type AgentRpcPayload = AgentRpcResolved | AgentRpcQueued;
+      let payload: AgentRpcPayload = await client.rpc<AgentRpcPayload>("agent", params);
       if (payload && typeof payload === "object" && "queued" in payload && payload.queued) {
-        payload = await client.rpc<{ result: AgentRunResult; events?: unknown[] }>("agent.wait", {
+        payload = await client.rpc<AgentRpcResolved>("agent.wait", {
           queueTurnId: payload.queueTurnId,
         });
       }

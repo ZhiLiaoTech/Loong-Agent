@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      optional:
+        specifier: ^0.1.4
+        version: 0.1.4
     devDependencies:
       '@types/node':
         specifier: ^24.10.1
@@ -1377,6 +1381,9 @@ packages:
   option@0.2.4:
     resolution: {integrity: sha512-pkEqbDyl8ou5cpq+VsnQbe/WlEy5qS7xPzMS1U55OCG9KPvwFD46zDbxQIj3egJSFc3D+XhYOPUzz49zQAVy7A==}
 
+  optional@0.1.4:
+    resolution: {integrity: sha512-gtvrrCfkE08wKcgXaVwQVgwEQ8vel2dc5DDBn9RLQZ3YtmtkBss6A2HY6BnJH4N/4Ku97Ri/SF8sNWE2225WJw==}
+
   pako@1.0.11:
     resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
 
@@ -2257,6 +2264,8 @@ snapshots:
   node-releases@2.0.44: {}
 
   option@0.2.4: {}
+
+  optional@0.1.4: {}
 
   pako@1.0.11: {}
 
