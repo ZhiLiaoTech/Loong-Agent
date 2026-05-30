@@ -1,0 +1,7 @@
+.banner {
+  padding: 10px 16px;
+  background: var(--loong-accent-glow);
+  border-bottom: 1px solid var(--loong-border);
+  color: var(--loong-text-secondary);
+  font-size: 13px;
+}

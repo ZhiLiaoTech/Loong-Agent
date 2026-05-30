@@ -1,10 +1,10 @@
-# @dragon/memory 技术方案
+# @loong/memory 技术方案
 
 ## 1. 职责边界
 
 **负责**：持久记忆（`MemoryStore`）、会话 transcript（`SessionStore`）、轨迹（`TrajectoryStore`）、Markdown 记忆上下文、会话压缩上下文、记忆候选审核（pending → promote/reject）、记忆/轨迹相关 Agent 工具与 Lifecycle Hook。
 
-**不负责**：Agent 主循环（依赖 `@dragon/core` 类型与调用方注入）。
+**不负责**：Agent 主循环（依赖 `@loong/core` 类型与调用方注入）。
 
 ## 2. 对外 API（按域）
 
@@ -24,7 +24,7 @@
 
 | 后端 | 路径/技术 | 检索 |
 |------|-----------|------|
-| `file`（默认） | `.dragon/memory/records.jsonl` | 令牌重叠打分（非 FTS） |
+| `file`（默认） | `.loong/memory/records.jsonl` | 令牌重叠打分（非 FTS） |
 | `sqlite` | SQLite + FTS5 | BM25，回退 LIKE |
 
 ### 3.2 会话与压缩
@@ -49,15 +49,15 @@
 
 ### 3.5 依赖
 
-- `@dragon/core` — `DragonContextProvider`、`DragonLifecycleHook`、`DragonTrajectoryStore`
-- `@dragon/tools` — 工具定义
+- `@loong/core` — `LoongContextProvider`、`LoongLifecycleHook`、`LoongTrajectoryStore`
+- `@loong/tools` — 工具定义
 
 ## 4. 集成方式
 
 CLI `createRuntime()`：
 
 - `createFileSessionStore`、`createFileTrajectoryStore`
-- 按 `DRAGON_MEMORY_BACKEND` 选择 file/sqlite/插件后端
+- 按 `LOONG_MEMORY_BACKEND` 选择 file/sqlite/插件后端
 - 注册 context providers 与 memory tools
 - Gateway 通过 RPC `memory.candidates.*` 调用同名工具
 
@@ -87,4 +87,4 @@ CLI `createRuntime()`：
 1. 拆分为 `stores/`、`context/`、`tools/`、`candidates/` 子目录。
 2. File 后端增加索引文件或迁移默认 sqlite。
 3. 候选 promote 使用文件锁或原子 rename 策略。
-4. 将 `DragonTrajectoryStore` 接口保留在 core，实现留在 memory 包（现状）— 文档明确「ports in core, adapters in memory」。
+4. 将 `LoongTrajectoryStore` 接口保留在 core，实现留在 memory 包（现状）— 文档明确「ports in core, adapters in memory」。

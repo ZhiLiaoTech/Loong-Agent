@@ -1,4 +1,4 @@
-import { normalizeProviderModelEntries, type DragonProviderModelCatalogEntry } from "@dragon/model-catalog";
+import { normalizeProviderModelEntries, type LoongProviderModelCatalogEntry } from "@loong/model-catalog";
 import { ProviderError, sanitizeProviderBody } from "./errors.js";
 import { readServerSentEvents } from "./sse.js";
 import { readThinkingLevel } from "./thinking.js";
@@ -16,7 +16,7 @@ export interface OpenAICompatibleProviderOptions {
   apiKey: string;
   baseUrl?: string;
   defaultModel?: string;
-  models?: readonly DragonProviderModelCatalogEntry[];
+  models?: readonly LoongProviderModelCatalogEntry[];
   supportsToolCalling?: boolean;
   headers?: Record<string, string>;
   fetchImpl?: typeof fetch;
@@ -141,18 +141,18 @@ export function createOpenAICompatibleProvider(
 export function createOpenAICompatibleProviderFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): ModelProvider | undefined {
-  const apiKey = env.DRAGON_OPENAI_API_KEY ?? env.OPENAI_API_KEY;
+  const apiKey = env.LOONG_OPENAI_API_KEY ?? env.OPENAI_API_KEY;
   if (!apiKey) {
     return undefined;
   }
 
   const options: OpenAICompatibleProviderOptions = {
-    id: env.DRAGON_OPENAI_PROVIDER_ID ?? "openai",
-    displayName: env.DRAGON_OPENAI_DISPLAY_NAME ?? "OpenAI Compatible",
+    id: env.LOONG_OPENAI_PROVIDER_ID ?? "openai",
+    displayName: env.LOONG_OPENAI_DISPLAY_NAME ?? "OpenAI Compatible",
     apiKey,
-    defaultModel: env.DRAGON_OPENAI_MODEL ?? env.OPENAI_MODEL ?? "gpt-4.1-mini",
+    defaultModel: env.LOONG_OPENAI_MODEL ?? env.OPENAI_MODEL ?? "gpt-4.1-mini",
   };
-  const baseUrl = env.DRAGON_OPENAI_BASE_URL ?? env.OPENAI_BASE_URL;
+  const baseUrl = env.LOONG_OPENAI_BASE_URL ?? env.OPENAI_BASE_URL;
   if (baseUrl !== undefined) {
     options.baseUrl = baseUrl;
   }

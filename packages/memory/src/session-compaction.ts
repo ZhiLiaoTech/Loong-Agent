@@ -1,6 +1,6 @@
 import { lstat, open } from "node:fs/promises";
 import path from "node:path";
-import type { DragonContextProvider } from "@dragon/core";
+import type { LoongContextProvider } from "@loong/core";
 import { parseTurnRecord, sessionPath } from "./file-session-store.js";
 import type { SessionMessage, SessionTurnRecord } from "./memory-types.js";
 import { summarizeText } from "./memory-text.js";
@@ -31,8 +31,8 @@ export interface SessionCompactionContextProviderOptions {
 
 export function createSessionCompactionContextProvider(
   options: SessionCompactionContextProviderOptions = {},
-): DragonContextProvider {
-  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "sessions"));
+): LoongContextProvider {
+  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "sessions"));
   const recentMessages = clampPositiveInteger(
     options.recentMessages,
     DEFAULT_SESSION_COMPACTION_RECENT_MESSAGES,

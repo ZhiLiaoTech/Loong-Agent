@@ -1,6 +1,6 @@
-# @dragon/studio
+# @loong/studio
 
-Loong workbench UI (Browser surface). Replaces standalone `@dragon/gateway-dashboard` for day-to-day development.
+Loong workbench UI (Browser surface). Replaces standalone `@loong/gateway-dashboard` for day-to-day development.
 
 ## Dev
 
@@ -12,12 +12,12 @@ node packages/cli/dist/index.js gateway
 corepack pnpm studio:dev
 ```
 
-Set the Gateway shared secret under **Settings** when auth is enabled (`dragon.gateway.secret` in sessionStorage).
+Set the Gateway shared secret under **Settings** when auth is enabled (`loong.gateway.secret` in sessionStorage).
 
 ## Build
 
 ```bash
-corepack pnpm --filter @dragon/studio build
+corepack pnpm --filter @loong/studio build
 ```
 
 Output: `packages/studio/dist/` (multi-file Vite bundle).
@@ -25,7 +25,7 @@ Output: `packages/studio/dist/` (multi-file Vite bundle).
 ## Serve via Gateway
 
 ```bash
-corepack pnpm --filter @dragon/studio build
+corepack pnpm --filter @loong/studio build
 set LOONG_UI=studio
 node packages/cli/dist/index.js gateway
 ```
@@ -40,7 +40,7 @@ See [docs/studio-routes.md](../../docs/studio-routes.md).
 
 ## Architecture
 
-- `@dragon/client` — Gateway RPC/SSE
-- `@dragon/host` — browser host (no process lifecycle in dev)
-- `@dragon/ui` — Loong tokens + shell components
+- `@loong/client` — Gateway RPC/SSE
+- `@loong/host` — browser host (no process lifecycle in dev)
+- `@loong/ui` — Loong tokens + shell components
 - `gateway-dashboard` workspaces — imported via `@dashboard` alias (Run, Models, Agents)

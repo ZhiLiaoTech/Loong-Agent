@@ -1,5 +1,5 @@
 {
-  "name": "@dragon/model-catalog",
+  "name": "@loong/model-catalog",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",

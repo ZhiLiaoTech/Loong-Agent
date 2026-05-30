@@ -1,6 +1,6 @@
-export type DragonModelStatus = "stable" | "preview" | "deprecated" | "unknown";
+export type LoongModelStatus = "stable" | "preview" | "deprecated" | "unknown";
 
-export interface DragonModelCapabilities {
+export interface LoongModelCapabilities {
   toolCalling?: boolean;
   streaming?: boolean;
   vision?: boolean;
@@ -8,37 +8,37 @@ export interface DragonModelCapabilities {
   jsonMode?: boolean;
 }
 
-export interface DragonProviderModelCatalogEntry {
+export interface LoongProviderModelCatalogEntry {
   id: string;
   displayName?: string;
   aliases?: readonly string[];
   contextWindow?: number;
   maxOutputTokens?: number;
-  capabilities?: DragonModelCapabilities;
-  status?: DragonModelStatus;
+  capabilities?: LoongModelCapabilities;
+  status?: LoongModelStatus;
   default?: boolean;
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonModelCatalogEntry extends DragonProviderModelCatalogEntry {
+export interface LoongModelCatalogEntry extends LoongProviderModelCatalogEntry {
   providerId: string;
   providerDisplayName?: string;
 }
 
-export interface DragonModelProviderCatalogSource {
+export interface LoongModelProviderCatalogSource {
   id: string;
   displayName?: string;
   defaultModel?: string;
   supportsToolCalling?: boolean;
-  models?: readonly DragonProviderModelCatalogEntry[];
+  models?: readonly LoongProviderModelCatalogEntry[];
 }
 
-export interface DragonModelCatalog {
-  register(entry: DragonModelCatalogEntry): void;
-  list(): readonly DragonModelCatalogEntry[];
-  listByProvider(providerId: string): readonly DragonModelCatalogEntry[];
-  find(providerId: string, modelIdOrAlias: string): DragonModelCatalogEntry | undefined;
-  resolve(modelRef: string): DragonModelCatalogEntry | undefined;
+export interface LoongModelCatalog {
+  register(entry: LoongModelCatalogEntry): void;
+  list(): readonly LoongModelCatalogEntry[];
+  listByProvider(providerId: string): readonly LoongModelCatalogEntry[];
+  find(providerId: string, modelIdOrAlias: string): LoongModelCatalogEntry | undefined;
+  resolve(modelRef: string): LoongModelCatalogEntry | undefined;
 }
 
 export interface NormalizeProviderModelEntriesOptions {
@@ -46,22 +46,22 @@ export interface NormalizeProviderModelEntriesOptions {
   supportsToolCalling?: boolean;
 }
 
-const MODEL_STATUSES = new Set<DragonModelStatus>(["stable", "preview", "deprecated", "unknown"]);
+const MODEL_STATUSES = new Set<LoongModelStatus>(["stable", "preview", "deprecated", "unknown"]);
 const MAX_ID_LENGTH = 200;
 const MAX_DISPLAY_NAME_LENGTH = 240;
 const MAX_ALIAS_COUNT = 20;
 const MAX_METADATA_KEYS = 100;
 
-export class DefaultDragonModelCatalog implements DragonModelCatalog {
-  readonly #entries = new Map<string, DragonModelCatalogEntry>();
+export class DefaultLoongModelCatalog implements LoongModelCatalog {
+  readonly #entries = new Map<string, LoongModelCatalogEntry>();
 
-  constructor(entries: readonly DragonModelCatalogEntry[] = []) {
+  constructor(entries: readonly LoongModelCatalogEntry[] = []) {
     for (const entry of entries) {
       this.register(entry);
     }
   }
 
-  register(entry: DragonModelCatalogEntry): void {
+  register(entry: LoongModelCatalogEntry): void {
     const normalized = normalizeModelCatalogEntry(entry);
     const key = catalogKey(normalized.providerId, normalized.id);
     if (this.#entries.has(key)) {
@@ -70,16 +70,16 @@ export class DefaultDragonModelCatalog implements DragonModelCatalog {
     this.#entries.set(key, normalized);
   }
 
-  list(): readonly DragonModelCatalogEntry[] {
+  list(): readonly LoongModelCatalogEntry[] {
     return Object.freeze([...this.#entries.values()]);
   }
 
-  listByProvider(providerId: string): readonly DragonModelCatalogEntry[] {
+  listByProvider(providerId: string): readonly LoongModelCatalogEntry[] {
     const normalizedProviderId = normalizeIdentifier(providerId, "provider id");
     return Object.freeze([...this.#entries.values()].filter(entry => entry.providerId === normalizedProviderId));
   }
 
-  find(providerId: string, modelIdOrAlias: string): DragonModelCatalogEntry | undefined {
+  find(providerId: string, modelIdOrAlias: string): LoongModelCatalogEntry | undefined {
     const normalizedProviderId = normalizeIdentifier(providerId, "provider id");
     const normalizedModelRef = normalizeIdentifier(modelIdOrAlias, "model id");
     return [...this.#entries.values()].find(entry =>
@@ -88,7 +88,7 @@ export class DefaultDragonModelCatalog implements DragonModelCatalog {
     );
   }
 
-  resolve(modelRef: string): DragonModelCatalogEntry | undefined {
+  resolve(modelRef: string): LoongModelCatalogEntry | undefined {
     const normalizedRef = normalizeIdentifier(modelRef, "model ref");
     const separatorIndex = findProviderSeparator(normalizedRef);
     if (separatorIndex > 0) {
@@ -107,8 +107,8 @@ export class DefaultDragonModelCatalog implements DragonModelCatalog {
   }
 }
 
-export function createModelCatalog(entries: readonly DragonModelCatalogEntry[] = []): DragonModelCatalog {
-  return new DefaultDragonModelCatalog(entries);
+export function createModelCatalog(entries: readonly LoongModelCatalogEntry[] = []): LoongModelCatalog {
+  return new DefaultLoongModelCatalog(entries);
 }
 
 export interface ModelRefCarrier {
@@ -116,15 +116,15 @@ export interface ModelRefCarrier {
 }
 
 export function createModelCatalogFromProviders(
-  providers: readonly DragonModelProviderCatalogSource[],
-): DragonModelCatalog {
+  providers: readonly LoongModelProviderCatalogSource[],
+): LoongModelCatalog {
   return createModelCatalog(catalogEntriesFromProviders(providers));
 }
 
 /** Canonicalize bare model ids and aliases to `provider:model` when unambiguous. */
 export function applyModelCatalogToParams<T extends ModelRefCarrier>(
   params: T,
-  catalog: DragonModelCatalog | undefined,
+  catalog: LoongModelCatalog | undefined,
 ): T {
   const modelRef = params.model?.trim();
   if (!modelRef || !catalog) {
@@ -141,8 +141,8 @@ export function applyModelCatalogToParams<T extends ModelRefCarrier>(
 }
 
 export function catalogEntriesFromProviders(
-  providers: readonly DragonModelProviderCatalogSource[],
-): readonly DragonModelCatalogEntry[] {
+  providers: readonly LoongModelProviderCatalogSource[],
+): readonly LoongModelCatalogEntry[] {
   return Object.freeze(providers.flatMap(provider => {
     const providerId = normalizeIdentifier(provider.id, "provider id");
     const providerDisplayName = provider.displayName?.trim();
@@ -159,9 +159,9 @@ export function catalogEntriesFromProviders(
 }
 
 export function normalizeProviderModelEntries(
-  entries: readonly DragonProviderModelCatalogEntry[],
+  entries: readonly LoongProviderModelCatalogEntry[],
   options: NormalizeProviderModelEntriesOptions = {},
-): readonly DragonProviderModelCatalogEntry[] {
+): readonly LoongProviderModelCatalogEntry[] {
   const normalized = entries.map(normalizeProviderModelEntry);
   const defaultModel = options.defaultModel?.trim();
   const withDefault = defaultModel
@@ -177,7 +177,7 @@ export function normalizeProviderModelEntries(
   return Object.freeze(withDefault.map(entry => Object.freeze(entry)));
 }
 
-export function normalizeModelCatalogEntry(entry: DragonModelCatalogEntry): DragonModelCatalogEntry {
+export function normalizeModelCatalogEntry(entry: LoongModelCatalogEntry): LoongModelCatalogEntry {
   const providerId = normalizeIdentifier(entry.providerId, "provider id");
   const providerDisplayName = entry.providerDisplayName?.trim();
   const model = normalizeProviderModelEntry(entry);
@@ -188,7 +188,7 @@ export function normalizeModelCatalogEntry(entry: DragonModelCatalogEntry): Drag
   });
 }
 
-function normalizeProviderModelEntry(entry: DragonProviderModelCatalogEntry): DragonProviderModelCatalogEntry {
+function normalizeProviderModelEntry(entry: LoongProviderModelCatalogEntry): LoongProviderModelCatalogEntry {
   if (!isRecord(entry)) {
     throw new Error("Model catalog entry must be an object.");
   }
@@ -200,7 +200,7 @@ function normalizeProviderModelEntry(entry: DragonProviderModelCatalogEntry): Dr
   const contextWindow = normalizePositiveInteger(entry.contextWindow, "contextWindow");
   const maxOutputTokens = normalizePositiveInteger(entry.maxOutputTokens, "maxOutputTokens");
   const metadata = normalizeMetadata(entry.metadata);
-  const normalized: DragonProviderModelCatalogEntry = {
+  const normalized: LoongProviderModelCatalogEntry = {
     id,
   };
   if (displayName) {
@@ -231,10 +231,10 @@ function normalizeProviderModelEntry(entry: DragonProviderModelCatalogEntry): Dr
 }
 
 function ensureDefaultModelEntry(
-  entries: readonly DragonProviderModelCatalogEntry[],
+  entries: readonly LoongProviderModelCatalogEntry[],
   defaultModel: string,
   supportsToolCalling: boolean | undefined,
-): DragonProviderModelCatalogEntry[] {
+): LoongProviderModelCatalogEntry[] {
   const defaultId = normalizeIdentifier(defaultModel, "default model");
   const foundIndex = entries.findIndex(entry => entry.id === defaultId || entry.aliases?.includes(defaultId) === true);
   if (foundIndex === -1) {
@@ -275,14 +275,14 @@ function normalizeAliases(values: readonly string[] | undefined, modelId: string
   return aliases;
 }
 
-function normalizeCapabilities(value: DragonModelCapabilities | undefined): DragonModelCapabilities | undefined {
+function normalizeCapabilities(value: LoongModelCapabilities | undefined): LoongModelCapabilities | undefined {
   if (value === undefined) {
     return undefined;
   }
   if (!isRecord(value)) {
     throw new Error("Model capabilities must be an object.");
   }
-  const normalized: DragonModelCapabilities = {};
+  const normalized: LoongModelCapabilities = {};
   copyBooleanCapability(value, normalized, "toolCalling");
   copyBooleanCapability(value, normalized, "streaming");
   copyBooleanCapability(value, normalized, "vision");
@@ -291,7 +291,7 @@ function normalizeCapabilities(value: DragonModelCapabilities | undefined): Drag
   return Object.keys(normalized).length > 0 ? Object.freeze(normalized) : undefined;
 }
 
-function copyBooleanCapability(source: Record<string, unknown>, target: DragonModelCapabilities, key: keyof DragonModelCapabilities): void {
+function copyBooleanCapability(source: Record<string, unknown>, target: LoongModelCapabilities, key: keyof LoongModelCapabilities): void {
   const value = source[key];
   if (value === undefined) {
     return;
@@ -302,14 +302,14 @@ function copyBooleanCapability(source: Record<string, unknown>, target: DragonMo
   target[key] = value;
 }
 
-function normalizeStatus(value: DragonModelStatus | undefined): DragonModelStatus | undefined {
+function normalizeStatus(value: LoongModelStatus | undefined): LoongModelStatus | undefined {
   if (value === undefined) {
     return undefined;
   }
-  if (typeof value !== "string" || !MODEL_STATUSES.has(value as DragonModelStatus)) {
+  if (typeof value !== "string" || !MODEL_STATUSES.has(value as LoongModelStatus)) {
     throw new Error("Model status must be stable, preview, deprecated, or unknown.");
   }
-  return value as DragonModelStatus;
+  return value as LoongModelStatus;
 }
 
 function normalizePositiveInteger(value: number | undefined, fieldName: string): number | undefined {

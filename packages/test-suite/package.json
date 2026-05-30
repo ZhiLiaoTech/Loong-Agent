@@ -1,5 +1,5 @@
 {
-  "name": "@dragon/test-suite",
+  "name": "@loong/test-suite",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,20 +11,20 @@
     "test:shards": "node scripts/run-shards.mjs"
   },
   "dependencies": {
-    "@dragon/channels": "workspace:*",
-    "@dragon/client": "workspace:*",
-    "@dragon/core": "workspace:*",
-    "@dragon/cron": "workspace:*",
-    "@dragon/delegation": "workspace:*",
-    "@dragon/gateway": "workspace:*",
-    "@dragon/memory": "workspace:*",
-    "@dragon/model-catalog": "workspace:*",
-    "@dragon/providers": "workspace:*",
-    "@dragon/security": "workspace:*",
-    "@dragon/tools": "workspace:*"
+    "@loong/channels": "workspace:*",
+    "@loong/client": "workspace:*",
+    "@loong/core": "workspace:*",
+    "@loong/cron": "workspace:*",
+    "@loong/delegation": "workspace:*",
+    "@loong/gateway": "workspace:*",
+    "@loong/memory": "workspace:*",
+    "@loong/model-catalog": "workspace:*",
+    "@loong/providers": "workspace:*",
+    "@loong/security": "workspace:*",
+    "@loong/tools": "workspace:*"
   },
   "devDependencies": {
-    "@dragon/studio": "workspace:*",
+    "@loong/studio": "workspace:*",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }

@@ -1,72 +1,152 @@
-import { theme } from "../tokens.js";
+import { useCallback, useEffect, useState } from "react";
+import { LoongBrandMark } from "../brand/LoongBrandMark.js";
+import { SidebarNavIcon, type SidebarIconName } from "./SidebarIcons.js";
+
+export type { SidebarIconName };
 
 export interface SidebarItem {
   id: string;
   label: string;
-  icon?: string;
+  icon?: SidebarIconName;
+}
+
+export type SidebarStatusTone = "online" | "starting" | "offline";
+
+export interface SidebarStatus {
+  label: string;
+  tone: SidebarStatusTone;
+  gatewayUrl?: string;
 }
 
 export interface SidebarProps {
   items: readonly SidebarItem[];
   activeId: string;
   productName?: string;
+  footerItem?: SidebarItem;
+  status?: SidebarStatus;
   onSelect: (id: string) => void;
+  storageKey?: string;
+  collapseLabel?: string;
+  expandLabel?: string;
 }
 
-export function Sidebar({ items, activeId, productName = "Loong", onSelect }: SidebarProps) {
+const DEFAULT_STORAGE_KEY = "loong.sidebar.collapsed";
+
+function readCollapsed(storageKey: string): boolean {
+  try {
+    return globalThis.localStorage?.getItem(storageKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function SidebarNavButton({
+  item,
+  active,
+  collapsed,
+  onSelect,
+}: {
+  item: SidebarItem;
+  active: boolean;
+  collapsed: boolean;
+  onSelect: (id: string) => void;
+}) {
   return (
-    <aside
-      style={{
-        width: 220,
-        flexShrink: 0,
-        display: "flex",
-        flexDirection: "column",
-        background: theme.surface1,
-        borderRight: `1px solid ${theme.border}`,
-        padding: "12px 10px",
-        gap: 4,
-      }}
+    <button
+      type="button"
+      className={`loong-sidebar-item${active ? " loong-sidebar-item--active" : ""}`}
+      onClick={() => onSelect(item.id)}
+      aria-current={active ? "page" : undefined}
+      title={collapsed ? item.label : undefined}
     >
-      <div
-        style={{
-          padding: "8px 10px 16px",
-          fontWeight: 700,
-          fontSize: 18,
-          letterSpacing: 0.3,
-          color: theme.text,
-        }}
-      >
-        {productName}
+      {item.icon ? (
+        <span className="loong-sidebar-item-icon" aria-hidden>
+          <SidebarNavIcon name={item.icon} />
+        </span>
+      ) : null}
+      <span className="loong-sidebar-item-label">{item.label}</span>
+    </button>
+  );
+}
+
+export function Sidebar({
+  items,
+  activeId,
+  productName = "Loong",
+  footerItem,
+  status,
+  onSelect,
+  storageKey = DEFAULT_STORAGE_KEY,
+  collapseLabel = "Collapse sidebar",
+  expandLabel = "Expand sidebar",
+}: SidebarProps) {
+  const [collapsed, setCollapsed] = useState(() => readCollapsed(storageKey));
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(storageKey, collapsed ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [collapsed, storageKey]);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed(current => !current);
+  }, []);
+
+  return (
+    <aside className={`loong-sidebar${collapsed ? " loong-sidebar--collapsed" : ""}`}>
+      <div className="loong-sidebar-header">
+        <div className="loong-sidebar-brand" title={productName} aria-label={productName}>
+          <LoongBrandMark size={collapsed ? 22 : 26} />
+        </div>
+        <button
+          type="button"
+          className="loong-sidebar-toggle"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? expandLabel : collapseLabel}
+          title={collapsed ? expandLabel : collapseLabel}
+        >
+          {collapsed ? "›" : "‹"}
+        </button>
       </div>
-      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {items.map(item => {
-          const active = item.id === activeId;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onSelect(item.id)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                width: "100%",
-                textAlign: "left",
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "none",
-                cursor: "pointer",
-                background: active ? theme.accentGlow : "transparent",
-                color: active ? theme.accentLight : theme.textSecondary,
-                fontWeight: active ? 600 : 400,
-              }}
-            >
-              {item.icon ? <span aria-hidden>{item.icon}</span> : null}
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
+      <nav className="loong-sidebar-nav" aria-label="Main">
+        {items.map(item => (
+          <SidebarNavButton
+            key={item.id}
+            item={item}
+            active={item.id === activeId}
+            collapsed={collapsed}
+            onSelect={onSelect}
+          />
+        ))}
       </nav>
+      {footerItem ? (
+        <div className="loong-sidebar-footer-nav">
+          <SidebarNavButton
+            item={footerItem}
+            active={footerItem.id === activeId}
+            collapsed={collapsed}
+            onSelect={onSelect}
+          />
+        </div>
+      ) : null}
+      {status ? (
+        <footer className="loong-sidebar-footer">
+          <div className="loong-sidebar-status" title={status.label}>
+            <span
+              className={`loong-sidebar-status-dot loong-sidebar-status-dot--${status.tone}`}
+              aria-hidden
+            />
+            <div className="loong-sidebar-status-copy">
+              <div className="loong-sidebar-status-label">{status.label}</div>
+              {status.gatewayUrl ? (
+                <div className="loong-sidebar-status-url">{status.gatewayUrl}</div>
+              ) : null}
+            </div>
+          </div>
+        </footer>
+      ) : null}
     </aside>
   );
 }

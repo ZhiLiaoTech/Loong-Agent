@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GatewayApiError } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
-import { useDragonEvents } from "../events/EventsContext.js";
+import { useLoongEvents } from "../events/EventsContext.js";
 import type { GatewayRunRecord } from "../run/types.js";
 import type {
   ApprovalInboxItem,
@@ -16,7 +16,7 @@ const DEFAULT_SESSION = "dashboard";
 
 export function useObservePage() {
   const client = useGatewayClient();
-  const { events, connectionEpoch } = useDragonEvents();
+  const { events, connectionEpoch } = useLoongEvents();
   const [sessionId, setSessionId] = useState(DEFAULT_SESSION);
   const [runs, setRuns] = useState<readonly GatewayRunRecord[]>([]);
   const [trajectories, setTrajectories] = useState<readonly TrajectorySummary[]>([]);

@@ -1,4 +1,4 @@
-# @dragon/cron 技术方案
+# @loong/cron 技术方案
 
 ## 1. 职责边界
 
@@ -28,7 +28,7 @@
 
 - `tick()`：跳过重叠 tick；执行到期 enabled 任务；更新 `nextRunAt`。
 - 长驻：`setInterval` + `unref()`。
-- CLI：`dragon cron --once` 供系统 cron 调用；`dragon gateway` 默认内嵌 Runner。
+- CLI：`loong cron --once` 供系统 cron 调用；`loong gateway` 默认内嵌 Runner。
 
 ### 3.3 存储
 
@@ -58,7 +58,7 @@ Dashboard System 页管理任务；投递体见 Gateway `parseGatewayWebhookPara
 |--------|------|
 | P2 | 仅 UTC，无 IANA 时区 |
 | P2 | 长时间停机无 backlog 策略（每 tick 一次） |
-| P2 | 与 `@dragon/channels` Webhook 客户端代码重复 |
+| P2 | 与 `@loong/channels` Webhook 客户端代码重复 |
 | P3 | 无秒级字段 |
 | P3 | 多 Gateway 实例重复 tick |
 

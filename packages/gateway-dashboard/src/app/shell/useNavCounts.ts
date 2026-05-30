@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
-import { useDragonEvents } from "../events/EventsContext.js";
+import { useLoongEvents } from "../events/EventsContext.js";
 import type { GatewayRunRecord } from "../run/types.js";
 import type { SidebarNavCounts } from "./Sidebar.js";
 
@@ -17,7 +17,7 @@ const EMPTY_COUNTS: SidebarNavCounts = {
 
 export function useNavCounts(): SidebarNavCounts {
   const client = useGatewayClient();
-  const { events } = useDragonEvents();
+  const { events } = useLoongEvents();
   const eventsLengthRef = useRef(events.length);
   eventsLengthRef.current = events.length;
 

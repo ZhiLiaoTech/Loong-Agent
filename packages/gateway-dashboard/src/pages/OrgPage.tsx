@@ -1,5 +1,5 @@
-import { OrgWorkspace } from "../app/org/OrgWorkspace.js";
+import { OrganizationWorkspace } from "../app/organization/OrganizationWorkspace.js";
 
 export function OrgPage() {
-  return <OrgWorkspace />;
+  return <OrganizationWorkspace />;
 }

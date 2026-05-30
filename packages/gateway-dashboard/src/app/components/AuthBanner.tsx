@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import styles from "./AuthBanner.module.css";
 
 const START_COMMAND =
-  "dragon gateway --host 127.0.0.1 --port 18787 --secret <your-secret>";
+  "loong gateway --host 127.0.0.1 --port 18787 --secret <your-secret>";
 
 export function AuthBanner({ visible }: { visible: boolean }) {
   const [copied, setCopied] = useState(false);

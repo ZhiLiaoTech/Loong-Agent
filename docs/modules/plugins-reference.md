@@ -1,45 +1,45 @@
 # 参考插件（plugin-*）技术方案
 
-本文档覆盖 workspace 内四个参考插件包，均通过 `dragon.plugin.json` + `dist/index.js` 加载。
+本文档覆盖 workspace 内四个参考插件包，均通过 `loong.plugin.json` + `dist/index.js` 加载。
 
 ## 1. 共同模式
 
 ```text
-dragon.plugin.json → loadDragonPlugin → activate(context)
+loong.plugin.json → loadLoongPlugin → activate(context)
   → registerProvider | registerTool
 ```
 
 | 约束 | 说明 |
 |------|------|
-| 构建 | 必须先 `pnpm --filter @dragon/plugin-* build` |
+| 构建 | 必须先 `pnpm --filter @loong/plugin-* build` |
 | 无密钥 | Provider 插件在无 API Key 时 **静默不注册** |
 | 权限 | Git 工具 `permission: "allow"`，只读 |
 
 ---
 
-## 2. @dragon/plugin-openai-compatible
+## 2. @loong/plugin-openai-compatible
 
 **路径**：`packages/plugin-openai-compatible/`
 
 | 项 | 内容 |
 |----|------|
 | 注册 | OpenAI Chat Completions Provider |
-| 环境变量 | `DRAGON_PLUGIN_OPENAI_*` → `DRAGON_OPENAI_*` → `OPENAI_*` |
+| 环境变量 | `LOONG_PLUGIN_OPENAI_*` → `LOONG_OPENAI_*` → `OPENAI_*` |
 | 默认模型 | `gpt-4.1-mini` |
-| 实现 | 复用 `@dragon/providers` `createOpenAICompatibleProvider` |
+| 实现 | 复用 `@loong/providers` `createOpenAICompatibleProvider` |
 
 **Review**：与 CLI 内置 `createOpenAICompatibleProviderFromEnv` 功能重叠；适合作为插件作者示例。
 
 ---
 
-## 3. @dragon/plugin-anthropic-compatible
+## 3. @loong/plugin-anthropic-compatible
 
 **路径**：`packages/plugin-anthropic-compatible/`
 
 | 项 | 内容 |
 |----|------|
 | 注册 | Anthropic Messages Provider |
-| 环境变量 | `DRAGON_PLUGIN_ANTHROPIC_*` → `DRAGON_ANTHROPIC_*` → `ANTHROPIC_*` |
+| 环境变量 | `LOONG_PLUGIN_ANTHROPIC_*` → `LOONG_ANTHROPIC_*` → `ANTHROPIC_*` |
 | 默认模型 | `claude-3-5-haiku-latest` |
 | 特性 | 可选 `maxTokens`、`apiVersion`；工具调用翻译 |
 
@@ -47,14 +47,14 @@ dragon.plugin.json → loadDragonPlugin → activate(context)
 
 ---
 
-## 4. @dragon/plugin-openrouter-compatible
+## 4. @loong/plugin-openrouter-compatible
 
 **路径**：`packages/plugin-openrouter-compatible/`
 
 | 项 | 内容 |
 |----|------|
 | 注册 | OpenRouter（OpenAI 兼容客户端） |
-| 环境变量 | `DRAGON_OPENROUTER_*` / `OPENROUTER_*`（**无** `DRAGON_PLUGIN_` 前缀） |
+| 环境变量 | `LOONG_OPENROUTER_*` / `OPENROUTER_*`（**无** `LOONG_PLUGIN_` 前缀） |
 | 默认 URL | `https://openrouter.ai/api/v1` |
 | 头 | `HTTP-Referer`、`X-OpenRouter-Title`（归因） |
 
@@ -62,7 +62,7 @@ dragon.plugin.json → loadDragonPlugin → activate(context)
 
 ---
 
-## 5. @dragon/plugin-git-tools
+## 5. @loong/plugin-git-tools
 
 **路径**：`packages/plugin-git-tools/`
 
@@ -84,9 +84,9 @@ dragon.plugin.json → loadDragonPlugin → activate(context)
 ## 6. 加载示例
 
 ```bash
-corepack pnpm --filter @dragon/plugin-git-tools build
-dragon agent --plugin-root packages/plugin-git-tools "summarize recent commits"
-dragon gateway --plugin-root packages/plugin-openai-compatible --secret "$DRAGON_GATEWAY_SECRET"
+corepack pnpm --filter @loong/plugin-git-tools build
+loong agent --plugin-root packages/plugin-git-tools "summarize recent commits"
+loong gateway --plugin-root packages/plugin-openai-compatible --secret "$LOONG_GATEWAY_SECRET"
 ```
 
 详见 [PLUGINS.md](../PLUGINS.md)。

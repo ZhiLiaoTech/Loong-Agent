@@ -127,13 +127,13 @@ try {
       } else {
         const options = await parseChannelsServeArgs(serveArgs);
         const bridge = await runChannelsServe(options);
-        process.stderr.write(\`Dragon channels bridge listening on \${bridge.url}\\n\`);
+        process.stderr.write(\`Loong channels bridge listening on \${bridge.url}\\n\`);
         process.stderr.write(\`Forwarding to \${options.gatewayUrl}/channels/webhook\\n\`);
         await waitForShutdown();
         await bridge.stop();
       }
     } else {
-      console.error("Usage: dragon channels serve [--port <port>] [--gateway-url <url>]");
+      console.error("Usage: loong channels serve [--port <port>] [--gateway-url <url>]");
       process.exitCode = 2;
     }
     process.exitCode = 0;

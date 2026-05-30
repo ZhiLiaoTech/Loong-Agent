@@ -1,4 +1,4 @@
-import { createBrowserHost, type HostRuntime } from "@dragon/host";
+import { createBrowserHost, type HostRuntime } from "@loong/host";
 import { createGatewayClient, type GatewayClient } from "./client.js";
 import type { GatewayClientConfig } from "./config.js";
 import { resolveGatewayUrl } from "./gateway-url.js";

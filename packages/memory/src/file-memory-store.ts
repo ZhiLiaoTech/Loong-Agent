@@ -38,7 +38,7 @@ export class FileMemoryStore implements MemoryStore {
   readonly #maxFileBytes: number;
 
   constructor(options: FileMemoryStoreOptions = {}) {
-    this.#rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "memory"));
+    this.#rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "memory"));
     this.#filePath = path.join(this.#rootDir, "records.jsonl");
     this.#maxRecords = clampPositiveInteger(
       options.maxRecords,

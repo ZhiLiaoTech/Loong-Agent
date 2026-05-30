@@ -1,5 +1,5 @@
 /**
- * Keep in sync with @dragon/core stripTextToolBlocks (browser bundle cannot import core).
+ * Keep in sync with @loong/core stripTextToolBlocks (browser bundle cannot import core).
  */
 const XML_TOOL_BLOCK = /<([a-z][a-z0-9_]*)\s*>([\s\S]*?)<\/\1>/gi;
 

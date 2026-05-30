@@ -1,0 +1,63 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: min(480px, 70vh);
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--loong-text-secondary);
+}
+
+.title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--loong-text);
+}
+
+.lead {
+  margin: 0 0 var(--space-5);
+  max-width: 480px;
+  line-height: var(--line-height-normal);
+}
+
+.lead code {
+  color: var(--loong-accent-light);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.steps {
+  text-align: left;
+  max-width: 520px;
+  margin: 0 0 var(--space-5);
+  padding-left: 1.25rem;
+  line-height: 1.8;
+}
+
+.pre {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--loong-surface-2);
+  color: var(--loong-text);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--loong-accent);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--loong-accent-light);
+}

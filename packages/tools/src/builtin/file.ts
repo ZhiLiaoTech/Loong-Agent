@@ -1,7 +1,8 @@
 import { open, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import type { ToolDefinition, ToolInvocation, ToolJsonSchema, ToolResult } from "../types.js";
-import { isPathInside, resolveWorkspacePath, resolveWorkspaceRoot } from "./workspace.js";
+import { isPathInside, resolveScopedPath, resolveScopedRoot, resolveWorkspaceRoot } from "./workspace.js";
+import { readWorkspaceScopeFromMetadata } from "../workspace-scope.js";
 
 export interface FileReadInput {
   path: string;
@@ -78,8 +79,9 @@ export function createFileReadTool(): ToolDefinition<FileReadInput, FileReadOutp
     async invoke(invocation) {
       return safelyInvoke(invocation, async () => {
         const input = parseFileReadInput(invocation.input);
-        const absolutePath = await resolveWorkspacePath(invocation.workspace, input.path);
-        const workspaceRoot = await resolveWorkspaceRoot(invocation.workspace);
+        const scope = readWorkspaceScopeFromMetadata(invocation.metadata);
+        const absolutePath = await resolveScopedPath(invocation.workspace, input.path, scope);
+        const workspaceRoot = await resolveScopedRoot(invocation.workspace, scope);
         const entryStat = await stat(absolutePath);
         if (entryStat.isDirectory()) {
           const listing = await formatDirectoryListing(absolutePath, workspaceRoot);
@@ -113,8 +115,9 @@ export function createFileSearchTool(): ToolDefinition<FileSearchInput, FileSear
     async invoke(invocation) {
       return safelyInvoke(invocation, async () => {
         const input = parseFileSearchInput(invocation.input);
-        const absoluteRoot = await resolveWorkspacePath(invocation.workspace, input.path ?? ".");
-        const workspaceRoot = await resolveWorkspaceRoot(invocation.workspace);
+        const scope = readWorkspaceScopeFromMetadata(invocation.metadata);
+        const absoluteRoot = await resolveScopedPath(invocation.workspace, input.path ?? ".", scope);
+        const workspaceRoot = await resolveScopedRoot(invocation.workspace, scope);
         const maxResults = Math.min(input.maxResults ?? DEFAULT_SEARCH_MAX_RESULTS, ABSOLUTE_MAX_SEARCH_RESULTS);
         const maxFiles = Math.min(input.maxFiles ?? DEFAULT_SEARCH_MAX_FILES, ABSOLUTE_MAX_SEARCH_FILES);
         const maxBytesPerFile = Math.min(

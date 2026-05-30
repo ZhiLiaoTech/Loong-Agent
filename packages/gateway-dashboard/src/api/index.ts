@@ -1,4 +1,4 @@
-export type { GatewayClientConfig } from "@dragon/client";
+export type { GatewayClientConfig } from "@loong/client";
 export {
   apiUrl,
   buildAuthHeaders,
@@ -9,20 +9,20 @@ export {
   gatewayRpc,
   fetchGatewayHealth,
   type GatewayHealthResult,
-  openDragonEventStream,
-  type DragonEventStreamHandle,
-  type DragonEventStreamOptions,
+  openLoongEventStream,
+  type LoongEventStreamHandle,
+  type LoongEventStreamOptions,
   resolveBaseUrl,
   resolveGatewayUrl,
   DEFAULT_GATEWAY_HOST,
   DEFAULT_GATEWAY_PORT,
-} from "@dragon/client";
+} from "@loong/client";
 export type {
-  DragonEvent,
+  LoongEvent,
   GatewayConnectPayload,
   GatewayEventEnvelope,
   GatewayHealthPayload,
   GatewayProviderSummary,
   GatewayProvidersListPayload,
   SseConnectionStatus,
-} from "@dragon/client";
+} from "@loong/client";

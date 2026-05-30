@@ -1,0 +1,23 @@
+{
+  "name": "openclaw",
+  "version": "0.0.0-loong",
+  "description": "Loong-provided OpenClaw plugin SDK compatibility entrypoints.",
+  "type": "module",
+  "exports": {
+    "./plugin-sdk": {
+      "types": "./dist/plugin-sdk.d.ts",
+      "default": "./dist/plugin-sdk.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@loong/channel-plugin-host": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import type { DragonPlugin, DragonPluginManifest } from "@dragon/plugin-sdk";
-import type { ToolDefinition, ToolInvocation, ToolJsonSchema, ToolResult } from "@dragon/tools";
+import type { LoongPlugin, LoongPluginManifest } from "@loong/plugin-sdk";
+import type { ToolDefinition, ToolInvocation, ToolJsonSchema, ToolResult } from "@loong/tools";
 
 interface GitStatusInput {
   porcelain?: boolean;
@@ -29,12 +29,12 @@ interface GitCommandOutput {
   timedOut: boolean;
 }
 
-const manifest: DragonPluginManifest = {
-  name: "dragon.git-tools",
+const manifest: LoongPluginManifest = {
+  name: "loong.git-tools",
   version: "0.0.0",
   entry: "dist/index.js",
-  description: "Registers read-only Git inspection tools for Dragon agents.",
-  dragonVersion: "0.x",
+  description: "Registers read-only Git inspection tools for Loong agents.",
+  loongVersion: "0.x",
 };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -70,7 +70,7 @@ const gitLogSchema: ToolJsonSchema = {
   additionalProperties: false,
 };
 
-const plugin: DragonPlugin = {
+const plugin: LoongPlugin = {
   manifest,
   activate(context) {
     context.registerTool(createGitStatusTool());

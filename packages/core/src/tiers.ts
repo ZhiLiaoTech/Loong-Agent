@@ -1,6 +1,6 @@
-import type { DragonThinkingLevel, DragonTurnInput } from "./types.js";
+import type { LoongThinkingLevel, LoongTurnInput } from "./types.js";
 
-export type DragonTierName = "fast" | "standard" | "deep";
+export type LoongTierName = "fast" | "standard" | "deep";
 
 /** Per-tier override. All fields optional; runtime only applies what's set. */
 export interface ModelTierSpec {
@@ -9,7 +9,7 @@ export interface ModelTierSpec {
   /** model fallback chain specific to this tier */
   modelFallbacks?: string[];
   /** override input.thinking for this tier */
-  thinking?: DragonThinkingLevel;
+  thinking?: LoongThinkingLevel;
   /** override runtime maxContextChars (hard cap on injected context) */
   maxContextChars?: number;
   /** override input.toolsEnabled */
@@ -20,10 +20,10 @@ export interface ModelTierSpec {
   systemPromptAddendum?: string;
 }
 
-export type DragonTierClassifierMode = "heuristic" | "fixed";
+export type LoongTierClassifierMode = "heuristic" | "fixed";
 
-export interface DragonTierKeywordHint {
-  tier: DragonTierName;
+export interface LoongTierKeywordHint {
+  tier: LoongTierName;
   /** matched case-insensitively as substrings against the user message */
   words: readonly string[];
 }
@@ -37,11 +37,11 @@ export interface ModelTierConfig {
     deep?: ModelTierSpec;
   };
   classifier: {
-    mode: DragonTierClassifierMode;
+    mode: LoongTierClassifierMode;
     /** Used when mode === "fixed". */
-    fixedTier?: DragonTierName;
+    fixedTier?: LoongTierName;
     /** User-supplied keyword nudges (additive to built-in keyword list). */
-    keywordHints?: readonly DragonTierKeywordHint[];
+    keywordHints?: readonly LoongTierKeywordHint[];
   };
 }
 
@@ -51,11 +51,11 @@ export interface ClassifierSignals {
   delegationDepth?: number;
   /** When the caller already classified an outer turn, pass it so subtasks
    * inherit the parent tier instead of being reclassified per child. */
-  inheritedTier?: DragonTierName;
+  inheritedTier?: LoongTierName;
 }
 
 export interface TierDecision {
-  tier: DragonTierName;
+  tier: LoongTierName;
   reason: string;
   score: number;
   source: "fixed" | "inherited" | "explicit-input" | "heuristic";
@@ -79,7 +79,7 @@ const DEEP_KEYWORDS_DEFAULT = [
 ];
 
 /** Hard caps so a future malformed config can't make tiers larger than the
- * runtime's absolute envelope. Mirrors DragonRuntime defaults. */
+ * runtime's absolute envelope. Mirrors LoongRuntime defaults. */
 const ABSOLUTE_MAX_CONTEXT_CHARS = 200_000;
 
 /**
@@ -88,9 +88,9 @@ const ABSOLUTE_MAX_CONTEXT_CHARS = 200_000;
  * a human-readable reason string suitable for surfacing in lifecycle metadata.
  */
 export function classifyTierHeuristic(
-  input: DragonTurnInput,
+  input: LoongTurnInput,
   signals: ClassifierSignals,
-  hints: readonly DragonTierKeywordHint[] = [],
+  hints: readonly LoongTierKeywordHint[] = [],
 ): TierDecision {
   if (signals.inheritedTier !== undefined) {
     return {
@@ -171,7 +171,7 @@ export function classifyTierHeuristic(
     reasons.push(`fastKeyword=${JSON.stringify(fastHits.slice(0, 3))} (-2)`);
   }
 
-  let tier: DragonTierName;
+  let tier: LoongTierName;
   if (score >= 5) tier = "deep";
   else if (score >= 2) tier = "standard";
   else tier = "fast";
@@ -186,14 +186,14 @@ export function classifyTierHeuristic(
 
 export function decideTier(
   config: ModelTierConfig | undefined,
-  input: DragonTurnInput,
+  input: LoongTurnInput,
   signals: ClassifierSignals,
 ): TierDecision | undefined {
   if (!config?.enabled) {
     return undefined;
   }
   // Explicit tier on input always wins (CLI --tier / RPC params.tier)
-  const explicit = (input as { tier?: DragonTierName }).tier;
+  const explicit = (input as { tier?: LoongTierName }).tier;
   if (explicit === "fast" || explicit === "standard" || explicit === "deep") {
     return { tier: explicit, source: "explicit-input", score: 0, reason: `explicit tier=${explicit}` };
   }
@@ -215,14 +215,14 @@ export function decideTier(
  * already set them explicitly.
  */
 export function applyTierToInput(
-  input: DragonTurnInput,
+  input: LoongTurnInput,
   decision: TierDecision,
   spec: ModelTierSpec | undefined,
-): { input: DragonTurnInput; maxContextChars?: number; appliedSystemPromptAddendum?: string } {
+): { input: LoongTurnInput; maxContextChars?: number; appliedSystemPromptAddendum?: string } {
   if (!spec) {
     return { input };
   }
-  const next: DragonTurnInput = { ...input };
+  const next: LoongTurnInput = { ...input };
   // Model: only fill if caller did not specify
   if (next.model === undefined && spec.model !== undefined) {
     next.model = spec.model;
@@ -250,7 +250,7 @@ export function applyTierToInput(
   const maxContextChars = typeof spec.maxContextChars === "number" && spec.maxContextChars > 0
     ? Math.min(spec.maxContextChars, ABSOLUTE_MAX_CONTEXT_CHARS)
     : undefined;
-  const result: { input: DragonTurnInput; maxContextChars?: number; appliedSystemPromptAddendum?: string } = { input: next };
+  const result: { input: LoongTurnInput; maxContextChars?: number; appliedSystemPromptAddendum?: string } = { input: next };
   if (maxContextChars !== undefined) result.maxContextChars = maxContextChars;
   if (appliedSystemPromptAddendum !== undefined) result.appliedSystemPromptAddendum = appliedSystemPromptAddendum;
   return result;
@@ -304,7 +304,7 @@ export function normalizeTierConfig(raw: unknown): ModelTierConfig {
       out.classifier.fixedTier = cls.fixedTier;
     }
     if (Array.isArray(cls.keywordHints)) {
-      const hints: DragonTierKeywordHint[] = [];
+      const hints: LoongTierKeywordHint[] = [];
       for (const item of cls.keywordHints) {
         if (!item || typeof item !== "object") continue;
         const ih = item as Record<string, unknown>;

@@ -1,4 +1,4 @@
-import type { GatewayConfig } from "@dragon/gateway";
+import type { GatewayConfig } from "@loong/gateway";
 
 export function gatewayUrlFromConfig(config: GatewayConfig): string {
   const configuredHost = config.host ?? "127.0.0.1";

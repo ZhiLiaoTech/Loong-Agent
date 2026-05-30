@@ -71,7 +71,16 @@ export {
 export {
   isPathInside,
   resolveWorkspacePath,
+  resolveScopedPath,
+  resolveScopedRoot,
 } from "./builtin/workspace.js";
+export {
+  isWorkspaceScopeKind,
+  readWorkspaceScopeFromMetadata,
+  readWorkspaceScopePathFromMetadata,
+  isStudioScopedWebTurn,
+  type WorkspaceScopeKind,
+} from "./workspace-scope.js";
 export {
   defaultMcpConfigPath,
   loadMcpConfig,

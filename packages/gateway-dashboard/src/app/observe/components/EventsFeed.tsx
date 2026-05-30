@@ -1,17 +1,11 @@
 import type { GatewayEventEnvelope, SseConnectionStatus } from "../../../api/index.js";
 import { formatTime, shortId } from "../../shared/format.js";
+import {
+  cssClassForGatewayEvent,
+  detailForGatewayEvent,
+  labelForGatewayEvent,
+} from "../../events/formatGatewayEvent.js";
 import styles from "./EventsFeed.module.css";
-
-function labelForEvent(event: GatewayEventEnvelope["event"]): string {
-  if (event.type === "lifecycle") {
-    return `${event.type}:${event.phase ?? ""}`;
-  }
-  return event.type || "event";
-}
-
-function detailForEvent(event: GatewayEventEnvelope["event"]): string {
-  return String(event.text || event.message || event.toolName || "");
-}
 
 export function EventsFeed({
   events,
@@ -39,14 +33,15 @@ export function EventsFeed({
         <ul className={styles.list}>
           {events.map(envelope => {
             const event = envelope.event;
-            const detail = detailForEvent(event);
+            const detail = detailForGatewayEvent(event);
+            const eventClass = cssClassForGatewayEvent(event);
             return (
               <li
                 key={envelope.sequence}
-                className={`${styles.item} ${event.type ? styles[`type-${event.type}`] : ""}`}
+                className={`${styles.item} ${eventClass ? styles[eventClass] : ""} ${event.type ? styles[`type-${event.type}`] : ""}`}
               >
                 <div className={styles.line}>
-                  <strong>{labelForEvent(event)}</strong>
+                  <strong>{labelForGatewayEvent(event)}</strong>
                   <span className={styles.time}>{formatTime(envelope.timestamp)}</span>
                 </div>
                 <div className={styles.meta}>

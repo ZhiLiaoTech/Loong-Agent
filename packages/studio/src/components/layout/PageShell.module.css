@@ -1,0 +1,27 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-6) var(--space-7);
+  min-height: 0;
+}
+
+.workbench {
+  max-width: 1120px;
+}
+
+.content {
+  max-width: 840px;
+}
+
+.chat {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+}

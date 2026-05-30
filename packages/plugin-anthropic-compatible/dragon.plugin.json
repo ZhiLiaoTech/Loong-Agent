@@ -1,7 +1,0 @@
-{
-  "name": "dragon.anthropic-compatible",
-  "version": "0.0.0",
-  "entry": "dist/index.js",
-  "description": "Registers an Anthropic Messages API model provider from environment variables.",
-  "dragonVersion": "0.x"
-}

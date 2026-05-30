@@ -1,0 +1,164 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #000 45%, transparent);
+}
+
+.dialog {
+  width: min(92vw, 560px);
+  max-height: min(80vh, 640px);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--loong-border, #2a2a3e);
+  background: var(--loong-surface-elevated, #1a1a28);
+  box-shadow: 0 16px 48px color-mix(in srgb, #000 35%, transparent);
+}
+
+.dialogTitle {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--loong-text, #eaeaf2);
+}
+
+.dialogHint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--loong-text-muted, #4a4a60);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.upBtn {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--loong-border, #2a2a3e);
+  background: var(--loong-surface-1, #101018);
+  color: var(--loong-text-secondary, #a0a0b8);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.upBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.currentPath {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--loong-border, #2a2a3e);
+  background: var(--loong-surface-1, #101018);
+  color: var(--loong-text, #eaeaf2);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list {
+  flex: 1;
+  min-height: 220px;
+  max-height: 360px;
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid var(--loong-border, #2a2a3e);
+  background: var(--loong-surface-1, #101018);
+}
+
+.status,
+.error {
+  margin: 0;
+  padding: 16px;
+  font-size: 13px;
+}
+
+.status {
+  color: var(--loong-text-muted, #4a4a60);
+}
+
+.error {
+  color: #f87171;
+}
+
+.folderBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--loong-border, #2a2a3e) 70%, transparent);
+  background: transparent;
+  color: var(--loong-text, #eaeaf2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.folderBtn:last-child {
+  border-bottom: 0;
+}
+
+.folderBtn:hover {
+  background: color-mix(in srgb, var(--loong-accent, #7c6cff) 12%, transparent);
+}
+
+.folderIcon {
+  flex: 0 0 auto;
+  font-size: 16px;
+}
+
+.folderName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.cancelBtn,
+.confirmBtn {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--loong-border, #2a2a3e);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cancelBtn {
+  background: transparent;
+  color: var(--loong-text-secondary, #a0a0b8);
+}
+
+.confirmBtn {
+  background: var(--loong-accent, #7c6cff);
+  border-color: transparent;
+  color: #fff;
+}
+
+.confirmBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

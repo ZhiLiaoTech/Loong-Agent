@@ -5,7 +5,7 @@ import {
   applyModelCatalogToAgentParams,
   createModelCatalogFromProviderSummaries,
 } from "./model-catalog-bridge.js";
-import type { DragonModelCapabilities, DragonModelCatalog, DragonModelStatus } from "@dragon/model-catalog";
+import type { LoongModelCapabilities, LoongModelCatalog, LoongModelStatus } from "@loong/model-catalog";
 import { handleGatewayHttpRequest } from "./gateway-http-handler.js";
 import { handleGatewayRpc, type GatewayRpcHandlerDeps } from "./gateway-rpc-handler.js";
 import { readEventSessionId, type EventStreamFilters, type GatewayEventEnvelope } from "./gateway-event-stream.js";
@@ -26,6 +26,15 @@ import {
   summarizeGatewayTool,
   type GatewayToolSummary,
 } from "./gateway-tools.js";
+import {
+  loadEmployeeWorkspaceSnapshot,
+  listGatewaySkills,
+  saveEmployeeWorkspaceSnapshot,
+} from "./gateway-employee-workspace-rpc.js";
+import { bootstrapOrgExample } from "./org-example-bootstrap.js";
+import { seedMandatoryPresetSkills } from "./org-preset-skills.js";
+import { LoongChannelPluginHost } from "@loong/channel-plugin-host";
+import { toGatewayWebhookPayload } from "@loong/channels";
 import { parseGatewayRequest } from "./gateway-rpc-parse.js";
 import {
   isAgentTurnQueuedPayload,
@@ -33,6 +42,7 @@ import {
   type AgentTurnResultPayload,
 } from "./session-coordinator.js";
 import { executeGatewayAgentTurn } from "./gateway-agent-turn.js";
+import { browseGatewayDirectory } from "./gateway-fs-browse.js";
 import {
   parseGatewayAgentParams,
   parseGatewayWebhookParams,
@@ -57,21 +67,21 @@ import {
   writeJson,
 } from "./gateway-http.js";
 import {
-  isDragonThinking,
+  isLoongThinking,
   isRecord,
   normalizeBoundedText,
   normalizeShortText,
 } from "./gateway-parse.js";
 import type {
-  DragonAgentRuntime,
-  DragonEvent,
-  DragonSource,
-  DragonThinkingLevel,
-  DragonTrajectoryRecord,
-  DragonTurnInput,
-  DragonTurnResult,
-} from "@dragon/core";
-import { parseCronSchedule, type DragonCronJob, type DragonCronJobStore, type DragonCronRunner } from "@dragon/cron";
+  LoongAgentRuntime,
+  LoongEvent,
+  LoongSource,
+  LoongThinkingLevel,
+  LoongTrajectoryRecord,
+  LoongTurnInput,
+  LoongTurnResult,
+} from "@loong/core";
+import { parseCronSchedule, type LoongCronJob, type LoongCronJobStore, type LoongCronRunner } from "@loong/cron";
 import {
   buildKpiSnapshot,
   mergeEmployeeIntoAgentParams,
@@ -94,7 +104,7 @@ import {
   type TicketStore,
   type ToolPolicyDocument,
   type ToolPolicyStore,
-} from "@dragon/org";
+} from "@loong/org";
 import {
   createToolPermissionEngine,
   createToolRegistry,
@@ -106,7 +116,7 @@ import {
   type ToolPermissionResult,
   type ToolRegistry,
   type ToolResult,
-} from "@dragon/tools";
+} from "@loong/tools";
 
 export type { GatewayConfig } from "./gateway-config.js";
 export type { GatewayRequest, GatewayResponse } from "./gateway-rpc-types.js";
@@ -183,7 +193,7 @@ export interface GatewayRunRecord {
   updatedAt: string;
   startedAt?: string;
   completedAt?: string;
-  source?: DragonSource;
+  source?: LoongSource;
   messagePreview?: string;
   error?: string;
   result?: GatewayRunResultSummary;
@@ -191,10 +201,10 @@ export interface GatewayRunRecord {
 
 export interface GatewayRunResultSummary {
   runId: string;
-  status: DragonTurnResult["status"];
+  status: LoongTurnResult["status"];
   messageCount: number;
   assistantPreview?: string;
-  usage?: DragonTurnResult["usage"];
+  usage?: LoongTurnResult["usage"];
   error?: string;
 }
 
@@ -203,7 +213,7 @@ export interface GatewayTrajectoryStore {
   get(
     runId: string,
     filter?: Pick<GatewayTrajectoryListParams, "sessionId" | "dateFrom" | "dateTo">,
-  ): Promise<DragonTrajectoryRecord | undefined>;
+  ): Promise<LoongTrajectoryRecord | undefined>;
 }
 
 export interface GatewayPluginToolSummary {
@@ -229,8 +239,8 @@ export interface GatewayModelSummary {
   aliases?: readonly string[];
   contextWindow?: number;
   maxOutputTokens?: number;
-  capabilities?: DragonModelCapabilities;
-  status?: DragonModelStatus;
+  capabilities?: LoongModelCapabilities;
+  status?: LoongModelStatus;
   default?: boolean;
 }
 
@@ -281,7 +291,7 @@ export interface GatewayTierClassifyResult {
   score: number;
   reason: string;
   resolvedModel?: string;
-  resolvedThinking?: DragonThinkingLevel;
+  resolvedThinking?: LoongThinkingLevel;
   resolvedMaxContextChars?: number;
   resolvedToolsEnabled?: boolean;
   resolvedMemoryEnabled?: boolean;
@@ -296,7 +306,7 @@ export interface GatewayPluginSummary {
   name: string;
   version: string;
   description?: string;
-  dragonVersion?: string;
+  loongVersion?: string;
   tools: readonly GatewayPluginToolSummary[];
   providers: readonly GatewayPluginProviderSummary[];
   memoryBackends?: readonly GatewayPluginMemoryBackendSummary[];
@@ -315,16 +325,16 @@ export type GatewayWebSocketEnvelope =
     }
   | { type: "error"; error: string };
 
-export interface DragonGateway {
+export interface LoongGateway {
   start(config?: GatewayConfig): Promise<void>;
   stop(): Promise<void>;
   address(): GatewayAddress | undefined;
 }
 
-export interface HttpDragonGatewayOptions {
-  runtime: DragonAgentRuntime;
-  cronStore?: DragonCronJobStore;
-  cronRunner?: DragonCronRunner;
+export interface HttpLoongGatewayOptions {
+  runtime: LoongAgentRuntime;
+  cronStore?: LoongCronJobStore;
+  cronRunner?: LoongCronRunner;
   trajectoryStore?: GatewayTrajectoryStore;
   pluginSummaries?: readonly GatewayPluginSummary[];
   providerSummaries?: readonly GatewayProviderSummary[];
@@ -353,6 +363,9 @@ export interface HttpDragonGatewayOptions {
   toolRegistry?: ToolRegistry;
   permissionEngine?: ToolPermissionEngine;
   directToolNames?: readonly string[];
+  skillRoots?: readonly string[];
+  pluginRoots?: readonly string[];
+  channelConfig?: Readonly<Record<string, unknown>>;
   name?: string;
   pairingStore?: PairingStore;
 }
@@ -364,18 +377,18 @@ const MAX_DIRECT_TOOL_RESULT_BYTES = 256_000;
 const MAX_DIRECT_TOOL_PREVIEW_BYTES = 64_000;
 const DEFAULT_TOOL_SESSION_ID = "gateway-tools";
 const DEFAULT_MEMORY_REVIEW_SESSION_ID = "gateway-memory-review";
-export function createHttpGateway(options: HttpDragonGatewayOptions): DragonGateway {
-  return new HttpDragonGateway(options);
+export function createHttpGateway(options: HttpLoongGatewayOptions): LoongGateway {
+  return new HttpLoongGateway(options);
 }
 
-export class HttpDragonGateway implements DragonGateway {
-  readonly #runtime: DragonAgentRuntime;
-  readonly #cronStore: DragonCronJobStore | undefined;
-  readonly #cronRunner: DragonCronRunner | undefined;
+export class HttpLoongGateway implements LoongGateway {
+  readonly #runtime: LoongAgentRuntime;
+  readonly #cronStore: LoongCronJobStore | undefined;
+  readonly #cronRunner: LoongCronRunner | undefined;
   readonly #trajectoryStore: GatewayTrajectoryStore | undefined;
   readonly #plugins: readonly GatewayPluginSummary[];
   #providers: GatewayProviderSummary[];
-  #modelCatalog: DragonModelCatalog | undefined;
+  #modelCatalog: LoongModelCatalog | undefined;
   readonly #modelConfigStore: GatewayModelConfigStore | undefined;
   readonly #agentConfigStore: GatewayAgentConfigStore | undefined;
   readonly #orgStore: OrgStore | undefined;
@@ -391,6 +404,8 @@ export class HttpDragonGateway implements DragonGateway {
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
   #directToolNames: Set<string>;
+  readonly #skillRoots: readonly string[];
+  readonly #channelPluginHost: LoongChannelPluginHost;
   readonly #name: string;
   readonly #pairingStore: PairingStore;
   readonly #lanes = new Map<string, Promise<void>>();
@@ -406,7 +421,7 @@ export class HttpDragonGateway implements DragonGateway {
   #address: GatewayAddress | undefined;
   #runtimeUnsubscribe: (() => void) | undefined;
 
-  constructor(options: HttpDragonGatewayOptions) {
+  constructor(options: HttpLoongGatewayOptions) {
     this.#runtime = options.runtime;
     this.#cronStore = options.cronStore;
     this.#cronRunner = options.cronRunner;
@@ -432,7 +447,23 @@ export class HttpDragonGateway implements DragonGateway {
     this.#toolRegistry = options.toolRegistry ?? createToolRegistry([...(options.tools ?? [])]);
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
-    this.#name = options.name ?? "dragon-gateway";
+    this.#skillRoots = [...(options.skillRoots ?? [])];
+    this.#channelPluginHost = new LoongChannelPluginHost({
+      pluginRoots: [...(options.pluginRoots ?? [])],
+      channelConfig: options.channelConfig ?? {},
+      deliverInboundMessage: async message =>
+        this.#runWebhook(
+          toGatewayWebhookPayload({
+            channel: message.channel,
+            text: message.text,
+            ...(message.userId !== undefined ? { userId: message.userId } : {}),
+            ...(message.threadId !== undefined ? { threadId: message.threadId } : {}),
+            ...(message.messageId !== undefined ? { messageId: message.messageId } : {}),
+            ...(message.metadata !== undefined ? { metadata: message.metadata } : {}),
+          }),
+        ),
+    });
+    this.#name = options.name ?? "loong-gateway";
     this.#pairingStore = options.pairingStore ?? new FilePairingStore();
     this.#connections = new GatewayConnectionHub({
       isAuthorized: request => this.#isAuthorized(request),
@@ -485,9 +516,30 @@ export class HttpDragonGateway implements DragonGateway {
     this.#runtimeUnsubscribe = this.#runtime.subscribe(event => {
       this.#connections.broadcastRuntimeEvent(event);
     });
+    void seedMandatoryPresetSkills(this.#skillRoots);
+    try {
+      await this.#channelPluginHost.start();
+      const channelHost = this.#channelPluginHost.status;
+      if (channelHost.warnings?.length) {
+        for (const warning of channelHost.warnings) {
+          console.error(`[${this.#name}] Loong Channel Plugin Host: ${warning}`);
+        }
+      }
+      if (channelHost.loadedPlugins > 0) {
+        console.error(
+          `[${this.#name}] Loong Channel Plugin Host ready (${channelHost.loadedPlugins} channel plugin(s): ${channelHost.registeredChannels.join(", ")})`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[${this.#name}] Loong Channel Plugin Host failed to start: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     const authNotice = describeAuthStartup(normalized);
     if (authNotice) {
-      console.error(`[${this.#name}] ${authNotice.replace(/^\[dragon-gateway\] /, "")}`);
+      console.error(`[${this.#name}] ${authNotice.replace(/^\[loong-gateway\] /, "")}`);
     }
     if (normalized.authMode === "shared-secret" && normalized.sharedSecret && !config.sharedSecret && requiresSharedSecret(normalized.host)) {
       console.error(
@@ -505,6 +557,7 @@ export class HttpDragonGateway implements DragonGateway {
     this.#runtimeUnsubscribe = undefined;
     this.#connections.closeEventStreams();
     this.#connections.closeWebSocketClients();
+    await this.#channelPluginHost.stop();
     await new Promise<void>((resolve, reject) => {
       server.close(error => {
         if (error) {
@@ -569,6 +622,8 @@ export class HttpDragonGateway implements DragonGateway {
       openEventStream: (req, res, url) => this.#connections.openEventStream(req, res, url),
       runWebhook: body => this.#runWebhook(body),
       handleRpc: req => this.#handleRpc(req),
+      dispatchChannelPluginHttp: (request, response, options) =>
+        this.#channelPluginHost.dispatchHttp(request, response, options),
     }, request, response);
   }
 
@@ -580,7 +635,7 @@ export class HttpDragonGateway implements DragonGateway {
 
     const authorization = request.headers.authorization;
     const bearer = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : undefined;
-    const headerSecret = request.headers["x-dragon-secret"];
+    const headerSecret = request.headers["x-loong-secret"];
     return bearer === config.sharedSecret || headerSecret === config.sharedSecret;
   }
 
@@ -601,7 +656,11 @@ export class HttpDragonGateway implements DragonGateway {
       ...(this.#modelConfigStore ? ["model.config.get", "model.config.save"] : []),
       ...(this.#agentConfigStore ? ["agent.config.get", "agent.config.save"] : []),
       ...(this.#orgStore ? ["org.get"] : []),
-      ...(this.#employeeStore ? ["employee.list", "employee.save"] : []),
+      ...(this.#employeeStore ? ["employee.list", "employee.save", "employee.workspace.get", "employee.workspace.save"] : []),
+      "skills.list",
+      ...(this.#orgStore && this.#employeeStore && this.#toolPolicyStore && this.#agentConfigStore
+        ? ["org.bootstrap.example"]
+        : []),
       ...(this.#toolPolicyStore ? ["policy.tool.get", "policy.tool.save"] : []),
       ...(this.#approvalService ? ["approval.list", "approval.approve", "approval.reject"] : []),
       ...(this.#ticketStore ? ["ticket.list", "ticket.upsert"] : []),
@@ -621,6 +680,7 @@ export class HttpDragonGateway implements DragonGateway {
       ...(this.#trajectoryStore ? ["trajectory.list", "trajectory.get"] : []),
       ...(this.#cronStore ? ["cron.jobs.list", "cron.job.upsert", "cron.job.remove"] : []),
       ...(this.#cronRunner ? ["cron.tick"] : []),
+      "fs.directory.browse",
     ];
   }
 
@@ -639,6 +699,10 @@ export class HttpDragonGateway implements DragonGateway {
       loadOrg: () => this.#loadOrg(),
       loadEmployees: () => this.#loadEmployees(),
       saveEmployees: params => this.#saveEmployees(params as EmployeeRegistry),
+      loadEmployeeWorkspace: params => this.#loadEmployeeWorkspace(params),
+      saveEmployeeWorkspace: params => this.#saveEmployeeWorkspace(params),
+      listSkills: () => this.#listSkills(),
+      bootstrapOrgExample: () => this.#bootstrapOrgExample(),
       loadToolPolicies: () => this.#loadToolPolicies(),
       saveToolPolicies: params => this.#saveToolPolicies(params as ToolPolicyDocument),
       listApprovals: params => this.#listApprovals(params as GatewayApprovalListParams | undefined),
@@ -670,6 +734,7 @@ export class HttpDragonGateway implements DragonGateway {
       tickCron: () => this.#tickCron(),
       waitForQueuedTurn: queueTurnId => this.#sessionCoordinator.waitForQueuedTurn(queueTurnId),
       runAgent: params => this.#runAgent(params as GatewayAgentParams),
+      browseDirectory: params => browseGatewayDirectory(params),
     };
   }
 
@@ -701,7 +766,7 @@ export class HttpDragonGateway implements DragonGateway {
   async #executeAgentTurn(params: GatewayAgentParams): Promise<AgentTurnResultPayload> {
     return executeGatewayAgentTurn(this.#agentTurnDeps(), params);
   }
-  async #runWebhook(value: unknown): Promise<{ channel: string; result: unknown; events: DragonEvent[] }> {
+  async #runWebhook(value: unknown): Promise<{ channel: string; result: unknown; events: LoongEvent[] }> {
     const webhook = parseGatewayWebhookParams(value);
     const outcome = await this.#runAgent(webhook);
     const completed: AgentTurnResultPayload = isAgentTurnQueuedPayload(outcome)
@@ -713,7 +778,7 @@ export class HttpDragonGateway implements DragonGateway {
       events: completed.events,
     };
   }
-  #registerRunStart(runId: string, input: DragonTurnInput, controller: AbortController): void {
+  #registerRunStart(runId: string, input: LoongTurnInput, controller: AbortController): void {
     const now = new Date().toISOString();
     this.#runSessions.set(runId, input.sessionId);
     this.#runControllers.set(runId, controller);
@@ -729,7 +794,7 @@ export class HttpDragonGateway implements DragonGateway {
     });
     this.#pruneRuns();
   }
-  #completeRun(runId: string, result: DragonTurnResult): void {
+  #completeRun(runId: string, result: LoongTurnResult): void {
     const now = new Date().toISOString();
     const existing = this.#runs.get(runId);
     const state = resultStatusToRunState(result.status);
@@ -831,7 +896,7 @@ export class HttpDragonGateway implements DragonGateway {
       ...(params.limit !== undefined ? { limit: params.limit } : {}),
     });
   }
-  async #getTrajectory(params: GatewayTrajectoryGetParams): Promise<{ record: DragonTrajectoryRecord; eventsTruncated: boolean }> {
+  async #getTrajectory(params: GatewayTrajectoryGetParams): Promise<{ record: LoongTrajectoryRecord; eventsTruncated: boolean }> {
     if (!this.#trajectoryStore) {
       throw new Error("Trajectory store is not configured.");
     }
@@ -923,6 +988,7 @@ export class HttpDragonGateway implements DragonGateway {
       address: this.#address,
       pluginCount: this.#plugins.length,
       providerCount: this.#providers.length,
+      channelPluginHost: this.#channelPluginHost.status,
     };
   }
 
@@ -996,6 +1062,45 @@ export class HttpDragonGateway implements DragonGateway {
       throw new GatewayHttpError(404, "Employee store is not available.");
     }
     return await this.#employeeStore.save(params);
+  }
+
+  async #loadEmployeeWorkspace(params: unknown): Promise<unknown> {
+    if (!this.#employeeStore || !this.#agentConfigStore) {
+      throw new GatewayHttpError(404, "Employee workspace is not available.");
+    }
+    const agentConfig = await this.#loadAgentConfig();
+    const employees = await this.#loadEmployees();
+    return loadEmployeeWorkspaceSnapshot(
+      agentConfig,
+      employees,
+      (params ?? {}) as import("./gateway-employee-workspace-rpc.js").EmployeeWorkspaceGetParams,
+    );
+  }
+
+  async #saveEmployeeWorkspace(params: unknown): Promise<unknown> {
+    if (!this.#employeeStore) {
+      throw new GatewayHttpError(404, "Employee workspace is not available.");
+    }
+    return saveEmployeeWorkspaceSnapshot(
+      params as import("./employee-workspace-files.js").EmployeeWorkspaceSaveInput,
+    );
+  }
+
+  async #listSkills(): Promise<unknown> {
+    return listGatewaySkills(this.#toolRegistry, { skillRoots: this.#skillRoots });
+  }
+
+  async #bootstrapOrgExample(): Promise<unknown> {
+    if (!this.#orgStore || !this.#employeeStore || !this.#toolPolicyStore || !this.#agentConfigStore) {
+      throw new GatewayHttpError(404, "Organization bootstrap is not available.");
+    }
+    const org = await this.#loadOrg();
+    return bootstrapOrgExample({
+      employeeStore: this.#employeeStore,
+      toolPolicyStore: this.#toolPolicyStore,
+      agentConfigStore: this.#agentConfigStore,
+      orgAlreadyConfigured: (org.units?.length ?? 0) > 0,
+    });
   }
 
   async #loadToolPolicies(): Promise<ToolPolicyDocument> {
@@ -1273,7 +1378,7 @@ export class HttpDragonGateway implements DragonGateway {
       // explicit instead of returning a bare "Tool permission ask" error.
       const isWriteTool = toolName === "memory_candidate_promote" || toolName === "memory_candidate_reject";
       const hint = isWriteTool
-        ? " Restart dragon gateway with --allow-write (or configure a permissionEngine that allows this tool) to enable memory candidate write RPCs."
+        ? " Restart loong gateway with --allow-write (or configure a permissionEngine that allows this tool) to enable memory candidate write RPCs."
         : "";
       throw new Error(`Tool permission ${permission.decision} for ${toolName}: ${permission.reason}${hint}`);
     }
@@ -1303,14 +1408,14 @@ export class HttpDragonGateway implements DragonGateway {
   }
 }
 
-function resultStatusToRunState(status: DragonTurnResult["status"]): GatewayRunState {
+function resultStatusToRunState(status: LoongTurnResult["status"]): GatewayRunState {
   if (status === "ok") {
     return "completed";
   }
   return status;
 }
 
-function summarizeTurnResult(result: DragonTurnResult): GatewayRunResultSummary {
+function summarizeTurnResult(result: LoongTurnResult): GatewayRunResultSummary {
   const summary: GatewayRunResultSummary = {
     runId: result.runId,
     status: result.status,
@@ -1333,7 +1438,7 @@ function previewMessage(message: string): string {
   return message.length > 160 ? `${message.slice(0, 160)}... [${message.length} chars]` : message;
 }
 
-function isTurnStatus(value: unknown): value is DragonTurnResult["status"] {
+function isTurnStatus(value: unknown): value is LoongTurnResult["status"] {
   return ["ok", "error", "cancelled", "timeout"].includes(String(value));
 }
 
@@ -1420,7 +1525,7 @@ function classifyTierFromGatewayConfig(
   config: GatewayTierConfig,
   params: GatewayTierClassifyParams,
 ): GatewayTierClassifyResult {
-  // Build a synthetic DragonTurnInput and reuse the core classifier (the
+  // Build a synthetic LoongTurnInput and reuse the core classifier (the
   // gateway types parallel the core types, but we avoid importing the core
   // classifier here to keep the dependency surface flat — instead we inline a
   // lightweight scoring that matches the core rules).
@@ -1588,8 +1693,8 @@ function normalizePluginSummaries(values: readonly GatewayPluginSummary[]): read
     if (plugin.description !== undefined) {
       summary.description = trimBounded(plugin.description, 500);
     }
-    if (plugin.dragonVersion !== undefined) {
-      summary.dragonVersion = trimBounded(plugin.dragonVersion, 80);
+    if (plugin.loongVersion !== undefined) {
+      summary.loongVersion = trimBounded(plugin.loongVersion, 80);
     }
     return Object.freeze(summary);
   }));
@@ -1625,8 +1730,8 @@ function normalizeModelSummaries(values: readonly GatewayModelSummary[]): readon
   }));
 }
 
-function normalizeModelCapabilities(capabilities: DragonModelCapabilities): DragonModelCapabilities {
-  const summary: DragonModelCapabilities = {};
+function normalizeModelCapabilities(capabilities: LoongModelCapabilities): LoongModelCapabilities {
+  const summary: LoongModelCapabilities = {};
   if (capabilities.toolCalling !== undefined) {
     summary.toolCalling = Boolean(capabilities.toolCalling);
   }
@@ -1740,7 +1845,7 @@ export {
   type GatewayProviderCatalogSource,
   type GatewayProviderModelCatalogSource,
 } from "./model-catalog-bridge.js";
-export { assertDragonGatewayWebhookPayload, type DragonGatewayWebhookPayload } from "./channels-webhook.js";
+export { assertLoongGatewayWebhookPayload, type LoongGatewayWebhookPayload } from "./channels-webhook.js";
 export {
   QUERY_LOOP_CONTINUE_MESSAGE,
   DEFAULT_QUERY_LOOP_MAX_TURNS,

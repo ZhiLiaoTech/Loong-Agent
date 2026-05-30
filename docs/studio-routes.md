@@ -13,4 +13,4 @@
 
 Gateway 嵌入 Studio：`pnpm studio:build` 后 `LOONG_UI=studio node packages/cli/dist/index.js gateway` → http://127.0.0.1:17357/
 
-Legacy：`@dragon/gateway-dashboard` 仍为默认嵌入包；见 [gateway-dashboard/README](../packages/gateway-dashboard/README.md)。
+Legacy：`@loong/gateway-dashboard` 仍为默认嵌入包；见 [gateway-dashboard/README](../packages/gateway-dashboard/README.md)。

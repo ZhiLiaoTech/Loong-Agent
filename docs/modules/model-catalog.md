@@ -1,4 +1,4 @@
-# @dragon/model-catalog 技术方案
+# @loong/model-catalog 技术方案
 
 ## 1. 职责边界
 
@@ -10,8 +10,8 @@
 
 | 导出 | 说明 |
 |------|------|
-| `DragonModelCatalog` / `createModelCatalog` | 全局目录注册表 |
-| `DragonModelCatalogEntry` | 单条模型元数据 |
+| `LoongModelCatalog` / `createModelCatalog` | 全局目录注册表 |
+| `LoongModelCatalogEntry` | 单条模型元数据 |
 | `normalizeProviderModelEntries` | Provider 注册时规范化 |
 | `catalogEntriesFromProviders` | 从 Provider 数组生成条目 |
 | `createModelCatalogFromProviders` | 从 Provider 源构建 Catalog 实例 |
@@ -43,7 +43,7 @@
 
 ## 4. 集成方式
 
-- **已用**：`@dragon/providers` Registry 注入 `modelCatalog` 做 `resolve`；Gateway `#resolveAgentParams` 与 CLI `runTurn` 前调用 `applyModelCatalogToParams`；`createModelCatalogFromProviders` 由 Gateway provider summaries 构建。
+- **已用**：`@loong/providers` Registry 注入 `modelCatalog` 做 `resolve`；Gateway `#resolveAgentParams` 与 CLI `runTurn` 前调用 `applyModelCatalogToParams`；`createModelCatalogFromProviders` 由 Gateway provider summaries 构建。
 
 ## 5. Code Review
 

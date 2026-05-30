@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import { useAuthGate } from "../auth/useAuthGate.js";
 import { AuthBanner, Topbar } from "../components/index.js";
-import { useDragonEvents } from "../events/EventsContext.js";
+import { useLoongEvents } from "../events/EventsContext.js";
 import { Sidebar, type SidebarNavCounts } from "./Sidebar.js";
 import styles from "./AppShell.module.css";
 
@@ -22,7 +22,7 @@ const defaultCounts: SidebarNavCounts = {
 
 export function AppShell({ navCounts, onThemeCycle, themeLabel }: AppShellProps) {
   const auth = useAuthGate();
-  const { sseStatus } = useDragonEvents();
+  const { sseStatus } = useLoongEvents();
   const [navOpen, setNavOpen] = useState(false);
   const counts = { ...defaultCounts, ...navCounts };
 

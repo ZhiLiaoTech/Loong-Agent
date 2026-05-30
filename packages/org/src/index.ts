@@ -71,3 +71,18 @@ export {
   defaultTicketConfigPath,
   defaultKpiTemplateConfigPath,
 } from "./paths.js";
+
+export {
+  getPositionCapabilityPreset,
+  POSITION_CAPABILITY_PRESETS,
+  type PositionCapabilityPreset,
+} from "./position-capability-presets.js";
+
+export {
+  listPresetSkillCatalog,
+  PRESET_SKILL_CATALOG,
+  OFFICE_PRESET_SKILL_NAMES,
+  MEDIA_PRESET_SKILL_NAMES,
+  MANDATORY_PRESET_SKILL_NAMES,
+  type PresetSkillCatalogEntry,
+} from "./preset-skill-catalog.js";

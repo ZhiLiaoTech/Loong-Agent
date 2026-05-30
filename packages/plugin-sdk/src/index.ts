@@ -1,54 +1,54 @@
 import { pathToFileURL } from "node:url";
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import type { DragonLifecycleHook } from "@dragon/core";
-import type { MemoryStore } from "@dragon/memory";
-import { normalizeProviderModelEntries } from "@dragon/model-catalog";
-import type { ModelProvider } from "@dragon/providers";
-import type { ToolCapability, ToolDefinition, ToolPermissionDecision } from "@dragon/tools";
+import type { LoongLifecycleHook } from "@loong/core";
+import type { MemoryStore } from "@loong/memory";
+import { normalizeProviderModelEntries } from "@loong/model-catalog";
+import type { ModelProvider } from "@loong/providers";
+import type { ToolCapability, ToolDefinition, ToolPermissionDecision } from "@loong/tools";
 
-export interface DragonPluginManifest {
+export interface LoongPluginManifest {
   name: string;
   version: string;
   entry: string;
   description?: string;
-  dragonVersion?: string;
+  loongVersion?: string;
 }
 
-export interface DragonPluginContext {
+export interface LoongPluginContext {
   registerTool(tool: ToolDefinition): void;
   registerProvider(provider: ModelProvider): void;
-  registerLifecycleHook(hook: DragonLifecycleHook): void;
-  registerMemoryBackend(backend: DragonPluginMemoryBackend): void;
+  registerLifecycleHook(hook: LoongLifecycleHook): void;
+  registerMemoryBackend(backend: LoongPluginMemoryBackend): void;
 }
 
-export interface DragonPluginMemoryBackend {
+export interface LoongPluginMemoryBackend {
   id: string;
   displayName: string;
   store: MemoryStore;
 }
 
-export interface DragonPlugin {
-  manifest?: DragonPluginManifest;
-  activate(context: DragonPluginContext): Promise<void> | void;
+export interface LoongPlugin {
+  manifest?: LoongPluginManifest;
+  activate(context: LoongPluginContext): Promise<void> | void;
   deactivate?(): Promise<void> | void;
 }
 
-export interface LoadedDragonPlugin {
-  manifest: DragonPluginManifest;
+export interface LoadedLoongPlugin {
+  manifest: LoongPluginManifest;
   rootDir: string;
   tools: readonly Readonly<ToolDefinition>[];
   providers: readonly Readonly<ModelProvider>[];
-  lifecycleHooks: readonly Readonly<DragonLifecycleHook>[];
-  memoryBackends: readonly Readonly<DragonPluginMemoryBackend>[];
+  lifecycleHooks: readonly Readonly<LoongLifecycleHook>[];
+  memoryBackends: readonly Readonly<LoongPluginMemoryBackend>[];
   deactivate(): Promise<void>;
 }
 
-export interface DragonPluginLoadOptions {
+export interface LoongPluginLoadOptions {
   manifestFile?: string;
 }
 
-const DEFAULT_MANIFEST_FILE = "dragon.plugin.json";
+const DEFAULT_MANIFEST_FILE = "loong.plugin.json";
 const MAX_MANIFEST_BYTES = 64_000;
 const MAX_REGISTERED_TOOLS = 100;
 const MAX_REGISTERED_PROVIDERS = 40;
@@ -62,22 +62,22 @@ const TOOL_CAPABILITIES = new Set<ToolCapability>(["read", "write", "execute", "
 
 type JsonValue = null | string | number | boolean | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
-export async function loadDragonPlugin(
+export async function loadLoongPlugin(
   pluginRoot: string,
-  options: DragonPluginLoadOptions = {},
-): Promise<LoadedDragonPlugin> {
+  options: LoongPluginLoadOptions = {},
+): Promise<LoadedLoongPlugin> {
   const rootDir = await resolvePluginRoot(pluginRoot);
   const manifest = await readPluginManifest(rootDir, options.manifestFile ?? DEFAULT_MANIFEST_FILE);
-  assertDragonVersionCompatible(manifest.dragonVersion);
+  assertLoongVersionCompatible(manifest.loongVersion);
   const entryPath = await resolvePluginEntry(rootDir, manifest.entry);
   const moduleUrl = pathToFileURL(entryPath).href;
   const plugin = normalizePluginModule(await import(moduleUrl), manifest);
   const tools: Readonly<ToolDefinition>[] = [];
   const providers: Readonly<ModelProvider>[] = [];
-  const lifecycleHooks: Readonly<DragonLifecycleHook>[] = [];
-  const memoryBackends: Readonly<DragonPluginMemoryBackend>[] = [];
+  const lifecycleHooks: Readonly<LoongLifecycleHook>[] = [];
+  const memoryBackends: Readonly<LoongPluginMemoryBackend>[] = [];
   let registrationOpen = true;
-  const context: DragonPluginContext = {
+  const context: LoongPluginContext = {
     registerTool(tool) {
       assertRegistrationOpen(registrationOpen);
       const normalizedTool = normalizeTool(tool);
@@ -161,7 +161,7 @@ async function resolvePluginRoot(pluginRoot: string): Promise<string> {
   return rootDir;
 }
 
-async function readPluginManifest(rootDir: string, manifestFile: string): Promise<DragonPluginManifest> {
+async function readPluginManifest(rootDir: string, manifestFile: string): Promise<LoongPluginManifest> {
   if (path.isAbsolute(manifestFile) || hasWindowsDrivePrefix(manifestFile) || manifestFile.includes("..")) {
     throw new Error("Plugin manifest path must stay inside plugin root.");
   }
@@ -180,22 +180,22 @@ async function readPluginManifest(rootDir: string, manifestFile: string): Promis
   return validateManifest(value);
 }
 
-const HOST_DRAGON_VERSION = "0.0.0";
+const HOST_LOONG_VERSION = "0.0.0";
 
-function assertDragonVersionCompatible(required?: string): void {
+function assertLoongVersionCompatible(required?: string): void {
   if (!required) {
     return;
   }
-  const hostMajor = HOST_DRAGON_VERSION.split(".", 1)[0];
+  const hostMajor = HOST_LOONG_VERSION.split(".", 1)[0];
   const requiredMajor = required.split(".", 1)[0];
   if (!hostMajor || !requiredMajor || hostMajor !== requiredMajor) {
     throw new Error(
-      `Plugin requires Dragon ${required}, but the host is Dragon ${HOST_DRAGON_VERSION}.`,
+      `Plugin requires Loong ${required}, but the host is Loong ${HOST_LOONG_VERSION}.`,
     );
   }
 }
 
-function validateManifest(value: unknown): DragonPluginManifest {
+function validateManifest(value: unknown): LoongPluginManifest {
   if (!isRecord(value)) {
     throw new Error("Plugin manifest must be an object.");
   }
@@ -208,7 +208,7 @@ function validateManifest(value: unknown): DragonPluginManifest {
   if (typeof value.entry !== "string" || !value.entry.trim()) {
     throw new Error("Plugin manifest requires entry.");
   }
-  const manifest: DragonPluginManifest = {
+  const manifest: LoongPluginManifest = {
     name: normalizeIdentifier(value.name, "manifest.name"),
     version: value.version.trim(),
     entry: value.entry.trim(),
@@ -216,8 +216,8 @@ function validateManifest(value: unknown): DragonPluginManifest {
   if (typeof value.description === "string" && value.description.trim()) {
     manifest.description = value.description.trim().slice(0, 500);
   }
-  if (typeof value.dragonVersion === "string" && value.dragonVersion.trim()) {
-    manifest.dragonVersion = value.dragonVersion.trim();
+  if (typeof value.loongVersion === "string" && value.loongVersion.trim()) {
+    manifest.loongVersion = value.loongVersion.trim();
   }
   return manifest;
 }
@@ -241,19 +241,19 @@ async function resolvePluginEntry(rootDir: string, entry: string): Promise<strin
   return entryPath;
 }
 
-function normalizePluginModule(moduleValue: unknown, manifest: DragonPluginManifest): DragonPlugin {
+function normalizePluginModule(moduleValue: unknown, manifest: LoongPluginManifest): LoongPlugin {
   const candidate = isRecord(moduleValue) && moduleValue.default !== undefined
     ? moduleValue.default
     : moduleValue;
   if (!isRecord(candidate) || typeof candidate.activate !== "function") {
     throw new Error("Plugin module must export a plugin object with activate().");
   }
-  const plugin: DragonPlugin = {
-    activate: candidate.activate as DragonPlugin["activate"],
+  const plugin: LoongPlugin = {
+    activate: candidate.activate as LoongPlugin["activate"],
   };
   const deactivate = candidate.deactivate;
   if (typeof deactivate === "function") {
-    plugin.deactivate = deactivate as NonNullable<DragonPlugin["deactivate"]>;
+    plugin.deactivate = deactivate as NonNullable<LoongPlugin["deactivate"]>;
   }
   if (isRecord(candidate.manifest)) {
     const inlineManifest = validateManifest({ ...manifest, ...candidate.manifest });
@@ -366,7 +366,7 @@ function normalizeProvider(provider: ModelProvider): ModelProvider {
   return normalized;
 }
 
-function normalizeLifecycleHook(hook: DragonLifecycleHook): DragonLifecycleHook {
+function normalizeLifecycleHook(hook: LoongLifecycleHook): LoongLifecycleHook {
   if (!isRecord(hook)) {
     throw new Error("Plugin lifecycle hook must be an object.");
   }
@@ -382,7 +382,7 @@ function normalizeLifecycleHook(hook: DragonLifecycleHook): DragonLifecycleHook 
   };
 }
 
-function normalizeMemoryBackend(backend: DragonPluginMemoryBackend): DragonPluginMemoryBackend {
+function normalizeMemoryBackend(backend: LoongPluginMemoryBackend): LoongPluginMemoryBackend {
   if (!isRecord(backend)) {
     throw new Error("Plugin memory backend must be an object.");
   }

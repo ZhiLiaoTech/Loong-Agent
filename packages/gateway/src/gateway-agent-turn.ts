@@ -3,24 +3,24 @@ import {
   resolveQueryLoopMaxTurns,
   shouldContinueQueryLoop,
   isForceQueryLoopMetadata,
-  type DragonAgentRuntime,
-  type DragonEvent,
-  type DragonTurnInput,
-  type DragonTurnResult,
-} from "@dragon/core";
+  type LoongAgentRuntime,
+  type LoongEvent,
+  type LoongTurnInput,
+  type LoongTurnResult,
+} from "@loong/core";
 import type { AgentTurnResultPayload } from "./session-coordinator.js";
 import type { GatewayAgentParams } from "./gateway-agent-types.js";
 import { toTurnInput } from "./agent-params.js";
 
 export interface GatewayRunLifecycle {
-  registerRunStart(runId: string, input: DragonTurnInput, controller: AbortController): void;
-  completeRun(runId: string, result: DragonTurnResult): void;
+  registerRunStart(runId: string, input: LoongTurnInput, controller: AbortController): void;
+  completeRun(runId: string, result: LoongTurnResult): void;
   failRun(runId: string, error: unknown, state: "cancelled" | "error"): void;
   deleteRunSession(runId: string): void;
 }
 
 export interface GatewayAgentTurnDeps {
-  runtime: DragonAgentRuntime;
+  runtime: LoongAgentRuntime;
   runInLane<T>(sessionId: string, task: () => Promise<T>): Promise<T>;
   runs: GatewayRunLifecycle;
 }
@@ -31,7 +31,7 @@ export async function executeGatewayAgentTurn(
   params: GatewayAgentParams,
 ): Promise<AgentTurnResultPayload> {
   const maxTurns = resolveQueryLoopMaxTurns(params.queryLoop, params.queryLoopMaxTurns);
-  const allEvents: DragonEvent[] = [];
+  const allEvents: LoongEvent[] = [];
   let lastPayload: AgentTurnResultPayload | undefined;
   let activeParams = params;
 
@@ -39,7 +39,7 @@ export async function executeGatewayAgentTurn(
     const payload = await executeGatewaySingleAgentTurn(deps, activeParams);
     allEvents.push(...payload.events);
     lastPayload = payload;
-    const result = payload.result as DragonTurnResult;
+    const result = payload.result as LoongTurnResult;
     const forceQueryLoop = params.metadata?.forceQueryLoop === true
       || isForceQueryLoopMetadata(params.metadata);
     if (!shouldContinueQueryLoop(result, turnIndex, maxTurns, { forceQueryLoop })) {
@@ -78,7 +78,7 @@ export async function executeGatewaySingleAgentTurn(
 ): Promise<AgentTurnResultPayload> {
   const input = toTurnInput(params);
   return await deps.runInLane(input.sessionId, async () => {
-    const events: DragonEvent[] = [];
+    const events: LoongEvent[] = [];
     const controller = new AbortController();
     const unsubscribe = deps.runtime.subscribe(event => {
       events.push(event);

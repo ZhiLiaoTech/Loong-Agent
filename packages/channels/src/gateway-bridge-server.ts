@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { DragonChannelGatewayOptions, DragonChannelMessage } from "./index.js";
+import type { LoongChannelGatewayOptions, LoongChannelMessage } from "./index.js";
 
 type ChannelApi = typeof import("./index.js");
 let channelApiPromise: Promise<ChannelApi> | undefined;
@@ -14,7 +14,7 @@ export interface GatewayBridgeServerOptions {
   port?: number;
   gatewayUrl: string;
   sharedSecret?: string;
-  defaults?: DragonChannelGatewayOptions;
+  defaults?: LoongChannelGatewayOptions;
   fetchImpl?: typeof fetch;
 }
 
@@ -80,7 +80,7 @@ export function createGatewayBridgeHandler(options: GatewayBridgeServerOptions) 
     const method = request.method ?? "GET";
     const url = new URL(request.url ?? "/", "http://localhost");
     if (method === "GET" && url.pathname === "/health") {
-      writeJson(response, 200, { ok: true, service: "dragon-channels-bridge" });
+      writeJson(response, 200, { ok: true, service: "loong-channels-bridge" });
       return;
     }
     if (method !== "POST") {
@@ -98,7 +98,7 @@ export function createGatewayBridgeHandler(options: GatewayBridgeServerOptions) 
     }
 
     const api = await loadChannelApi();
-    let message: DragonChannelMessage | undefined;
+    let message: LoongChannelMessage | undefined;
     if (url.pathname === "/telegram" || url.pathname === "/webhook/telegram") {
       message = api.parseTelegramWebhook(parsed);
     } else if (url.pathname === "/slack" || url.pathname === "/webhook/slack") {
@@ -131,7 +131,7 @@ export function createGatewayBridgeHandler(options: GatewayBridgeServerOptions) 
   };
 }
 
-function parseGenericWebhookPayload(parsed: unknown): DragonChannelMessage | undefined {
+function parseGenericWebhookPayload(parsed: unknown): LoongChannelMessage | undefined {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Webhook payload must be a JSON object.");
   }

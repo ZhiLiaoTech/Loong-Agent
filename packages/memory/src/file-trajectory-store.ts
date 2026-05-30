@@ -1,9 +1,9 @@
 import { appendFile, mkdir, opendir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import type { DragonTrajectoryRecord } from "@dragon/core";
+import type { LoongTrajectoryRecord } from "@loong/core";
 import { assertCanAppendFile } from "./memory-file-io.js";
 import { MemoryToolError } from "./memory-tool-error.js";
-import { isDragonSource, isTurnStatus } from "./file-session-store.js";
+import { isLoongSource, isTurnStatus } from "./file-session-store.js";
 import { isIsoDate, normalizeOptionalText, normalizeRunId, summarizeText } from "./memory-text.js";
 import {
   clampPositiveInteger,
@@ -45,7 +45,7 @@ export class FileTrajectoryStore implements TrajectoryStore {
   readonly #maxFileBytes: number;
 
   constructor(options: FileTrajectoryStoreOptions = {}) {
-    this.#rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "memory", "trajectories"));
+    this.#rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "memory", "trajectories"));
     this.#maxEvents = clampPositiveInteger(
       options.maxEvents,
       DEFAULT_MAX_TRAJECTORY_EVENTS,
@@ -78,7 +78,7 @@ export class FileTrajectoryStore implements TrajectoryStore {
     });
   }
 
-  async append(record: DragonTrajectoryRecord): Promise<void> {
+  async append(record: LoongTrajectoryRecord): Promise<void> {
     validateTrajectoryRecord(record);
     const storedRecord = normalizeTrajectoryRecord(record, this.#maxEvents);
     const serialized = stringifyJson(storedRecord);
@@ -109,7 +109,7 @@ export class FileTrajectoryStore implements TrajectoryStore {
   async get(
     runId: string,
     filter: Pick<TrajectoryListFilter, "sessionId" | "dateFrom" | "dateTo"> = {},
-  ): Promise<DragonTrajectoryRecord | undefined> {
+  ): Promise<LoongTrajectoryRecord | undefined> {
     const normalizedRunId = normalizeRunId(runId);
     const records = await this.#readTrajectoryRecords({ ...filter, runId: normalizedRunId }, 1);
     return records.find(record => record.runId === normalizedRunId);
@@ -118,9 +118,9 @@ export class FileTrajectoryStore implements TrajectoryStore {
   async #readTrajectoryRecords(
     filter: TrajectoryListFilter,
     maxMatches: number,
-  ): Promise<DragonTrajectoryRecord[]> {
+  ): Promise<LoongTrajectoryRecord[]> {
     const files = await readTrajectoryFileNames(this.#rootDir, filter, this.#maxFiles);
-    const records: DragonTrajectoryRecord[] = [];
+    const records: LoongTrajectoryRecord[] = [];
     for (const fileName of files) {
       const filePath = path.join(this.#rootDir, fileName);
       const fileStat = await stat(filePath);
@@ -144,14 +144,14 @@ export class FileTrajectoryStore implements TrajectoryStore {
   }
 }
 
-export function validateTrajectoryRecord(record: DragonTrajectoryRecord): void {
+export function validateTrajectoryRecord(record: LoongTrajectoryRecord): void {
   if (!record.runId.trim()) {
     throw new Error("Trajectory record missing runId.");
   }
   if (!record.sessionId.trim()) {
     throw new Error("Trajectory record missing sessionId.");
   }
-  if (!isDragonSource(record.source)) {
+  if (!isLoongSource(record.source)) {
     throw new Error("Trajectory record has invalid source.");
   }
   if (!isIsoTimestamp(record.createdAt)) {
@@ -171,7 +171,7 @@ export function validateTrajectoryRecord(record: DragonTrajectoryRecord): void {
   }
 }
 
-export function parseTrajectoryRecord(line: string, lineNumber: number): DragonTrajectoryRecord {
+export function parseTrajectoryRecord(line: string, lineNumber: number): LoongTrajectoryRecord {
   let value: unknown;
   try {
     value = JSON.parse(line);
@@ -183,7 +183,7 @@ export function parseTrajectoryRecord(line: string, lineNumber: number): DragonT
   if (!isObject(value)) {
     throw new MemoryToolError(`Invalid trajectory record at line ${lineNumber}: expected object.`);
   }
-  const record = value as unknown as DragonTrajectoryRecord;
+  const record = value as unknown as LoongTrajectoryRecord;
   validateTrajectoryRecord(record);
   return record;
 }
@@ -260,7 +260,7 @@ function trajectoryDateMatches(fileDate: string, dateFrom: string | undefined, d
     && (dateTo === undefined || fileDate <= dateTo);
 }
 
-function trajectoryRecordMatches(record: DragonTrajectoryRecord, filter: TrajectoryListFilter): boolean {
+function trajectoryRecordMatches(record: LoongTrajectoryRecord, filter: TrajectoryListFilter): boolean {
   if (filter.runId !== undefined && record.runId !== filter.runId) {
     return false;
   }
@@ -273,7 +273,7 @@ function trajectoryRecordMatches(record: DragonTrajectoryRecord, filter: Traject
   return trajectoryDateMatches(record.createdAt.slice(0, 10), filter.dateFrom, filter.dateTo);
 }
 
-function toTrajectorySummary(record: DragonTrajectoryRecord): TrajectoryRecordSummary {
+function toTrajectorySummary(record: LoongTrajectoryRecord): TrajectoryRecordSummary {
   const summary: TrajectoryRecordSummary = {
     runId: record.runId,
     sessionId: record.sessionId,
@@ -294,9 +294,9 @@ function toTrajectorySummary(record: DragonTrajectoryRecord): TrajectoryRecordSu
 }
 
 function normalizeTrajectoryRecord(
-  record: DragonTrajectoryRecord,
+  record: LoongTrajectoryRecord,
   maxEvents: number,
-): DragonTrajectoryRecord {
+): LoongTrajectoryRecord {
   if (record.events.length <= maxEvents) {
     return record;
   }

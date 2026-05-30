@@ -54,13 +54,13 @@ const bodyParts = [
 const header = `import path from "node:path";
 import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import {
-  createDragonRuntime,
+  createLoongRuntime,
   mergeSessionCompactionLayers,
-  type DragonAgentRuntime,
-  type DragonLifecycleHook,
-  type DragonPermissionHandler,
+  type LoongAgentRuntime,
+  type LoongLifecycleHook,
+  type LoongPermissionHandler,
   type ModelTierConfig,
-} from "@dragon/core";
+} from "@loong/core";
 import { loadContextConfig } from "./context-config.js";
 import { bootstrapAgentToolRegistry } from "./bootstrap-agent-tool-registry.js";
 import {
@@ -76,14 +76,14 @@ import {
   type MemorySearchResult,
   type MemoryStore,
   type TrajectoryStore,
-} from "@dragon/memory";
-import { loadDragonPlugin, type DragonPluginMemoryBackend, type LoadedDragonPlugin } from "@dragon/plugin-sdk";
+} from "@loong/memory";
+import { loadLoongPlugin, type LoongPluginMemoryBackend, type LoadedLoongPlugin } from "@loong/plugin-sdk";
 import {
   catalogEntriesFromProviders,
   createModelCatalog,
-  type DragonModelCatalog,
-} from "@dragon/model-catalog";
-import { createProviderRegistry, type ModelProvider } from "@dragon/providers";
+  type LoongModelCatalog,
+} from "@loong/model-catalog";
+import { createProviderRegistry, type ModelProvider } from "@loong/providers";
 import {
   createToolPermissionEngine,
   createToolRegistry,
@@ -91,8 +91,8 @@ import {
   type ToolPermissionEngine,
   type ToolPermissionRule,
   type ToolRegistry,
-} from "@dragon/tools";
-import { evaluateOrgAwarePermission, type EmployeeStore, type ToolPolicyStore } from "@dragon/org";
+} from "@loong/tools";
+import { evaluateOrgAwarePermission, type EmployeeStore, type ToolPolicyStore } from "@loong/org";
 import { configuredAgentConfigPath, loadPersistedAgentConfig } from "./cli-impl.js";
 
 `;

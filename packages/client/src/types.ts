@@ -1,5 +1,5 @@
-/** Minimal Dragon event shape from Gateway SSE envelopes. */
-export interface DragonEvent {
+/** Minimal Loong event shape from Gateway SSE envelopes. */
+export interface LoongEvent {
   type: string;
   runId?: string;
   phase?: string;
@@ -14,7 +14,7 @@ export interface GatewayEventEnvelope {
   sequence: number;
   timestamp: string;
   sessionId?: string;
-  event: DragonEvent;
+  event: LoongEvent;
 }
 
 export interface GatewayRpcResponse<T = unknown> {

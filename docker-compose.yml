@@ -1,24 +1,24 @@
 services:
-  dragon:
+  loong:
     build:
       context: .
-    image: loong-agent/dragon:local
+    image: loong-agent/loong:local
     env_file:
       - path: .env
         required: false
     environment:
-      DRAGON_GATEWAY_HOST: 0.0.0.0
-      DRAGON_GATEWAY_PORT: 8787
-      DRAGON_SESSION_DIR: /data/sessions
-      DRAGON_MEMORY_DIR: /data/memory
-      DRAGON_CRON_JOBS: /data/cron/jobs.json
-      DRAGON_MODEL_CONFIG: /data/config/providers.json
-      DRAGON_AGENT_CONFIG: /data/config/agents.json
+      LOONG_GATEWAY_HOST: 0.0.0.0
+      LOONG_GATEWAY_PORT: 8787
+      LOONG_SESSION_DIR: /data/sessions
+      LOONG_MEMORY_DIR: /data/memory
+      LOONG_CRON_JOBS: /data/cron/jobs.json
+      LOONG_MODEL_CONFIG: /data/config/providers.json
+      LOONG_AGENT_CONFIG: /data/config/agents.json
     ports:
-      - "${DRAGON_GATEWAY_PUBLISHED_PORT:-8787}:8787"
+      - "${LOONG_GATEWAY_PUBLISHED_PORT:-8787}:8787"
     volumes:
-      - dragon-data:/data
+      - loong-data:/data
     restart: unless-stopped
 
 volumes:
-  dragon-data:
+  loong-data:

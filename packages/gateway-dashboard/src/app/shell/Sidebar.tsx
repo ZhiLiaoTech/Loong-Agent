@@ -32,7 +32,7 @@ export function Sidebar({ counts, onNavigate }: SidebarProps) {
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
-        <h1 className={styles.brandTitle}>Dragon</h1>
+        <h1 className={styles.brandTitle}>Loong</h1>
         <p className={styles.brandSub}>Gateway</p>
       </div>
       <nav className={styles.nav} aria-label="Dashboard views">

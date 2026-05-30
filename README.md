@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="docs/images/banner.png" alt="Dragon — 中国龙主题横幅" width="100%" />
+<img src="docs/images/banner.png" alt="Loong — 中国龙主题横幅" width="100%" />
 
 <br />
 
-<img src="docs/images/logo.png" alt="Dragon 标志 — 中国龙" width="160" />
+<img src="docs/images/logo.png" alt="Loong 标志 — 中国龙" width="160" />
 
-# Dragon · 潜龙
+# Loong
 
 🐉 **潜龙在渊，智驭八方** — 原生 TypeScript、本地优先的智能体框架
 
@@ -50,13 +50,13 @@
 
 ## 📝 项目简介
 
-**Dragon（潜龙 / Qianlong）** 是 **原生 TypeScript、本地优先** 的智能体框架。名称中的「龙」指 **中国龙（🐉）** —— 象征深潜蓄势、审时度势、终而智驭八方（*潜龙在渊，智驭八方*）。
+**Loong（潜龙 / Qianlong）** 是 **原生 TypeScript、本地优先** 的智能体框架。名称中的「龙」指 **中国龙（🐉）** —— 象征深潜蓄势、审时度势、终而智驭八方（*潜龙在渊，智驭八方*）。
 
 我们在工程上对标并吸收业界主流本地/编码智能体的成熟做法，在 **单一 TypeScript 运行时** 内落地，避免 Python 与 Node 双栈割裂：
 
-| 来源 | 借鉴能力 | Dragon 中的对应实现 |
+| 来源 | 借鉴能力 | Loong 中的对应实现 |
 |------|----------|---------------------|
-| **OpenClaw** | 网关、插件、会话、本地优先 | `@dragon/gateway`（HTTP/WS/SSE RPC）、插件发现、按会话队列（Lane）、Dashboard |
+| **OpenClaw** | 网关、插件、会话、本地优先 | `@loong/gateway`（HTTP/WS/SSE RPC）、插件发现、按会话队列（Lane）、Dashboard |
 | **Hermes Agent** | 技能进化、记忆、模型路由、轨迹 | `SKILL.md` 与技能工具、可审核记忆候选、Tier 路由与 Fallback、Trajectory 持久化 |
 | **Claude Code** | 编码交互、权限、工程化工具链 | 文件/补丁/Shell/Sandbox、交互式 `ask` 审批、回合级工具循环与事件流 |
 
@@ -99,7 +99,7 @@
 | **P0** | **长聊不爆上下文** | 单轮 `Turn Prep` 截断（`core/turn-prep.ts`）；`session_compaction` 注入较早会话摘要（`memory`） | 历史 **tool 结果** 跨轮压缩/摘要并写回模型消息，与 Turn Prep **分层**协作 |
 | **P0** | **对外部署敢开** | `shared-secret` 认证、按路由限速（`gateway/rate-limit.ts`）、非本机监听告警 | 共享/远程部署**默认要求认证**；直连 `tool.invoke` 策略可配置且默认更严 |
 | **P1** | **接上 MCP 工具生态** | stdio/HTTP 客户端、`mcp.json`、`registerMcpTools`（`tools/mcp/*`）；**CLI 启动时已加载** | **网关 / Dashboard 智能体默认加载 MCP**；服务发现、权限与运行观测一体化 |
-| **P1** | **控制台配置真生效** | 网关侧 Profile 合并进 `toTurnInput`（`thinking` / `toolsEnabled` / `memoryEnabled` 等） | **`dragon agent` CLI** 走同一套 Profile；Tier / Dashboard 开关在全链路无遗漏 |
+| **P1** | **控制台配置真生效** | 网关侧 Profile 合并进 `toTurnInput`（`thinking` / `toolsEnabled` / `memoryEnabled` 等） | **`loong agent` CLI** 走同一套 Profile；Tier / Dashboard 开关在全链路无遗漏 |
 | **P1** | **渠道与多机协同** | Telegram/Slack 适配、`POST /channels/webhook`、Cron 投递 | 减少对外部 bridge 的硬依赖；设备配对、远程 Worker（见 Roadmap） |
 | **P2** | **浏览器与读并行** | 轻量 `browser_*`；可选 `browser_playwright_snapshot`；只读工具**同轮并行**（`core/tool-parallel.ts`） | Playwright 可选依赖的安装与文档；富交互浏览器、流式并行读加强 |
 | **P2** | **工程可维护 / CI** | 功能可用但 `gateway` / `cli` / `memory` 单文件约 2.4k–3.4k 行 | 模块拆分；`test-suite` 分片并行以缩短 CI |
@@ -127,16 +127,16 @@ corepack pnpm build
 corepack pnpm test
 
 # 单次对话
-dragon chat "潜龙试爪。"
+loong chat "潜龙试爪。"
 
 # 带工具的智能体（默认：写入操作需交互审批）
-dragon agent "概括本仓库的结构与模块。"
+loong agent "概括本仓库的结构与模块。"
 
 # 启动本地网关与控制台
-dragon gateway
+loong gateway
 ```
 
-执行 `dragon gateway` 后，在浏览器打开 `http://127.0.0.1:17357/`（默认端口 `17357`，可用 `--port` 修改）。
+执行 `loong gateway` 后，在浏览器打开 `http://127.0.0.1:17357/`（默认端口 `17357`，可用 `--port` 修改）。
 
 ---
 
@@ -144,46 +144,46 @@ dragon gateway
 
 | 包名 | 说明 |
 |------|------|
-| `@dragon/core` | 智能体回合运行时、生命周期事件、会话、队列 |
-| `@dragon/gateway` | WebSocket / HTTP 控制平面 |
-| `@dragon/channels` | 聊天渠道 Webhook 与 Gateway 消息投递 |
-| `@dragon/tools` | 工具注册表、权限控制、内置工具契约 |
-| `@dragon/security` | 敏感键检测与密钥脱敏 |
-| `@dragon/providers` | 模型提供商路由 |
-| `@dragon/model-catalog` | 按提供商划分的模型元数据 |
-| `@dragon/memory` | Markdown、SQLite 与搜索型记忆 |
-| `@dragon/skills` | `SKILL.md` 技能运行时与编写 |
-| `@dragon/cron` | Cron 表达式解析、文件任务存储与执行器 |
-| `@dragon/delegation` | 多智能体任务编排与 `delegation_run` 工具 |
-| `@dragon/plugin-sdk` | 对外公开的插件 API |
-| `@dragon/plugin-openai-compatible` | OpenAI 兼容协议提供商插件 |
-| `@dragon/plugin-openrouter-compatible` | OpenRouter 提供商插件 |
-| `@dragon/plugin-anthropic-compatible` | Anthropic Messages API 与工具调用翻译 |
-| `@dragon/plugin-git-tools` | 只读 Git 仓库检查工具 |
-| `@dragon/test-suite` | TypeScript 回归测试套件 |
-| `@dragon/cli` | 命令行入口 |
+| `@loong/core` | 智能体回合运行时、生命周期事件、会话、队列 |
+| `@loong/gateway` | WebSocket / HTTP 控制平面 |
+| `@loong/channels` | 聊天渠道 Webhook 与 Gateway 消息投递 |
+| `@loong/tools` | 工具注册表、权限控制、内置工具契约 |
+| `@loong/security` | 敏感键检测与密钥脱敏 |
+| `@loong/providers` | 模型提供商路由 |
+| `@loong/model-catalog` | 按提供商划分的模型元数据 |
+| `@loong/memory` | Markdown、SQLite 与搜索型记忆 |
+| `@loong/skills` | `SKILL.md` 技能运行时与编写 |
+| `@loong/cron` | Cron 表达式解析、文件任务存储与执行器 |
+| `@loong/delegation` | 多智能体任务编排与 `delegation_run` 工具 |
+| `@loong/plugin-sdk` | 对外公开的插件 API |
+| `@loong/plugin-openai-compatible` | OpenAI 兼容协议提供商插件 |
+| `@loong/plugin-openrouter-compatible` | OpenRouter 提供商插件 |
+| `@loong/plugin-anthropic-compatible` | Anthropic Messages API 与工具调用翻译 |
+| `@loong/plugin-git-tools` | 只读 Git 仓库检查工具 |
+| `@loong/test-suite` | TypeScript 回归测试套件 |
+| `@loong/cli` | 命令行入口 |
 
 ---
 
 ## 🖥️ 命令行
 
 ```bash
-dragon chat [--session <id>] [--session-dir <path>] [--no-session] \
+loong chat [--session <id>] [--session-dir <path>] [--no-session] \
   [--model <ref>] [--model-fallback <ref>] [--plugin-root <path>] <message>
 
-dragon agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] \
+loong agent [--session <id>] [--session-dir <path>] [--no-session] [--allow-write] \
   [--profile <id>] [--query-loop] [--finish-task] [--query-loop-max-turns <n>] \
   [--model <ref>] [--model-fallback <ref>] [--skill-root <path>] [--plugin-root <path>] \
   [--memory-dir <path>] [--memory-backend <id>] <message>
 
-dragon gateway [--host <host>] [--port <port>] [--secret <value>] \
+loong gateway [--host <host>] [--port <port>] [--secret <value>] \
   [--session-dir <path>] [--allow-write] [--skill-root <path>] [--plugin-root <path>] \
   [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>]
 
-dragon cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] \
+loong cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] \
   [--once] [--interval-ms <ms>]
 
-dragon channels serve [--port <port>] [--gateway-url <url>] [--secret <value>]
+loong channels serve [--port <port>] [--gateway-url <url>] [--secret <value>]
 ```
 
 <details>
@@ -200,12 +200,12 @@ dragon channels serve [--port <port>] [--gateway-url <url>] [--secret <value>]
 <details>
 <summary><strong>模型、插件与记忆</strong></summary>
 
-- 模型引用示例：`openai:gpt-4o`、`anthropic:claude-sonnet-4-5`；配置文件 `.dragon/config/providers.json`
-- 智能体配置：`.dragon/config/agents.json`
-- 失败回退：`--model-fallback` 或环境变量 `DRAGON_MODEL_FALLBACKS`
-- 插件目录：`.dragon/plugins`、`DRAGON_PLUGIN_ROOTS`、`--plugin-root`
+- 模型引用示例：`openai:gpt-4o`、`anthropic:claude-sonnet-4-5`；配置文件 `.loong/config/providers.json`
+- 智能体配置：`.loong/config/agents.json`
+- 失败回退：`--model-fallback` 或环境变量 `LOONG_MODEL_FALLBACKS`
+- 插件目录：`.loong/plugins`、`LOONG_PLUGIN_ROOTS`、`--plugin-root`
 - 记忆后端：默认 `file`，可选 `sqlite`；Markdown 记忆包括 `USER.md`、`PROJECT.md`、`MEMORY.md`、`notes/` 等
-- 候选记忆位于 `.dragon/memory/candidates/`，须经晋升后才参与检索与注入
+- 候选记忆位于 `.loong/memory/candidates/`，须经晋升后才参与检索与注入
 
 </details>
 
@@ -213,7 +213,7 @@ dragon channels serve [--port <port>] [--gateway-url <url>] [--secret <value>]
 
 ## 🌐 网关
 
-`dragon gateway` 在 `/` 提供轻量控制台，包含 **运行、模型、智能体、观测、系统** 五个工作区。
+`loong gateway` 在 `/` 提供轻量控制台，包含 **运行、模型、智能体、观测、系统** 五个工作区。
 
 | 接口 | 说明 |
 |------|------|
@@ -221,7 +221,7 @@ dragon channels serve [--port <port>] [--gateway-url <url>] [--secret <value>]
 | `GET /events` | SSE 事件流（支持 `sessionId` / `runId` 过滤） |
 | `GET /ws` | WebSocket RPC 与事件推送 |
 | `POST /rpc` | 连接、健康检查、智能体调用、运行状态、配置、插件、工具、记忆、轨迹、定时任务等 |
-| `POST /channels/webhook` | 经认证的聊天渠道入站（`@dragon/channels` 提供 Telegram / Slack 适配） |
+| `POST /channels/webhook` | 经认证的聊天渠道入站（`@loong/channels` 提供 Telegram / Slack 适配） |
 
 <details>
 <summary><strong>RPC 要点</strong></summary>
@@ -230,7 +230,7 @@ dragon channels serve [--port <port>] [--gateway-url <url>] [--secret <value>]
 - `plugins.list`：插件名、工具、提供商、记忆后端、钩子摘要（不含文件系统路径）
 - `tools.catalog` / `tool.invoke`：直连调用比智能体循环更严格（默认仅只读白名单）
 - 兼容 OpenAI / Anthropic 的插件可通过 `assistant_delta` 事件推送真实文本增量
-- 定时任务：任务文件 `.dragon/cron/jobs.json`；`dragon cron --once` 单次执行或常驻运行（网关默认也会启动定时任务）
+- 定时任务：任务文件 `.loong/cron/jobs.json`；`loong cron --once` 单次执行或常驻运行（网关默认也会启动定时任务）
 
 </details>
 
@@ -263,7 +263,7 @@ corepack pnpm smoke:gateway
 
 ## 📜 许可证
 
-本项目采用 [MIT 许可证](./LICENSE)，Copyright (c) 2026 Dragon Authors。
+本项目采用 [MIT 许可证](./LICENSE)，Copyright (c) 2026 Loong Authors。
 
 ---
 

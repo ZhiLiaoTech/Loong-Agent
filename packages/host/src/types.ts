@@ -3,7 +3,7 @@ export type HostSurface = "browser" | "desktop";
 
 export interface HostCapabilities {
   surface: HostSurface;
-  /** Start or ensure the local Dragon Gateway process. */
+  /** Start or ensure the local Loong Gateway process. */
   gatewayLifecycle: boolean;
   /** Read/write auth tokens via OS secure storage. */
   secureStorage: boolean;

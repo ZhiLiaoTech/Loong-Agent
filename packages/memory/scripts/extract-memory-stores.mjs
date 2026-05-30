@@ -122,7 +122,7 @@ for (const { start, end } of removals) {
   newLines.splice(start, end - start);
 }
 
-const insertAt = newLines.findIndex(l => l.includes('from "@dragon/tools"'));
+const insertAt = newLines.findIndex(l => l.includes('from "@loong/tools"'));
 const block = `
 export { createFileMemoryStore, FileMemoryStore } from "./file-memory-store.js";
 export { createSqliteMemoryStore, SqliteMemoryStore } from "./sqlite-memory-store.js";

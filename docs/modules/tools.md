@@ -1,4 +1,4 @@
-# @dragon/tools 技术方案
+# @loong/tools 技术方案
 
 ## 1. 职责边界
 
@@ -62,14 +62,14 @@ Install notes: [DEPLOYMENT.md](../DEPLOYMENT.md#browser-automation-optional-play
 
 ### 3.4 MCP 适配（stdio + HTTP）
 
-- 配置：`.dragon/config/mcp.json`，每项需 `id` 与 **`command`（stdio）** 或 **`url`（HTTP）** 之一。
+- 配置：`.loong/config/mcp.json`，每项需 `id` 与 **`command`（stdio）** 或 **`url`（HTTP）** 之一。
 - `registerMcpTools(registry, { servers })`：连接 MCP 服务、拉取 `tools/list`，注册为 `mcp_<serverId>_<toolName>`，默认权限 `ask`。
 - **stdio**：`McpStdioClient` 子进程 + 换行分隔 JSON-RPC。
 - **HTTP**：`McpHttpClient` 向 `url` POST JSON-RPC，支持 `mcp-session-id` 与 `text/event-stream` 响应体。
 
 ### 3.5 与 Runtime 并行执行
 
-- `@dragon/core` 的 `canRunToolCallsInParallel`：同一轮多个 tool call 均为 **baseline `permission: allow`** 且能力仅含 `read` / `network` 时并行执行（例如并行的 `file_read` + `browser_snapshot`）。
+- `@loong/core` 的 `canRunToolCallsInParallel`：同一轮多个 tool call 均为 **baseline `permission: allow`** 且能力仅含 `read` / `network` 时并行执行（例如并行的 `file_read` + `browser_snapshot`）。
 - `write` / `execute` / `custom` / `memory` 能力或 `ask` 权限的工具仍串行。
 
 ### 3.6 依赖

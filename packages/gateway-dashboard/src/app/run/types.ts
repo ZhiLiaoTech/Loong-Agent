@@ -1,6 +1,27 @@
-import type { DragonEvent, GatewayProviderSummary } from "../../api/index.js";
+import type { LoongEvent, GatewayProviderSummary } from "../../api/index.js";
+
+export interface AgentAiSummarizationConfig {
+  enabled?: boolean;
+  model?: string;
+  keepRecentTurns?: number;
+  maxSummaryChars?: number;
+  summaryPrompt?: string;
+  timeoutMs?: number;
+}
 
 export type ThinkingLevel = "" | "none" | "low" | "medium" | "high";
+
+import type { ChatActivityStep } from "./activity/types.js";
+
+export type {
+  ActivityGranularity,
+  ActivityStepStatus,
+  ActivityCategory,
+  ChatActivityStep,
+  ChatActivityPreferences,
+} from "./activity/types.js";
+
+export { DEFAULT_CHAT_ACTIVITY_PREFERENCES } from "./activity/types.js";
 
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -10,6 +31,12 @@ export interface ChatTurn {
   outcome?: "error" | "cancelled" | "timeout";
   /** Human-readable failure reason shown below the assistant text. */
   errorDetail?: string;
+  /** Gateway run id for war-room linking on assistant turns. */
+  runId?: string;
+  /** Live processing steps shown beside the assistant bubble. */
+  activities?: readonly ChatActivityStep[];
+  /** Whether the activity panel is expanded (auto-collapses after run completes). */
+  activitiesExpanded?: boolean;
 }
 
 export interface RunSettings {
@@ -50,6 +77,7 @@ export interface AgentProfile {
   systemPrompt?: string;
   toolsEnabled?: boolean;
   memoryEnabled?: boolean;
+  aiSummarization?: AgentAiSummarizationConfig | false;
 }
 
 export interface AgentConfigState {
@@ -76,4 +104,4 @@ export interface AgentRunResult {
   messages?: readonly { role: string; content: string }[];
 }
 
-export type { DragonEvent, GatewayProviderSummary };
+export type { LoongEvent, GatewayProviderSummary };

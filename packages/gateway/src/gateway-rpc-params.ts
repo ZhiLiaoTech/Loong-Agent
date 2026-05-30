@@ -1,11 +1,11 @@
-import type { DragonCronJob } from "@dragon/cron";
-import type { DragonThinkingLevel, DragonTurnResult } from "@dragon/core";
+import type { LoongCronJob } from "@loong/cron";
+import type { LoongThinkingLevel, LoongTurnResult } from "@loong/core";
 import type {
   ApprovalStatus,
   EmployeeRegistry,
   OrgTicket,
   ToolPolicyDocument,
-} from "@dragon/org";
+} from "@loong/org";
 import type { GatewayTierName } from "./gateway-agent-types.js";
 
 export type GatewayModelProviderType = "openai-compatible" | "anthropic";
@@ -44,7 +44,7 @@ export type GatewayTierClassifierMode = "heuristic" | "fixed";
 export interface GatewayTierSpec {
   model?: string;
   modelFallbacks?: readonly string[];
-  thinking?: DragonThinkingLevel;
+  thinking?: LoongThinkingLevel;
   maxContextChars?: number;
   toolsEnabled?: boolean;
   memoryEnabled?: boolean;
@@ -111,13 +111,27 @@ export interface GatewayTierClassifyResult {
   score: number;
   reason: string;
   resolvedModel?: string;
-  resolvedThinking?: DragonThinkingLevel;
+  resolvedThinking?: LoongThinkingLevel;
   resolvedMaxContextChars?: number;
   resolvedToolsEnabled?: boolean;
   resolvedMemoryEnabled?: boolean;
 }
 
 export type GatewayEmployeeSaveParams = EmployeeRegistry;
+
+export interface GatewayEmployeeWorkspaceGetParams {
+  workspace?: string;
+  employeeId?: string;
+  profileId?: string;
+}
+
+export interface GatewayEmployeeWorkspaceSaveParams {
+  workspace: string;
+  role?: string;
+  workflow?: string;
+  memory?: string;
+  enabledSkills?: string[];
+}
 
 export type GatewayToolPolicySaveParams = ToolPolicyDocument;
 
@@ -141,7 +155,7 @@ export type GatewayTicketUpsertParams = OrgTicket;
 
 export interface GatewayTrajectoryListParams {
   sessionId: string;
-  status?: DragonTurnResult["status"];
+  status?: LoongTurnResult["status"];
   dateFrom?: string;
   dateTo?: string;
   limit?: number;
@@ -181,7 +195,7 @@ export interface GatewayMemoryCandidateRejectParams {
   reason?: string;
 }
 
-export interface GatewayCronJobUpsertParams extends DragonCronJob {
+export interface GatewayCronJobUpsertParams extends LoongCronJob {
   enabled?: boolean;
   nextRunAt?: string;
 }

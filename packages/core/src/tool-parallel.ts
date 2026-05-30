@@ -1,5 +1,5 @@
-import { normalizeToolName, type ToolCapability, type ToolDefinition, type ToolRegistry } from "@dragon/tools";
-import type { ModelToolCall } from "@dragon/providers";
+import { normalizeToolName, type ToolCapability, type ToolDefinition, type ToolRegistry } from "@loong/tools";
+import type { ModelToolCall } from "@loong/providers";
 
 const PARALLEL_SAFE_CAPABILITIES = new Set<ToolCapability>(["read", "network"]);
 

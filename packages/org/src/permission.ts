@@ -3,8 +3,8 @@ import type {
   ToolInvocation,
   ToolPermissionEngine,
   ToolPermissionResult,
-} from "@dragon/tools";
-import { createToolPermissionEngine } from "@dragon/tools";
+} from "@loong/tools";
+import { createToolPermissionEngine } from "@loong/tools";
 import type { EmployeeRegistry, ToolPolicyDocument } from "./types.js";
 import {
   findEmployeePolicy,

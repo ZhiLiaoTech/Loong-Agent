@@ -18,6 +18,16 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/channel-plugin-host:
+    dependencies:
+      '@loong/channels':
+        specifier: workspace:*
+        version: link:../channels
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/channels:
     devDependencies:
       typescript:
@@ -26,43 +36,46 @@ importers:
 
   packages/cli:
     dependencies:
-      '@dragon/channels':
+      '@loong/channel-plugin-host':
+        specifier: workspace:*
+        version: link:../channel-plugin-host
+      '@loong/channels':
         specifier: workspace:*
         version: link:../channels
-      '@dragon/core':
+      '@loong/core':
         specifier: workspace:*
         version: link:../core
-      '@dragon/cron':
+      '@loong/cron':
         specifier: workspace:*
         version: link:../cron
-      '@dragon/delegation':
+      '@loong/delegation':
         specifier: workspace:*
         version: link:../delegation
-      '@dragon/gateway':
+      '@loong/gateway':
         specifier: workspace:*
         version: link:../gateway
-      '@dragon/memory':
+      '@loong/memory':
         specifier: workspace:*
         version: link:../memory
-      '@dragon/model-catalog':
+      '@loong/model-catalog':
         specifier: workspace:*
         version: link:../model-catalog
-      '@dragon/org':
+      '@loong/org':
         specifier: workspace:*
         version: link:../org
-      '@dragon/plugin-sdk':
+      '@loong/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@dragon/providers':
+      '@loong/providers':
         specifier: workspace:*
         version: link:../providers
-      '@dragon/security':
+      '@loong/security':
         specifier: workspace:*
         version: link:../security
-      '@dragon/skills':
+      '@loong/skills':
         specifier: workspace:*
         version: link:../skills
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
       jszip:
@@ -84,7 +97,7 @@ importers:
 
   packages/client:
     dependencies:
-      '@dragon/host':
+      '@loong/host':
         specifier: workspace:*
         version: link:../host
     devDependencies:
@@ -94,13 +107,13 @@ importers:
 
   packages/core:
     dependencies:
-      '@dragon/providers':
+      '@loong/providers':
         specifier: workspace:*
         version: link:../providers
-      '@dragon/security':
+      '@loong/security':
         specifier: workspace:*
         version: link:../security
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
       jszip:
@@ -122,7 +135,7 @@ importers:
 
   packages/cron:
     dependencies:
-      '@dragon/channels':
+      '@loong/channels':
         specifier: workspace:*
         version: link:../channels
     devDependencies:
@@ -132,10 +145,10 @@ importers:
 
   packages/delegation:
     dependencies:
-      '@dragon/core':
+      '@loong/core':
         specifier: workspace:*
         version: link:../core
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
     devDependencies:
@@ -145,7 +158,7 @@ importers:
 
   packages/desktop:
     devDependencies:
-      '@dragon/studio':
+      '@loong/studio':
         specifier: workspace:*
         version: link:../studio
       '@tauri-apps/cli':
@@ -154,28 +167,31 @@ importers:
 
   packages/gateway:
     dependencies:
-      '@dragon/channels':
+      '@loong/channel-plugin-host':
+        specifier: workspace:*
+        version: link:../channel-plugin-host
+      '@loong/channels':
         specifier: workspace:*
         version: link:../channels
-      '@dragon/core':
+      '@loong/core':
         specifier: workspace:*
         version: link:../core
-      '@dragon/cron':
+      '@loong/cron':
         specifier: workspace:*
         version: link:../cron
-      '@dragon/gateway-dashboard':
+      '@loong/gateway-dashboard':
         specifier: workspace:*
         version: link:../gateway-dashboard
-      '@dragon/model-catalog':
+      '@loong/model-catalog':
         specifier: workspace:*
         version: link:../model-catalog
-      '@dragon/org':
+      '@loong/org':
         specifier: workspace:*
         version: link:../org
-      '@dragon/studio':
+      '@loong/studio':
         specifier: workspace:*
         version: link:../studio
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
     devDependencies:
@@ -185,7 +201,7 @@ importers:
 
   packages/gateway-dashboard:
     dependencies:
-      '@dragon/client':
+      '@loong/client':
         specifier: workspace:*
         version: link:../client
       react:
@@ -222,10 +238,10 @@ importers:
 
   packages/memory:
     dependencies:
-      '@dragon/core':
+      '@loong/core':
         specifier: workspace:*
         version: link:../core
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
     devDependencies:
@@ -239,12 +255,22 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/openclaw-compat:
+    dependencies:
+      '@loong/channel-plugin-host':
+        specifier: workspace:*
+        version: link:../channel-plugin-host
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/org:
     dependencies:
-      '@dragon/core':
+      '@loong/core':
         specifier: workspace:*
         version: link:../core
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
     devDependencies:
@@ -254,10 +280,10 @@ importers:
 
   packages/plugin-anthropic-compatible:
     dependencies:
-      '@dragon/plugin-sdk':
+      '@loong/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@dragon/providers':
+      '@loong/providers':
         specifier: workspace:*
         version: link:../providers
     devDependencies:
@@ -267,10 +293,10 @@ importers:
 
   packages/plugin-git-tools:
     dependencies:
-      '@dragon/plugin-sdk':
+      '@loong/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
     devDependencies:
@@ -280,10 +306,10 @@ importers:
 
   packages/plugin-openai-compatible:
     dependencies:
-      '@dragon/plugin-sdk':
+      '@loong/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@dragon/providers':
+      '@loong/providers':
         specifier: workspace:*
         version: link:../providers
     devDependencies:
@@ -293,10 +319,10 @@ importers:
 
   packages/plugin-openrouter-compatible:
     dependencies:
-      '@dragon/plugin-sdk':
+      '@loong/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@dragon/providers':
+      '@loong/providers':
         specifier: workspace:*
         version: link:../providers
     devDependencies:
@@ -306,19 +332,19 @@ importers:
 
   packages/plugin-sdk:
     dependencies:
-      '@dragon/core':
+      '@loong/core':
         specifier: workspace:*
         version: link:../core
-      '@dragon/memory':
+      '@loong/memory':
         specifier: workspace:*
         version: link:../memory
-      '@dragon/model-catalog':
+      '@loong/model-catalog':
         specifier: workspace:*
         version: link:../model-catalog
-      '@dragon/providers':
+      '@loong/providers':
         specifier: workspace:*
         version: link:../providers
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
     devDependencies:
@@ -328,10 +354,10 @@ importers:
 
   packages/providers:
     dependencies:
-      '@dragon/model-catalog':
+      '@loong/model-catalog':
         specifier: workspace:*
         version: link:../model-catalog
-      '@dragon/security':
+      '@loong/security':
         specifier: workspace:*
         version: link:../security
     devDependencies:
@@ -347,7 +373,7 @@ importers:
 
   packages/skills:
     dependencies:
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
     devDependencies:
@@ -357,13 +383,13 @@ importers:
 
   packages/studio:
     dependencies:
-      '@dragon/client':
+      '@loong/client':
         specifier: workspace:*
         version: link:../client
-      '@dragon/host':
+      '@loong/host':
         specifier: workspace:*
         version: link:../host
-      '@dragon/ui':
+      '@loong/ui':
         specifier: workspace:*
         version: link:../ui
       react:
@@ -397,41 +423,41 @@ importers:
 
   packages/test-suite:
     dependencies:
-      '@dragon/channels':
+      '@loong/channels':
         specifier: workspace:*
         version: link:../channels
-      '@dragon/client':
+      '@loong/client':
         specifier: workspace:*
         version: link:../client
-      '@dragon/core':
+      '@loong/core':
         specifier: workspace:*
         version: link:../core
-      '@dragon/cron':
+      '@loong/cron':
         specifier: workspace:*
         version: link:../cron
-      '@dragon/delegation':
+      '@loong/delegation':
         specifier: workspace:*
         version: link:../delegation
-      '@dragon/gateway':
+      '@loong/gateway':
         specifier: workspace:*
         version: link:../gateway
-      '@dragon/memory':
+      '@loong/memory':
         specifier: workspace:*
         version: link:../memory
-      '@dragon/model-catalog':
+      '@loong/model-catalog':
         specifier: workspace:*
         version: link:../model-catalog
-      '@dragon/providers':
+      '@loong/providers':
         specifier: workspace:*
         version: link:../providers
-      '@dragon/security':
+      '@loong/security':
         specifier: workspace:*
         version: link:../security
-      '@dragon/tools':
+      '@loong/tools':
         specifier: workspace:*
         version: link:../tools
     devDependencies:
-      '@dragon/studio':
+      '@loong/studio':
         specifier: workspace:*
         version: link:../studio
       tsx:

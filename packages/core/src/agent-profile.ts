@@ -1,29 +1,31 @@
+import type { AISummarizationConfig } from "./ai-summarization.js";
 import type { SessionMessageCompactionOptions } from "./session-message-compaction.js";
-import type { DragonThinkingLevel, DragonTurnInput } from "./types.js";
+import type { LoongThinkingLevel, LoongTurnInput } from "./types.js";
 
 /** Profile fields merged into a turn when CLI/Gateway resolves agents.json. */
-export interface DragonAgentProfile {
+export interface LoongAgentProfile {
   id: string;
   name: string;
   description?: string;
   defaultModel?: string;
   workspace?: string;
-  thinking?: DragonThinkingLevel;
+  thinking?: LoongThinkingLevel;
   systemPrompt?: string;
   toolsEnabled?: boolean;
   memoryEnabled?: boolean;
   sessionCompaction?: SessionMessageCompactionOptions | false;
+  aiSummarization?: AISummarizationConfig | false;
 }
 
-export interface DragonAgentConfigSnapshot {
-  profiles: readonly DragonAgentProfile[];
+export interface LoongAgentConfigSnapshot {
+  profiles: readonly LoongAgentProfile[];
   defaultProfileId?: string;
 }
 
 export function findAgentProfile(
-  config: DragonAgentConfigSnapshot,
+  config: LoongAgentConfigSnapshot,
   profileId: string | undefined,
-): DragonAgentProfile | undefined {
+): LoongAgentProfile | undefined {
   const id = profileId?.trim() || config.defaultProfileId?.trim();
   if (!id) {
     return undefined;
@@ -35,9 +37,9 @@ export function findAgentProfile(
  * Applies profile defaults only where the caller did not already set a field.
  */
 export function mergeAgentProfileIntoTurnInput(
-  input: DragonTurnInput,
-  profile: DragonAgentProfile | undefined,
-): DragonTurnInput {
+  input: LoongTurnInput,
+  profile: LoongAgentProfile | undefined,
+): LoongTurnInput {
   if (!profile) {
     return input;
   }
@@ -53,6 +55,7 @@ export function mergeAgentProfileIntoTurnInput(
       ...(input.metadata ?? {}),
       ...(profile.id ? { profileId: profile.id } : {}),
       ...(profile.sessionCompaction !== undefined ? { sessionCompaction: profile.sessionCompaction } : {}),
+      ...(profile.aiSummarization !== undefined ? { aiSummarization: profile.aiSummarization } : {}),
     },
   };
 }

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GatewayApiError, type GatewayProviderSummary } from "../../api/index.js";
+import { GatewayApiError } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
+import { useWorkbenchT } from "../i18n/WorkbenchI18nContext.js";
+import { buildConfiguredModelOptions } from "../models/buildConfiguredModelOptions.js";
+import type { ModelProviderConfig } from "../models/types.js";
 import type { AgentProfile } from "../run/types.js";
-import { buildModelSuggestions } from "./buildModelSuggestions.js";
+import { agentIdFromName } from "./agentIdFromName.js";
 import {
   EMPTY_AGENT_PROFILE_FORM,
   type AgentProfileFormState,
@@ -15,40 +18,49 @@ function sortProfiles(profiles: readonly AgentProfile[]): AgentProfile[] {
 
 export function useAgentsPage() {
   const client = useGatewayClient();
+  const t = useWorkbenchT();
   const [agentConfig, setAgentConfig] = useState<AgentsConfigState>({ profiles: [] });
-  const [providers, setProviders] = useState<readonly GatewayProviderSummary[]>([]);
+  const [modelProviders, setModelProviders] = useState<readonly ModelProviderConfig[]>([]);
   const [form, setForm] = useState<AgentProfileFormState>(EMPTY_AGENT_PROFILE_FORM);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const modelSuggestions = useMemo(() => buildModelSuggestions(providers), [providers]);
+  const modelOptions = useMemo(
+    () => buildConfiguredModelOptions(modelProviders),
+    [modelProviders],
+  );
+
+  const reloadConfig = useCallback(async () => {
+    const [configPayload, modelPayload] = await Promise.all([
+      client.rpc<AgentsConfigState>("agent.config.get"),
+      client.rpc<{ providers?: readonly ModelProviderConfig[] }>("model.config.get").catch(() => ({
+        providers: [] as readonly ModelProviderConfig[],
+      })),
+    ]);
+    setAgentConfig({
+      profiles: configPayload.profiles ?? [],
+      ...(configPayload.defaultProfileId
+        ? { defaultProfileId: configPayload.defaultProfileId }
+        : {}),
+      ...(configPayload.configPath ? { configPath: configPayload.configPath } : {}),
+    });
+    setModelProviders(modelPayload.providers ?? []);
+  }, [client]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [configPayload, providerList] = await Promise.all([
-        client.rpc<AgentsConfigState>("agent.config.get"),
-        client.listProviders().catch(() => [] as readonly GatewayProviderSummary[]),
-      ]);
-      setAgentConfig({
-        profiles: configPayload.profiles ?? [],
-        ...(configPayload.defaultProfileId
-          ? { defaultProfileId: configPayload.defaultProfileId }
-          : {}),
-        ...(configPayload.configPath ? { configPath: configPayload.configPath } : {}),
-      });
-      setProviders(providerList);
+      await reloadConfig();
     } catch (caught) {
       const message = caught instanceof GatewayApiError ? caught.message : String(caught);
       setError(message);
-      setProviders(await client.listProviders().catch(() => []));
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, [reloadConfig]);
 
   useEffect(() => {
     void load();
@@ -69,7 +81,8 @@ export function useAgentsPage() {
           ...(payload.defaultProfileId ? { defaultProfileId: payload.defaultProfileId } : {}),
           ...(payload.configPath ? { configPath: payload.configPath } : {}),
         });
-        setStatus("Saved.");
+        await reloadConfig();
+        setStatus(t("agents.statusSaved"));
       } catch (caught) {
         const message = caught instanceof GatewayApiError ? caught.message : String(caught);
         setError(message);
@@ -78,39 +91,42 @@ export function useAgentsPage() {
         setSaving(false);
       }
     },
-    [client],
+    [client, reloadConfig, t],
   );
 
   const clearForm = useCallback(() => {
     setForm(EMPTY_AGENT_PROFILE_FORM);
   }, []);
 
-  const editProfile = useCallback((id: string) => {
-    const profile = agentConfig.profiles.find(entry => entry.id === id);
-    if (!profile) {
-      return;
-    }
-    setForm({
-      editingId: profile.id,
-      id: profile.id,
-      name: profile.name,
-      description: profile.description ?? "",
-      defaultModel: profile.defaultModel ?? "",
-      workspace: profile.workspace ?? "",
-      thinking: profile.thinking ?? "",
-      systemPrompt: profile.systemPrompt ?? "",
-      memoryEnabled: profile.memoryEnabled !== false,
-      toolsEnabled: profile.toolsEnabled !== false,
-      isDefault: agentConfig.defaultProfileId === profile.id,
-    });
-  }, [agentConfig.defaultProfileId, agentConfig.profiles]);
+  const editProfile = useCallback(
+    (id: string) => {
+      const profile = agentConfig.profiles.find(entry => entry.id === id);
+      if (!profile) {
+        return;
+      }
+      setForm({
+        editingId: profile.id,
+        id: profile.id,
+        name: profile.name,
+        description: profile.description ?? "",
+        defaultModel: profile.defaultModel ?? "",
+        workspace: profile.workspace ?? "",
+        thinking: profile.thinking ?? "",
+        systemPrompt: profile.systemPrompt ?? "",
+        memoryEnabled: profile.memoryEnabled !== false,
+        toolsEnabled: profile.toolsEnabled !== false,
+        isDefault: agentConfig.defaultProfileId === profile.id,
+      });
+    },
+    [agentConfig.defaultProfileId, agentConfig.profiles],
+  );
 
   const removeProfile = useCallback(
     async (id: string) => {
       const nextProfiles = agentConfig.profiles.filter(entry => entry.id !== id);
       let defaultProfileId = agentConfig.defaultProfileId;
       if (defaultProfileId === id) {
-        defaultProfileId = undefined;
+        defaultProfileId = nextProfiles[0]?.id;
       }
       const nextConfig: AgentsConfigState = {
         profiles: nextProfiles,
@@ -125,11 +141,19 @@ export function useAgentsPage() {
   );
 
   const upsertDraft = useCallback(async () => {
-    const id = form.id.trim();
     const name = form.name.trim();
-    if (!id || !name) {
+    if (!name) {
+      setError(t("agents.nameRequired"));
       return;
     }
+
+    if (modelOptions.length > 0 && !form.defaultModel.trim()) {
+      setError(t("agents.modelRequired"));
+      return;
+    }
+
+    const id = form.id.trim() || agentIdFromName(name);
+    setError(null);
 
     const profile: AgentProfile = {
       id,
@@ -163,15 +187,16 @@ export function useAgentsPage() {
     );
     next.push(profile);
 
+    const sorted = sortProfiles(next);
+    const isFirstProfile = sorted.length === 1 && sorted[0]?.id === id;
     let defaultProfileId = agentConfig.defaultProfileId;
-    if (form.isDefault) {
+    if (form.isDefault || isFirstProfile) {
       defaultProfileId = id;
     } else if (defaultProfileId === id && !form.isDefault) {
-      defaultProfileId = undefined;
+      defaultProfileId = sorted.find(entry => entry.id !== id)?.id;
     }
-    const sorted = sortProfiles(next);
     if (defaultProfileId && !sorted.some(entry => entry.id === defaultProfileId)) {
-      defaultProfileId = undefined;
+      defaultProfileId = sorted[0]?.id;
     }
 
     const nextConfig: AgentsConfigState = {
@@ -182,23 +207,18 @@ export function useAgentsPage() {
     setAgentConfig(nextConfig);
     clearForm();
     await persistProfiles(nextConfig);
-  }, [agentConfig, clearForm, form, persistProfiles]);
-
-  const saveConfig = useCallback(async () => {
-    await persistProfiles(agentConfig);
-  }, [agentConfig, persistProfiles]);
+  }, [agentConfig, clearForm, form, modelOptions.length, persistProfiles, t]);
 
   return {
     agentConfig,
     form,
     setForm,
-    modelSuggestions,
+    modelOptions,
     status,
     error,
     loading,
     saving,
     load,
-    saveConfig,
     upsertDraft,
     clearForm,
     editProfile,

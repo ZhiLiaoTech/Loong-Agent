@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { GatewayApiError, type GatewayProviderSummary } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
+import { useWorkbenchT } from "../i18n/WorkbenchI18nContext.js";
 import { getStudioGatewayReadiness } from "../studioBridge.js";
+import { providerIdFromDisplayName } from "./providerIdFromDisplayName.js";
 import { sanitizeProvidersForSave } from "./sanitizeProvidersForSave.js";
 import {
   EMPTY_MODEL_PROVIDER_FORM,
@@ -14,15 +16,19 @@ function sortProviders(providers: readonly ModelProviderConfig[]): ModelProvider
   return [...providers].sort((left, right) => String(left.id).localeCompare(String(right.id)));
 }
 
-function saveStatusFor(appliesOn: ModelConfigState["appliesOn"]): string {
+function saveStatusFor(
+  appliesOn: ModelConfigState["appliesOn"],
+  t: (key: string) => string,
+): string {
   if (appliesOn === "next-turn") {
-    return "Saved. Provider changes apply on the next agent turn (no restart).";
+    return t("models.statusSavedNextTurn");
   }
-  return "Saved. Restart Gateway to apply provider changes.";
+  return t("models.statusSavedRestart");
 }
 
 export function useModelsPage() {
   const client = useGatewayClient();
+  const t = useWorkbenchT();
   // Registered by Loong Studio when embedded; no-op in standalone gateway-dashboard.
   const studioReadiness = getStudioGatewayReadiness();
   const [modelConfig, setModelConfig] = useState<ModelConfigState>({
@@ -78,7 +84,7 @@ export function useModelsPage() {
           appliesOn,
           ...(payload.configPath ? { configPath: payload.configPath } : {}),
         });
-        setStatus(saveStatusFor(appliesOn));
+        setStatus(saveStatusFor(appliesOn, t));
         if (studioReadiness) {
           await studioReadiness.ensureReady({ hotReloadSettleMs: 500 }).catch(() => false);
         }
@@ -94,7 +100,7 @@ export function useModelsPage() {
         setSaving(false);
       }
     },
-    [client, studioReadiness],
+    [client, studioReadiness, t],
   );
 
   const clearForm = useCallback(() => {
@@ -133,10 +139,12 @@ export function useModelsPage() {
   );
 
   const upsertDraft = useCallback(async () => {
-    const id = form.id.trim();
-    if (!id) {
+    const displayName = form.displayName.trim();
+    if (!displayName) {
       return;
     }
+
+    const id = form.id.trim() || providerIdFromDisplayName(displayName);
 
     const provider: ModelProviderConfig = {
       id,
@@ -145,7 +153,6 @@ export function useModelsPage() {
       supportsToolCalling: form.supportsToolCalling,
     };
 
-    const displayName = form.displayName.trim();
     const apiKey = form.apiKey.trim();
     const baseUrl = form.baseUrl.trim();
     const defaultModel = form.defaultModel.trim();
@@ -183,10 +190,6 @@ export function useModelsPage() {
     await persistProviders(nextProviders);
   }, [clearForm, form, modelConfig.providers, persistProviders]);
 
-  const saveConfig = useCallback(async () => {
-    await persistProviders(modelConfig.providers);
-  }, [modelConfig.providers, persistProviders]);
-
   return {
     modelConfig,
     liveProviders,
@@ -197,7 +200,6 @@ export function useModelsPage() {
     loading,
     saving,
     load,
-    saveConfig,
     upsertDraft,
     clearForm,
     editProvider,

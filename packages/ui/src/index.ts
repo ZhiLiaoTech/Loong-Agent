@@ -8,9 +8,12 @@ export {
   type Theme,
   type ThemeMode,
 } from "./tokens.js";
-export { Sidebar, type SidebarItem, type SidebarProps } from "./layout/Sidebar.js";
+export { LoongBrandMark } from "./brand/LoongBrandMark.js";
 export {
-  StatusBar,
-  type GatewayDisplayStatus,
-  type StatusBarProps,
-} from "./layout/StatusBar.js";
+  Sidebar,
+  type SidebarIconName,
+  type SidebarItem,
+  type SidebarProps,
+  type SidebarStatus,
+  type SidebarStatusTone,
+} from "./layout/Sidebar.js";

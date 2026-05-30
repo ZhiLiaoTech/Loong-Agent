@@ -1,4 +1,4 @@
-# @dragon/security 技术方案
+# @loong/security 技术方案
 
 ## 1. 职责边界
 
@@ -34,9 +34,9 @@
 
 | 消费者 | 用途 |
 |--------|------|
-| `@dragon/providers` | `sanitizeProviderBody` |
-| `@dragon/core` | 权限/工具事件摘要 |
-| `@dragon/cli` | 元数据输出 |
+| `@loong/providers` | `sanitizeProviderBody` |
+| `@loong/core` | 权限/工具事件摘要 |
+| `@loong/cli` | 元数据输出 |
 
 ## 5. Code Review
 

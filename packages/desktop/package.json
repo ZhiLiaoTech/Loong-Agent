@@ -1,15 +1,15 @@
 {
-  "name": "@dragon/desktop",
+  "name": "@loong/desktop",
   "version": "0.0.0",
   "private": true,
-  "description": "Loong desktop surface (Tauri 2 + @dragon/studio)",
+  "description": "Loong desktop surface (Tauri 2 + @loong/studio)",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
     "check": "node -e \"console.log('Install Rust + Tauri CLI: cargo install tauri-cli --version \\\"^2\\\"\")\""
   },
   "devDependencies": {
-    "@dragon/studio": "workspace:*",
+    "@loong/studio": "workspace:*",
     "@tauri-apps/cli": "^2.5.0"
   }
 }

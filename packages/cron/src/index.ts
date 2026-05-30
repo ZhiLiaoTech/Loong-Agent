@@ -1,8 +1,8 @@
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { postGatewayWebhook } from "@dragon/channels";
+import { postGatewayWebhook } from "@loong/channels";
 
-export interface DragonCronSchedule {
+export interface LoongCronSchedule {
   expression: string;
   minutes: readonly number[];
   hours: readonly number[];
@@ -13,9 +13,9 @@ export interface DragonCronSchedule {
   dayOfWeekWildcard: boolean;
 }
 
-export type DragonCronThinkingLevel = "none" | "low" | "medium" | "high";
+export type LoongCronThinkingLevel = "none" | "low" | "medium" | "high";
 
-export interface DragonCronJob {
+export interface LoongCronJob {
   id: string;
   sessionId: string;
   message: string;
@@ -23,59 +23,59 @@ export interface DragonCronJob {
   workspace?: string;
   model?: string;
   profileId?: string;
-  thinking?: DragonCronThinkingLevel;
+  thinking?: LoongCronThinkingLevel;
   toolsEnabled?: boolean;
   memoryEnabled?: boolean;
   metadata?: Record<string, unknown>;
 }
 
-export type DragonCronJobStatus = "ok" | "error";
+export type LoongCronJobStatus = "ok" | "error";
 
-export interface DragonCronJobRecord extends DragonCronJob {
+export interface LoongCronJobRecord extends LoongCronJob {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
   nextRunAt: string;
   lastScheduledAt?: string;
   lastDeliveredAt?: string;
-  lastStatus?: DragonCronJobStatus;
+  lastStatus?: LoongCronJobStatus;
   lastError?: string;
 }
 
-export interface DragonCronOccurrence {
+export interface LoongCronOccurrence {
   jobId: string;
   scheduledAt: string;
   deliveredAt?: string;
 }
 
-export interface DragonCronDeliveryRecord {
+export interface LoongCronDeliveryRecord {
   jobId: string;
   scheduledAt: string;
   deliveredAt: string;
-  status: DragonCronJobStatus;
-  result: DragonCronDeliveryResult;
+  status: LoongCronJobStatus;
+  result: LoongCronDeliveryResult;
 }
 
-export interface DragonCronRunnerTickResult {
+export interface LoongCronRunnerTickResult {
   checkedAt: string;
-  delivered: readonly DragonCronDeliveryRecord[];
+  delivered: readonly LoongCronDeliveryRecord[];
 }
 
-export interface DragonCronDeliveryResult {
+export interface LoongCronDeliveryResult {
   ok: boolean;
   status: number;
   payload?: unknown;
   error?: string;
 }
 
-export interface DragonCronDeliveryTarget {
-  deliver(job: DragonCronJob, occurrence: DragonCronOccurrence): Promise<DragonCronDeliveryResult>;
+export interface LoongCronDeliveryTarget {
+  deliver(job: LoongCronJob, occurrence: LoongCronOccurrence): Promise<LoongCronDeliveryResult>;
 }
 
-export interface DragonCronJobStore {
-  list(): Promise<DragonCronJobRecord[]>;
-  get(id: string): Promise<DragonCronJobRecord | undefined>;
-  upsert(job: DragonCronJob | DragonCronJobRecord, options?: { now?: Date }): Promise<DragonCronJobRecord>;
+export interface LoongCronJobStore {
+  list(): Promise<LoongCronJobRecord[]>;
+  get(id: string): Promise<LoongCronJobRecord | undefined>;
+  upsert(job: LoongCronJob | LoongCronJobRecord, options?: { now?: Date }): Promise<LoongCronJobRecord>;
   remove(id: string): Promise<boolean>;
 }
 
@@ -89,19 +89,19 @@ export interface FileCronJobStoreOptions {
   filePath: string;
 }
 
-export interface DragonCronRunnerOptions {
-  store: DragonCronJobStore;
-  target: DragonCronDeliveryTarget;
+export interface LoongCronRunnerOptions {
+  store: LoongCronJobStore;
+  target: LoongCronDeliveryTarget;
   now?: () => Date;
 }
 
-export interface DragonCronRunnerStartOptions {
+export interface LoongCronRunnerStartOptions {
   intervalMs?: number;
 }
 
-export interface DragonCronRunner {
-  tick(): Promise<DragonCronRunnerTickResult>;
-  start(options?: DragonCronRunnerStartOptions): void;
+export interface LoongCronRunner {
+  tick(): Promise<LoongCronRunnerTickResult>;
+  start(options?: LoongCronRunnerStartOptions): void;
   stop(): void;
 }
 
@@ -111,7 +111,7 @@ const CRON_FIELD_COUNT = 5;
 const MAX_NEXT_RUN_MINUTES = 5 * 366 * 24 * 60;
 const DEFAULT_CRON_RUNNER_INTERVAL_MS = 30_000;
 
-export function parseCronSchedule(expression: string): DragonCronSchedule {
+export function parseCronSchedule(expression: string): LoongCronSchedule {
   const normalized = normalizeCronExpression(expression);
   const fields = normalized.split(/\s+/);
   if (fields.length !== CRON_FIELD_COUNT) {
@@ -131,7 +131,7 @@ export function parseCronSchedule(expression: string): DragonCronSchedule {
   };
 }
 
-export function nextCronRun(expressionOrSchedule: string | DragonCronSchedule, from = new Date()): Date {
+export function nextCronRun(expressionOrSchedule: string | LoongCronSchedule, from = new Date()): Date {
   const schedule = typeof expressionOrSchedule === "string"
     ? parseCronSchedule(expressionOrSchedule)
     : expressionOrSchedule;
@@ -148,7 +148,7 @@ export function nextCronRun(expressionOrSchedule: string | DragonCronSchedule, f
   throw new Error("Cron expression has no matching run within five years.");
 }
 
-export function createGatewayWebhookCronTarget(options: GatewayWebhookCronTargetOptions): DragonCronDeliveryTarget {
+export function createGatewayWebhookCronTarget(options: GatewayWebhookCronTargetOptions): LoongCronDeliveryTarget {
   const gatewayUrl = normalizeGatewayUrl(options.gatewayUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
   return {
@@ -164,7 +164,7 @@ export function createGatewayWebhookCronTarget(options: GatewayWebhookCronTarget
   };
 }
 
-export function createFileCronJobStore(options: FileCronJobStoreOptions): DragonCronJobStore {
+export function createFileCronJobStore(options: FileCronJobStoreOptions): LoongCronJobStore {
   const filePath = path.resolve(options.filePath);
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -174,7 +174,7 @@ export function createFileCronJobStore(options: FileCronJobStoreOptions): Dragon
     return current;
   }
 
-  async function readRecords(): Promise<DragonCronJobRecord[]> {
+  async function readRecords(): Promise<LoongCronJobRecord[]> {
     let text: string;
     try {
       text = await readFile(filePath, "utf8");
@@ -194,7 +194,7 @@ export function createFileCronJobStore(options: FileCronJobStoreOptions): Dragon
     return parsed.map(readCronJobRecord);
   }
 
-  async function writeRecords(records: readonly DragonCronJobRecord[]): Promise<void> {
+  async function writeRecords(records: readonly LoongCronJobRecord[]): Promise<void> {
     await mkdir(path.dirname(filePath), { recursive: true });
     const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
@@ -245,12 +245,12 @@ export function createFileCronJobStore(options: FileCronJobStoreOptions): Dragon
   };
 }
 
-export function createCronRunner(options: DragonCronRunnerOptions): DragonCronRunner {
+export function createCronRunner(options: LoongCronRunnerOptions): LoongCronRunner {
   const now = options.now ?? (() => new Date());
   let timer: ReturnType<typeof setInterval> | undefined;
-  let runningTick: Promise<DragonCronRunnerTickResult> | undefined;
+  let runningTick: Promise<LoongCronRunnerTickResult> | undefined;
 
-  async function tick(): Promise<DragonCronRunnerTickResult> {
+  async function tick(): Promise<LoongCronRunnerTickResult> {
     if (runningTick !== undefined) {
       return runningTick;
     }
@@ -284,8 +284,8 @@ export function createCronRunner(options: DragonCronRunnerOptions): DragonCronRu
 }
 
 export function toGatewayWebhookCronPayload(
-  job: DragonCronJob,
-  occurrence: DragonCronOccurrence,
+  job: LoongCronJob,
+  occurrence: LoongCronOccurrence,
 ): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
     ...(job.metadata ?? {}),
@@ -309,24 +309,24 @@ export function toGatewayWebhookCronPayload(
 }
 
 async function runCronTick(
-  store: DragonCronJobStore,
-  target: DragonCronDeliveryTarget,
+  store: LoongCronJobStore,
+  target: LoongCronDeliveryTarget,
   checkedAt: Date,
-): Promise<DragonCronRunnerTickResult> {
+): Promise<LoongCronRunnerTickResult> {
   const checkedAtIso = checkedAt.toISOString();
   const records = await store.list();
-  const delivered: DragonCronDeliveryRecord[] = [];
+  const delivered: LoongCronDeliveryRecord[] = [];
   for (const record of records) {
     if (!record.enabled || new Date(record.nextRunAt).getTime() > checkedAt.getTime()) {
       continue;
     }
-    const occurrence: DragonCronOccurrence = {
+    const occurrence: LoongCronOccurrence = {
       jobId: record.id,
       scheduledAt: record.nextRunAt,
       deliveredAt: checkedAtIso,
     };
     const result = await target.deliver(record, occurrence);
-    const delivery: DragonCronDeliveryRecord = {
+    const delivery: LoongCronDeliveryRecord = {
       jobId: record.id,
       scheduledAt: occurrence.scheduledAt,
       deliveredAt: checkedAtIso,
@@ -347,12 +347,12 @@ async function runCronTick(
 }
 
 function normalizeCronJobRecord(
-  job: DragonCronJob | DragonCronJobRecord,
-  previous: DragonCronJobRecord | undefined,
+  job: LoongCronJob | LoongCronJobRecord,
+  previous: LoongCronJobRecord | undefined,
   now: string,
-): DragonCronJobRecord {
+): LoongCronJobRecord {
   const schedule = parseCronSchedule(job.schedule);
-  const candidate = job as Partial<DragonCronJobRecord>;
+  const candidate = job as Partial<LoongCronJobRecord>;
   const scheduleChanged = previous !== undefined && previous.schedule !== schedule.expression;
   const base = {
     id: normalizeNonEmptyString(job.id, "Cron job id"),
@@ -373,7 +373,7 @@ function normalizeCronJobRecord(
     : scheduleChanged || previous === undefined
       ? nextCronRun(schedule, new Date(now)).toISOString()
       : previous.nextRunAt;
-  const record: DragonCronJobRecord = {
+  const record: LoongCronJobRecord = {
     ...base,
     enabled,
     createdAt: typeof candidate.createdAt === "string"
@@ -409,11 +409,11 @@ function normalizeCronJobRecord(
   return record;
 }
 
-function readCronJobRecord(value: unknown): DragonCronJobRecord {
+function readCronJobRecord(value: unknown): LoongCronJobRecord {
   if (!isRecord(value)) {
     throw new Error("Cron job record must be an object.");
   }
-  const job: DragonCronJobRecord = {
+  const job: LoongCronJobRecord = {
     id: normalizeNonEmptyString(value.id, "Cron job id"),
     sessionId: normalizeNonEmptyString(value.sessionId, "Cron job sessionId"),
     message: normalizeNonEmptyString(value.message, "Cron job message"),
@@ -489,7 +489,7 @@ function parseInteger(value: string, min: number, max: number, label: string): n
   return parsed;
 }
 
-function cronDateMatches(schedule: DragonCronSchedule, date: Date): boolean {
+function cronDateMatches(schedule: LoongCronSchedule, date: Date): boolean {
   if (!schedule.minutes.includes(date.getUTCMinutes())) {
     return false;
   }
@@ -570,7 +570,7 @@ function normalizeNonEmptyString(value: unknown, label: string): string {
   return value.trim();
 }
 
-function readCronStatus(value: unknown): DragonCronJobStatus {
+function readCronStatus(value: unknown): LoongCronJobStatus {
   if (value === "ok" || value === "error") {
     return value;
   }

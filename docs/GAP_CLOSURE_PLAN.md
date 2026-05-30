@@ -10,7 +10,7 @@
 | **统一语义** | 会话排队、Query Loop、Profile 解析在 CLI / Gateway / `delegation` 共用同一套模块，避免三处拷贝。 |
 | **分层控上下文** | 会话摘要（注入）→ 消息列表压缩（持久化）→ 单轮 Turn Prep（发送前），职责不重叠。 |
 | **默认可上线** | 非 loopback 绑定强制认证；直连工具默认只读白名单可配置。 |
-| **可验证** | 每项任务在 `@dragon/test-suite` 有对应回归或扩展现有 smoke。 |
+| **可验证** | 每项任务在 `@loong/test-suite` 有对应回归或扩展现有 smoke。 |
 
 **建议实施顺序**：P0-1 → P0-3 → P0-2 → P1-2 → P1-1 → P1-3 → P2（可并行）。
 
@@ -21,7 +21,7 @@
 ```mermaid
 flowchart TB
   subgraph surfaces [入口]
-    CLI[dragon agent / chat]
+    CLI[loong agent / chat]
     GW[Gateway agent RPC]
     DEL[delegation_run Worker]
   end
@@ -34,7 +34,7 @@ flowchart TB
   end
 
   subgraph core [已有内核]
-    RT[createDragonRuntime / runTurn]
+    RT[createLoongRuntime / runTurn]
     TP[turn-prep]
   end
 
@@ -66,7 +66,7 @@ flowchart TB
 
 1. **抽离共享模块** `packages/core/src/query-loop.ts`（自 gateway 迁出并 re-export）  
    - `resolveQueryLoopMaxTurns`、`shouldContinueQueryLoop`、`QUERY_LOOP_CONTINUE_MESSAGE`  
-   - Gateway 改为从 `@dragon/core` 引用。
+   - Gateway 改为从 `@loong/core` 引用。
 
 2. **新增 `runTurnWithQueryLoop(runtime, input, options)`**（可放在 `core` 或 `core/session-runner.ts`）  
    - 循环调用 `runTurn`，合并 events/messages；供 CLI、Gateway、测试共用。
@@ -77,7 +77,7 @@ flowchart TB
    - 新增（可选 P0.5）：助手文本含未完成标记 + 用户消息为任务型（启发式，可配置关闭）
 
 4. **CLI**  
-   - `dragon agent --query-loop` / `--query-loop-max-turns N`  
+   - `loong agent --query-loop` / `--query-loop-max-turns N`  
    - 默认与 Gateway Dashboard `settings.queryLoop` 对齐。
 
 5. **delegation**  
@@ -110,7 +110,7 @@ flowchart TB
 | L2 | **消息列表压缩** | `runTurn` 前从 session 读取 messages，对早于最近 N 轮的 `tool` 消息做确定性截断/合并；写回 session 或生成「压缩占位」assistant 摘要 | 新建 `packages/core/src/session-message-compaction.ts` |
 | L3 | Turn Prep | 保持；`aggressive` 在 L2 之后仍溢出时触发 | `turn-prep.ts` |
 
-**配置**（`.dragon/config/agents.json` 或独立 `context.json`）：
+**配置**（`.loong/config/agents.json` 或独立 `context.json`）：
 
 ```json
 {
@@ -142,9 +142,9 @@ flowchart TB
 
 ### 5.2 方案
 
-1. **配置契约** `.dragon/config/gateway.json`  
+1. **配置契约** `.loong/config/gateway.json`  
    - `authMode`、`sharedSecret`、`rateLimits`、`toolInvokeAllowlist`  
-   - `dragon gateway` 启动时 merge 环境变量与文件；**非 loopback 且无 secret 时拒绝启动**（breaking， major 版本说明）
+   - `loong gateway` 启动时 merge 环境变量与文件；**非 loopback 且无 secret 时拒绝启动**（breaking， major 版本说明）
 
 2. **直连工具策略**  
    - 默认 allowlist：`git_status`、`git_diff`、`git_log`、`file_read`、`file_search`（可配置收紧为仅 git）  
@@ -211,16 +211,16 @@ flowchart TB
 
 ### 7.2 方案
 
-1. **抽离** `packages/gateway/src/agent-params.ts` → `packages/core/src/agent-resolve.ts`（或新包 `@dragon/agent-config`）  
+1. **抽离** `packages/gateway/src/agent-params.ts` → `packages/core/src/agent-resolve.ts`（或新包 `@loong/agent-config`）  
    - `loadAgentConfig(path)`、`mergeAgentProfile(params, profile)`、`toTurnInput(params)`  
    - Gateway / CLI 共用
 
 2. **CLI**  
-   - `dragon agent --profile <id>`；默认 `defaultProfileId`  
+   - `loong agent --profile <id>`；默认 `defaultProfileId`  
    - 传递 `thinking`、`toolsEnabled`、`memoryEnabled`、`systemPrompt`、`tier`
 
 3. **Dashboard 审计清单**（开发自检表）  
-   - Agents 页每个字段 → `agent` RPC 字段 → `DragonTurnInput` → `runtime` 消费点（列成表，逐项勾选）
+   - Agents 页每个字段 → `agent` RPC 字段 → `LoongTurnInput` → `runtime` 消费点（列成表，逐项勾选）
 
 4. **test-suite**  
    - `cli agent profile toolsEnabled false` 不注册 write 工具  
@@ -237,14 +237,14 @@ flowchart TB
 
 ### 8.1 现状
 
-- `@dragon/channels`：Telegram/Slack 解析 + `postGatewayWebhook`  
+- `@loong/channels`：Telegram/Slack 解析 + `postGatewayWebhook`  
 - 需外部进程转发；无 pairing / 远程 Worker
 
 ### 8.2 方案（分阶段）
 
 **F1（本阶段）— 降低 bridge 成本**
 
-- 提供 `dragon channels serve`（CLI 子命令）：内嵌轻量 HTTP，转调本地 Gateway webhook（单进程部署模板）  
+- 提供 `loong channels serve`（CLI 子命令）：内嵌轻量 HTTP，转调本地 Gateway webhook（单进程部署模板）  
 - 文档：`docs/CHANNELS.md` 单节点拓扑图
 
 **F2 — 配对与多节点（Roadmap 延续）**
@@ -254,7 +254,7 @@ flowchart TB
 
 ### 8.3 验收标准
 
-- [ ] `dragon channels serve` + `dragon gateway` 本地联通 Telegram 模拟 payload（test-suite webhook 已有可复用）  
+- [ ] `loong channels serve` + `loong gateway` 本地联通 Telegram 模拟 payload（test-suite webhook 已有可复用）  
 - [ ] 配对 API 设计评审通过（可先 mock 测试）
 
 ---
@@ -288,7 +288,7 @@ flowchart TB
 
 | ID | 任务 | 依赖 | 产出/文件 |
 |----|------|------|-----------|
-| A1 | [x] 将 `query-loop.ts` 迁至 `@dragon/core` 并改 Gateway import | — | `core/src/query-loop.ts` |
+| A1 | [x] 将 `query-loop.ts` 迁至 `@loong/core` 并改 Gateway import | — | `core/src/query-loop.ts` |
 | A2 | [x] 实现 `runTurnWithQueryLoop` + 单测 | A1 | `core/src/session-runner.ts` |
 | A3 | [x] CLI：`--query-loop` / `--query-loop-max-turns` / `--finish-task` | A2 | `cli/src/index.ts` |
 | A4 | [x] 扩展 `shouldContinueQueryLoop`（`forceQueryLoop` metadata） | A1 | `core/query-loop.ts` |
@@ -318,7 +318,7 @@ flowchart TB
 | E2 | [x] CLI `--profile` + 合并逻辑 | E1 | `cli` |
 | E3 | [x] Dashboard：profileId 贯通 + finishTask/queryLoopMaxTurns | E1 | `gateway-dashboard` |
 | E4 | [x] test-suite：profile merge | E2 | `test-suite` |
-| F1 | [x] `dragon channels serve` 子命令 | — | `cli/channels-serve.ts` |
+| F1 | [x] `loong channels serve` 子命令 | — | `cli/channels-serve.ts` |
 | F2 | [x] `docs/CHANNELS.md` 部署拓扑 | F1 | `docs` |
 | F3 | [x] pairing RPC + `docs/PAIRING.md` | — | `gateway/pairing.ts`, `docs/PAIRING.md` |
 

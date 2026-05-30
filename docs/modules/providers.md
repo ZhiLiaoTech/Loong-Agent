@@ -1,4 +1,4 @@
-# @dragon/providers 技术方案
+# @loong/providers 技术方案
 
 ## 1. 职责边界
 
@@ -26,7 +26,7 @@
 - `provider:model` / `provider/model`
 - 裸 model id：遍历 `canHandleModel`，**先注册者优先**
 
-与 [model-catalog](../model-catalog.md) 的关系：Provider 注册时用 `normalizeProviderModelEntries` 规范化 `models[]`；**Registry 不调用 `DragonModelCatalog.resolve()`**。
+与 [model-catalog](../model-catalog.md) 的关系：Provider 注册时用 `normalizeProviderModelEntries` 规范化 `models[]`；**Registry 不调用 `LoongModelCatalog.resolve()`**。
 
 ### 3.2 流式
 
@@ -36,17 +36,17 @@
 
 | Provider | 变量链 |
 |----------|--------|
-| OpenAI | `DRAGON_OPENAI_*` → `OPENAI_*` |
-| Anthropic | `DRAGON_ANTHROPIC_*` → `ANTHROPIC_*` |
+| OpenAI | `LOONG_OPENAI_*` → `OPENAI_*` |
+| Anthropic | `LOONG_ANTHROPIC_*` → `ANTHROPIC_*` |
 
 ### 3.4 依赖
 
-- `@dragon/model-catalog` — 模型条目规范化
-- `@dragon/security` — `sanitizeProviderBody`
+- `@loong/model-catalog` — 模型条目规范化
+- `@loong/security` — `sanitizeProviderBody`
 
 ## 4. 集成方式
 
-CLI：`createBuiltinProviders()` + 插件 `registerProvider` → `createProviderRegistry` → `createDragonRuntime({ providerRegistry })`。
+CLI：`createBuiltinProviders()` + 插件 `registerProvider` → `createProviderRegistry` → `createLoongRuntime({ providerRegistry })`。
 
 Gateway：`providers.list` RPC 读取 registry 元数据。
 

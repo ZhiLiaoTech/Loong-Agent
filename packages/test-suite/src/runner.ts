@@ -10,9 +10,9 @@ export interface RunTestsOptions {
 }
 
 export function filterTests(tests: TestCase[], options: RunTestsOptions = {}): TestCase[] {
-  const envOnly = process.env.DRAGON_TEST_ONLY?.trim();
-  const envShard = process.env.DRAGON_TEST_SHARD?.trim();
-  const envShards = process.env.DRAGON_TEST_SHARDS?.trim();
+  const envOnly = process.env.LOONG_TEST_ONLY?.trim();
+  const envShard = process.env.LOONG_TEST_SHARD?.trim();
+  const envShards = process.env.LOONG_TEST_SHARDS?.trim();
 
   const only = options.only ?? envOnly;
   const shard = options.shard ?? (envShard !== undefined && envShard !== "" ? Number(envShard) : undefined);
@@ -34,7 +34,7 @@ export function filterTests(tests: TestCase[], options: RunTestsOptions = {}): T
 export async function runTests(tests: TestCase[], options: RunTestsOptions = {}): Promise<void> {
   const selected = filterTests(tests, options);
   if (selected.length === 0) {
-    throw new Error("No tests selected. Check DRAGON_TEST_ONLY or DRAGON_TEST_SHARD settings.");
+    throw new Error("No tests selected. Check LOONG_TEST_ONLY or LOONG_TEST_SHARD settings.");
   }
   for (const [name, test] of selected) {
     await test();

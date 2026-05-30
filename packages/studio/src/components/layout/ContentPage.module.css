@@ -1,0 +1,259 @@
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.sectionGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.groupHead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 2px;
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--loong-text-muted, var(--muted));
+}
+
+.groupLead {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+  color: var(--loong-text-secondary, var(--muted));
+}
+
+.card {
+  border: 1px solid var(--loong-border, var(--line));
+  border-radius: var(--radius-md);
+  background: var(--loong-surface-1, var(--surface));
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.cardHead {
+  padding: var(--space-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--loong-border, var(--line)) 70%, transparent);
+  background: color-mix(in srgb, var(--loong-surface-2, var(--soft)) 55%, var(--loong-surface-1, var(--surface)));
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--loong-text, var(--text));
+}
+
+.cardBody {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--loong-text-secondary, var(--muted));
+}
+
+.input,
+.select {
+  padding: 9px var(--space-3);
+  border: 1px solid var(--loong-border, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--loong-bg, var(--bg));
+  color: var(--loong-text, var(--text));
+  font-size: var(--text-sm);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.input:hover,
+.select:hover {
+  border-color: color-mix(in srgb, var(--loong-accent, var(--accent)) 30%, var(--loong-border, var(--line)));
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--loong-accent, var(--accent));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--loong-accent, var(--accent)) 18%, transparent);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--line-height-normal);
+  color: var(--loong-text-muted, var(--muted));
+}
+
+.lead {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+  color: var(--loong-text-secondary, var(--muted));
+}
+
+.codeBlock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--loong-border, var(--line)) 80%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--loong-bg, var(--bg));
+}
+
+.codeBlock code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--loong-text, var(--text));
+  word-break: break-all;
+}
+
+.metaList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.metaRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 34%) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--loong-border, var(--line)) 65%, transparent);
+}
+
+.metaRow:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.metaLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--loong-text-secondary, var(--muted));
+}
+
+.metaValue {
+  font-size: var(--text-sm);
+  color: var(--loong-text, var(--text));
+  word-break: break-word;
+}
+
+.metaValue code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--loong-text-secondary, var(--muted));
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.button {
+  padding: 8px var(--space-4);
+  border: 1px solid var(--loong-border, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--loong-surface-2, var(--soft));
+  color: var(--loong-text, var(--text));
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--loong-accent, var(--accent)) 40%, var(--loong-border, var(--line)));
+  background: color-mix(in srgb, var(--loong-accent, var(--accent)) 6%, var(--loong-surface-2, var(--soft)));
+}
+
+.buttonPrimary {
+  padding: 8px var(--space-4);
+  border: 1px solid var(--loong-accent, var(--accent));
+  border-radius: var(--radius-sm);
+  background: var(--loong-accent, var(--accent));
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.buttonPrimary:hover:not(:disabled) {
+  background: var(--loong-accent-light, var(--accent-hover));
+  border-color: var(--loong-accent-light, var(--accent-hover));
+}
+
+.statusOk,
+.statusError {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+}
+
+.statusOk {
+  border: 1px solid color-mix(in srgb, var(--loong-success, var(--ok)) 35%, transparent);
+  background: color-mix(in srgb, var(--loong-success, var(--ok)) 10%, var(--loong-surface-1, var(--surface)));
+  color: var(--loong-success, var(--ok));
+}
+
+.statusError {
+  border: 1px solid color-mix(in srgb, var(--loong-error, var(--danger)) 35%, transparent);
+  background: color-mix(in srgb, var(--loong-error, var(--danger)) 10%, var(--loong-surface-1, var(--surface)));
+  color: var(--loong-error, var(--danger));
+}
+
+.divider {
+  height: 1px;
+  margin: 0;
+  border: none;
+  background: color-mix(in srgb, var(--loong-border, var(--line)) 70%, transparent);
+}
+
+@media (max-width: 720px) {
+  .fieldGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .metaRow {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+}

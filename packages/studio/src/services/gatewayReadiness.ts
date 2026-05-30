@@ -1,5 +1,5 @@
-import type { GatewayClient } from "@dragon/client";
-import type { HostRuntime } from "@dragon/host";
+import type { GatewayClient } from "@loong/client";
+import type { HostRuntime } from "@loong/host";
 
 export type GatewayReadinessStage =
   | "checking"

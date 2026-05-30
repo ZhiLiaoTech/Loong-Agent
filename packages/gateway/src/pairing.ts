@@ -34,7 +34,7 @@ export interface PairingStore {
 const DEFAULT_TOKEN_TTL_MS = 15 * 60 * 1000;
 
 export function defaultPairingFilePath(cwd = process.cwd()): string {
-  return path.join(cwd, ".dragon", "pairing", "devices.json");
+  return path.join(cwd, ".loong", "pairing", "devices.json");
 }
 
 export class FilePairingStore implements PairingStore {

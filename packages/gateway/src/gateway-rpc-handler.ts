@@ -15,6 +15,10 @@ export interface GatewayRpcHandlerDeps {
   loadOrg(): Promise<unknown>;
   loadEmployees(): Promise<unknown>;
   saveEmployees(params: unknown): Promise<unknown>;
+  loadEmployeeWorkspace(params: unknown): Promise<unknown>;
+  saveEmployeeWorkspace(params: unknown): Promise<unknown>;
+  listSkills(): Promise<unknown>;
+  bootstrapOrgExample(): Promise<unknown>;
   loadToolPolicies(): Promise<unknown>;
   saveToolPolicies(params: unknown): Promise<unknown>;
   listApprovals(params: unknown): Promise<unknown>;
@@ -46,6 +50,7 @@ export interface GatewayRpcHandlerDeps {
   tickCron(): Promise<unknown>;
   waitForQueuedTurn(queueTurnId: string): Promise<unknown>;
   runAgent(params: GatewayAgentParams): Promise<unknown>;
+  browseDirectory(params: unknown): Promise<unknown>;
 }
 
 export async function handleGatewayRpc(
@@ -100,6 +105,18 @@ export async function handleGatewayRpc(
       }
       if (request.type === "employee.save") {
         return { type: "response", id: request.id, ok: true, payload: await deps.saveEmployees(request.params) };
+      }
+      if (request.type === "employee.workspace.get") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.loadEmployeeWorkspace(request.params) };
+      }
+      if (request.type === "employee.workspace.save") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.saveEmployeeWorkspace(request.params) };
+      }
+      if (request.type === "skills.list") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.listSkills() };
+      }
+      if (request.type === "org.bootstrap.example") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.bootstrapOrgExample() };
       }
       if (request.type === "policy.tool.get") {
         return { type: "response", id: request.id, ok: true, payload: await deps.loadToolPolicies() };
@@ -187,6 +204,9 @@ export async function handleGatewayRpc(
       }
       if (request.type === "cron.tick") {
         return { type: "response", id: request.id, ok: true, payload: await deps.tickCron() };
+      }
+      if (request.type === "fs.directory.browse") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.browseDirectory(request.params) };
       }
       if (request.type === "agent.wait") {
         const payload = await deps.waitForQueuedTurn(request.params.queueTurnId);

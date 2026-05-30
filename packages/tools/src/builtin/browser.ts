@@ -179,7 +179,7 @@ async function fetchBrowserSnapshot(
       signal: controller.signal,
       headers: {
         accept: "text/html, text/plain;q=0.9, */*;q=0.1",
-        "user-agent": "Dragon/0.0 browser_snapshot",
+        "user-agent": "Loong/0.0 browser_snapshot",
       },
     }, browserOptions.allowPrivateHosts);
     const contentType = response.headers.get("content-type") ?? undefined;
@@ -248,7 +248,7 @@ async function fetchHtmlPage(
       signal: controller.signal,
       headers: {
         accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
-        "user-agent": "Dragon/0.0 browser_form_submit",
+        "user-agent": "Loong/0.0 browser_form_submit",
       },
     }, browserOptions.allowPrivateHosts);
     const contentType = response.headers.get("content-type") ?? "";
@@ -282,7 +282,7 @@ async function submitSelectedForm(
   const init: RequestInit = {
     headers: {
       accept: "text/html, text/plain;q=0.9, */*;q=0.1",
-      "user-agent": "Dragon/0.0 browser_form_submit",
+      "user-agent": "Loong/0.0 browser_form_submit",
     },
   };
   if (form.method === "get") {

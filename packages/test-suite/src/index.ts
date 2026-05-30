@@ -13,9 +13,9 @@ import {
   parseSlackWebhook,
   parseTelegramWebhook,
   toGatewayWebhookPayload,
-} from "@dragon/channels";
-import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
-import { resetDashboardStaticCache } from "@dragon/gateway";
+} from "@loong/channels";
+import type { LoongAgentRuntime, LoongEvent, LoongTurnInput, LoongTurnResult } from "@loong/core";
+import { resetDashboardStaticCache } from "@loong/gateway";
 import {
   appendCancelledToolResults,
   appendWorkspaceToolGuidance,
@@ -24,7 +24,7 @@ import {
   buildTurnPrepOptions,
   classifyTierHeuristic,
   canRunToolCallsInParallel,
-  createDragonRuntime,
+  createLoongRuntime,
   runTurnWithQueryLoop,
   isParallelSafeTool,
   decideTier,
@@ -39,23 +39,23 @@ import {
   prepareSessionHistoryForModel,
   repairModelMessagesAfterCancel,
   TOOL_CANCELLED_CODE,
-} from "@dragon/core";
-import type { ModelMessage } from "@dragon/providers";
-import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
+} from "@loong/core";
+import type { ModelMessage } from "@loong/providers";
+import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@loong/cron";
 import {
   createDelegationPlan,
   createRuntimeDelegatedTaskExecutor,
   createRuntimeDelegationTool,
   runDelegationPlan,
-  type DragonRuntimeDelegationToolInput,
-} from "@dragon/delegation";
+  type LoongRuntimeDelegationToolInput,
+} from "@loong/delegation";
 import {
   applyModelCatalogToAgentParams,
-  assertDragonGatewayWebhookPayload,
+  assertLoongGatewayWebhookPayload,
   createHttpGateway,
   createModelCatalogFromProviderSummaries,
   FilePairingStore,
-} from "@dragon/gateway";
+} from "@loong/gateway";
 import { runTests } from "./runner.js";
 import {
   createFileMemoryStore,
@@ -68,14 +68,14 @@ import {
   type MemoryCandidatePromoteOutput,
   type MemoryCandidateRejectInput,
   type MemoryCandidateRejectOutput,
-} from "@dragon/memory";
+} from "@loong/memory";
 import {
   applyModelCatalogToParams,
   catalogEntriesFromProviders,
   createModelCatalog,
-} from "@dragon/model-catalog";
-import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@dragon/providers";
-import { isSensitiveKey, redactSecretsInText } from "@dragon/security";
+} from "@loong/model-catalog";
+import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@loong/providers";
+import { isSensitiveKey, redactSecretsInText } from "@loong/security";
 import {
   createBrowserFormSubmitTool,
   createBrowserPlaywrightSnapshotTool,
@@ -87,7 +87,7 @@ import {
   registerMcpTools,
   validateBrowserTargetUrl,
   type ToolDefinition,
-} from "@dragon/tools";
+} from "@loong/tools";
 
 import {
   assert,
@@ -185,19 +185,19 @@ async function testOpenRouterProviderPlugin(): Promise<void> {
         "route through openrouter",
       ],
       {
-        DRAGON_OPENROUTER_API_KEY: "or-test-key",
-        DRAGON_OPENROUTER_BASE_URL: `http://127.0.0.1:${port}/api/v1`,
-        DRAGON_OPENROUTER_REFERER: "https://dragon.local",
-        DRAGON_OPENROUTER_TITLE: "Dragon Test",
+        LOONG_OPENROUTER_API_KEY: "or-test-key",
+        LOONG_OPENROUTER_BASE_URL: `http://127.0.0.1:${port}/api/v1`,
+        LOONG_OPENROUTER_REFERER: "https://loong.local",
+        LOONG_OPENROUTER_TITLE: "Loong Test",
       },
     );
     assert(result.stdout.trim() === "openrouter-ok", "OpenRouter plugin should return provider response text");
     assert(captured.url === "/api/v1/chat/completions", "OpenRouter plugin should use the OpenAI-compatible chat completions path");
     assert(captured.authorization === "Bearer or-test-key", "OpenRouter plugin should forward bearer auth");
-    assert(captured.referer === "https://dragon.local", "OpenRouter plugin should forward HTTP-Referer");
-    assert(captured.title === "Dragon Test", "OpenRouter plugin should forward X-OpenRouter-Title");
+    assert(captured.referer === "https://loong.local", "OpenRouter plugin should forward HTTP-Referer");
+    assert(captured.title === "Loong Test", "OpenRouter plugin should forward X-OpenRouter-Title");
     assert(captured.body?.model === "openai/test-model", "OpenRouter plugin should strip the explicit provider prefix");
-    assert(captured.body?.stream === true, "OpenRouter plugin should support streamed Dragon turns");
+    assert(captured.body?.stream === true, "OpenRouter plugin should support streamed Loong turns");
   } finally {
     await closeServer(server);
   }
@@ -240,7 +240,7 @@ async function testDashboardMemoryReviewSmoke(): Promise<void> {
     assert(html.includes("Requires write permission"), "dashboard should label disabled memory review actions");
     assert(!html.includes("localStorage"), "dashboard must not persist secrets to localStorage");
     assert(
-      html.includes("dragon.gateway.secret") || html.includes("GATEWAY_SECRET_STORAGE_KEY"),
+      html.includes("loong.gateway.secret") || html.includes("GATEWAY_SECRET_STORAGE_KEY"),
       "dashboard or studio bundle should reference gateway session secret storage",
     );
   } finally {
@@ -255,7 +255,7 @@ async function testDashboardMemoryReviewSmoke(): Promise<void> {
 }
 
 async function testMemoryCandidateTools(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-candidate-tools-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-candidate-tools-"));
   const provider = {
     id: "mock",
     displayName: "Mock",
@@ -267,7 +267,7 @@ async function testMemoryCandidateTools(): Promise<void> {
   };
 
   try {
-    const runtime = createDragonRuntime({
+    const runtime = createLoongRuntime({
       providers: [provider],
       defaultModel: "mock-model",
       lifecycleHooks: [createMemoryCandidateLifecycleHook({ rootDir: root })],
@@ -406,10 +406,10 @@ async function testSandboxExecTool(): Promise<void> {
   const dockerPlan = planSandboxExecCommand({
     backend: "docker",
     command: "git status",
-    docker: { container: "dragon-dev", workspace: "/workspace" },
+    docker: { container: "loong-dev", workspace: "/workspace" },
   });
   assert(dockerPlan.executable === "docker", "docker sandbox should use docker executable");
-  assert(JSON.stringify(dockerPlan.args) === JSON.stringify(["exec", "-i", "-w", "/workspace", "dragon-dev", "git", "status"]), "docker sandbox plan should be stable");
+  assert(JSON.stringify(dockerPlan.args) === JSON.stringify(["exec", "-i", "-w", "/workspace", "loong-dev", "git", "status"]), "docker sandbox plan should be stable");
   assert(dockerPlan.profile === "inspect", "sandbox default profile should remain inspect");
   assert(dockerPlan.innerExecutable === "git", "docker sandbox should retain inner executable");
 
@@ -418,7 +418,7 @@ async function testSandboxExecTool(): Promise<void> {
     planSandboxExecCommand({
       backend: "docker",
       command: "git diff --stat",
-      docker: { container: "dragon-dev", workspace: "/workspace" },
+      docker: { container: "loong-dev", workspace: "/workspace" },
     });
   } catch {
     defaultRejected = true;
@@ -429,7 +429,7 @@ async function testSandboxExecTool(): Promise<void> {
     backend: "docker",
     profile: "repo-read",
     command: "git diff --stat",
-    docker: { container: "dragon-dev", workspace: "/workspace" },
+    docker: { container: "loong-dev", workspace: "/workspace" },
   });
   assert(repoReadPlan.profile === "repo-read", "sandbox plan should preserve selected profile");
   assert(repoReadPlan.innerExecutable === "git", "repo-read profile should allow read-only Git commands");
@@ -440,7 +440,7 @@ async function testSandboxExecTool(): Promise<void> {
       backend: "docker",
       profile: "repo-read",
       command: "git diff --ext-diff",
-      docker: { container: "dragon-dev", workspace: "/workspace" },
+      docker: { container: "loong-dev", workspace: "/workspace" },
     });
   } catch {
     unsafeGitReadRejected = true;
@@ -453,7 +453,7 @@ async function testSandboxExecTool(): Promise<void> {
       backend: "docker",
       profile: "git-read",
       command: "rg hello src",
-      docker: { container: "dragon-dev", workspace: "/workspace" },
+      docker: { container: "loong-dev", workspace: "/workspace" },
     });
   } catch {
     gitProfileBlocksSearch = true;
@@ -464,20 +464,20 @@ async function testSandboxExecTool(): Promise<void> {
     backend: "ssh",
     profile: "search-read",
     command: "rg hello src",
-    ssh: { host: "example.test", user: "dragon", port: 2222, workspace: "/srv/dragon" },
+    ssh: { host: "example.test", user: "loong", port: 2222, workspace: "/srv/loong" },
   });
   assert(sshPlan.executable === "ssh", "ssh sandbox should use ssh executable");
   assert(sshPlan.profile === "search-read", "ssh sandbox should preserve selected profile");
   assert(sshPlan.args.includes("dragon@example.test"), "ssh sandbox should include user and host");
   assert(sshPlan.args.includes("2222"), "ssh sandbox should include port");
-  assert(sshPlan.args.at(-1) === "cd '/srv/dragon' && exec 'rg' 'hello' 'src'", "ssh sandbox should quote the remote command");
+  assert(sshPlan.args.at(-1) === "cd '/srv/loong' && exec 'rg' 'hello' 'src'", "ssh sandbox should quote the remote command");
 
   let rejected = false;
   try {
     planSandboxExecCommand({
       backend: "docker",
       command: "rm -rf .",
-      docker: { container: "dragon-dev", workspace: "/workspace" },
+      docker: { container: "loong-dev", workspace: "/workspace" },
     });
   } catch {
     rejected = true;
@@ -512,7 +512,7 @@ async function testCronScheduleAndGatewayDelivery(): Promise<void> {
     sessionId: "cron-session",
     message: "daily check",
     schedule: "0 9 * * *",
-    metadata: { project: "dragon" },
+    metadata: { project: "loong" },
   }, {
     jobId: "cron-1",
     scheduledAt: "2026-05-18T09:00:00.000Z",
@@ -520,7 +520,7 @@ async function testCronScheduleAndGatewayDelivery(): Promise<void> {
   });
   assert(payload.channel === "cron", "cron payload should target the cron channel");
   assert(readPath(payload, ["metadata", "cronJobId"]) === "cron-1", "cron payload should include job id metadata");
-  assert(readPath(payload, ["metadata", "project"]) === "dragon", "cron payload should preserve custom metadata");
+  assert(readPath(payload, ["metadata", "project"]) === "loong", "cron payload should preserve custom metadata");
 
   let captured: {
     url: string | undefined;
@@ -571,7 +571,7 @@ async function testCronScheduleAndGatewayDelivery(): Promise<void> {
 }
 
 async function testCronFileStoreAndRunner(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-cron-store-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cron-store-"));
   const filePath = path.join(root, "jobs.json");
   try {
     const store = createFileCronJobStore({ filePath });
@@ -580,7 +580,7 @@ async function testCronFileStoreAndRunner(): Promise<void> {
       sessionId: "cron-session",
       message: "scheduled review",
       schedule: "* * * * *",
-      metadata: { project: "dragon" },
+      metadata: { project: "loong" },
     }, { now: new Date("2026-05-17T10:00:30.000Z") });
     assert(created.enabled === true, "cron store should enable new jobs by default");
     assert(created.createdAt === "2026-05-17T10:00:30.000Z", "cron store should use supplied creation time");
@@ -626,7 +626,7 @@ async function testCronFileStoreAndRunner(): Promise<void> {
     assert(tick.delivered.length === 1, "cron runner should deliver due jobs");
     assert(delivered[0]?.jobId === "cron-runner-1", "cron runner should deliver the stored job");
     assert(delivered[0]?.scheduledAt === "2026-05-17T10:01:00.000Z", "cron runner should preserve scheduled occurrence time");
-    assert(delivered[0]?.metadata?.project === "dragon", "cron runner should preserve job metadata");
+    assert(delivered[0]?.metadata?.project === "loong", "cron runner should preserve job metadata");
 
     const updated = await reloaded.get("cron-runner-1");
     assert(updated?.lastStatus === "ok", "cron runner should persist successful delivery status");
@@ -676,9 +676,9 @@ async function testBrowserSnapshotTool(): Promise<void> {
     response.end([
       "<!doctype html>",
       "<html>",
-      "<head><title>Dragon &amp; Browser</title><style>body{color:red}</style></head>",
+      "<head><title>Loong &amp; Browser</title><style>body{color:red}</style></head>",
       "<body>",
-      "<h1>Dragon Browser</h1>",
+      "<h1>Loong Browser</h1>",
       "<script>document.body.textContent='hidden'</script>",
       "<p>Minimal page inspection.</p>",
       "<a href='/docs'>Docs</a>",
@@ -709,8 +709,8 @@ async function testBrowserSnapshotTool(): Promise<void> {
     });
     assert(result.ok, `browser_snapshot failed: ${result.error}`);
     assert(result.output?.status === 200, "browser_snapshot should report HTTP status");
-    assert(result.output?.title === "Dragon & Browser", "browser_snapshot should decode title");
-    assert(result.output?.text.includes("Dragon Browser"), "browser_snapshot should include visible text");
+    assert(result.output?.title === "Loong & Browser", "browser_snapshot should decode title");
+    assert(result.output?.text.includes("Loong Browser"), "browser_snapshot should include visible text");
     assert(!result.output?.text.includes("hidden"), "browser_snapshot should remove script content");
     assert(result.output?.links.some(link => link.href === `http://127.0.0.1:${port}/docs` && link.text === "Docs"), "browser_snapshot should resolve relative links");
     assert(result.output?.forms[0]?.action === `http://127.0.0.1:${port}/login`, "browser_snapshot should resolve form actions");
@@ -788,7 +788,7 @@ async function testDelegationPlannerAndRunner(): Promise<void> {
   assert(executionOrder[0] === "inspect", "delegation should respect dependencies");
   assert(readPath(run.results[2], ["output"]) === "done:summarize", "delegation should preserve executor output");
 
-  const runtimeInputs: DragonTurnInput[] = [];
+  const runtimeInputs: LoongTurnInput[] = [];
   const runtimeExecutor = createRuntimeDelegatedTaskExecutor({
     runtime: {
       async runTurn(input) {
@@ -810,7 +810,7 @@ async function testDelegationPlannerAndRunner(): Promise<void> {
       },
     },
     sessionId: task => `delegated-${task.id}`,
-    workspace: "/tmp/dragon",
+    workspace: "/tmp/loong",
     model: "mock:model",
     metadata: { parentRunId: "parent-run" },
   });
@@ -823,7 +823,7 @@ async function testDelegationPlannerAndRunner(): Promise<void> {
   assert(runtimeInputs.length === 2, "runtime delegation executor should call the runtime for each task");
   assert(runtimeInputs[0]?.sessionId === "delegated-draft", "runtime delegation executor should derive task sessions");
   assert(runtimeInputs[0]?.source === "api", "runtime delegation executor should default to api source");
-  assert(runtimeInputs[0]?.workspace === "/tmp/dragon", "runtime delegation executor should pass workspace");
+  assert(runtimeInputs[0]?.workspace === "/tmp/loong", "runtime delegation executor should pass workspace");
   assert(runtimeInputs[0]?.model === "mock:model", "runtime delegation executor should pass model");
   assert(readPath(runtimeInputs[0]?.metadata, ["parentRunId"]) === "parent-run", "runtime delegation executor should merge parent metadata");
   assert(readPath(runtimeInputs[0]?.metadata, ["stage"]) === "draft", "runtime delegation executor should merge task metadata");
@@ -832,7 +832,7 @@ async function testDelegationPlannerAndRunner(): Promise<void> {
   assert(runtimeInputs[1]?.message.includes("first task output"), "dependent runtime task should include upstream assistant output");
   assert(readPath(runtimeRun.results[1], ["output", "assistantMessage"]) === "used dependency context", "runtime delegation output should expose assistant message");
 
-  const toolRuntimeInputs: DragonTurnInput[] = [];
+  const toolRuntimeInputs: LoongTurnInput[] = [];
   const delegationTool = createRuntimeDelegationTool({
     runtime: {
       async runTurn(input) {
@@ -899,7 +899,7 @@ async function testDelegationPlannerAndRunner(): Promise<void> {
     name: delegationTool.name,
     input: {
       tasks: [{ id: "bad", title: "Bad", prompt: 42 }],
-    } as unknown as DragonRuntimeDelegationToolInput,
+    } as unknown as LoongRuntimeDelegationToolInput,
     sessionId: "parent-session",
   });
   assert(!invalidTask.ok && invalidTask.error?.includes("task prompt must be a string"), "delegation_run tool should reject malformed task input");
@@ -1025,8 +1025,8 @@ async function testAnthropicProviderToolUse(): Promise<void> {
   assert(readPath(body, ["messages", 2, "content", 0, "type"]) === "tool_result", "tool result should become user tool_result block");
   assert(readPath(body, ["messages", 2, "content", 0, "tool_use_id"]) === "toolu_prior", "tool result should preserve tool use id");
   assert(response.text === "Checking.", "text response should be preserved");
-  assert(response.toolCalls?.[0]?.id === "toolu_1", "tool_use id should become Dragon tool call id");
-  assert(response.toolCalls?.[0]?.function?.name === "git_status", "tool_use name should become Dragon tool call name");
+  assert(response.toolCalls?.[0]?.id === "toolu_1", "tool_use id should become Loong tool call id");
+  assert(response.toolCalls?.[0]?.function?.name === "git_status", "tool_use name should become Loong tool call name");
   assert(response.toolCalls?.[0]?.function?.arguments === JSON.stringify({ porcelain: true }), "tool_use input should be stringified");
   assert(response.usage?.inputTokens === 11 && response.usage.outputTokens === 7, "usage should be mapped");
 }

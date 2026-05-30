@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@dragon/tools";
+import type { ToolDefinition } from "@loong/tools";
 
 export interface GatewayToolSummary {
   name: string;

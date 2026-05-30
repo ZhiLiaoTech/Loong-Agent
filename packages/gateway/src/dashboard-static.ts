@@ -15,7 +15,7 @@ export function resetDashboardStaticCache(): void {
 
 /** Prefer studio when built; override with LOONG_UI=dashboard|studio. */
 function resolveUiMode(): "studio" | "dashboard" {
-  const raw = (process.env.LOONG_UI ?? process.env.DRAGON_UI ?? "").trim().toLowerCase();
+  const raw = (process.env.LOONG_UI ?? process.env.LOONG_UI ?? "").trim().toLowerCase();
   if (raw === "dashboard" || raw === "legacy") {
     return "dashboard";
   }
@@ -27,7 +27,7 @@ function resolveUiMode(): "studio" | "dashboard" {
 
 function resolveStudioDist(): string | undefined {
   try {
-    const pkgJson = require.resolve("@dragon/studio/package.json");
+    const pkgJson = require.resolve("@loong/studio/package.json");
     const dist = join(dirname(pkgJson), "dist");
     if (existsSync(join(dist, "index.html"))) {
       return dist;
@@ -39,7 +39,7 @@ function resolveStudioDist(): string | undefined {
 }
 
 function resolveDashboardDist(): string {
-  const pkgJson = require.resolve("@dragon/gateway-dashboard/package.json");
+  const pkgJson = require.resolve("@loong/gateway-dashboard/package.json");
   return join(dirname(pkgJson), "dist");
 }
 
@@ -53,8 +53,8 @@ export function getDashboardRoot(): string {
         return dashboardRoot;
       }
       console.warn(
-        "[dragon-gateway] LOONG_UI=studio but @dragon/studio dist is missing. " +
-          "Run: corepack pnpm --filter @dragon/studio build. Falling back to gateway-dashboard.",
+        "[loong-gateway] LOONG_UI=studio but @loong/studio dist is missing. " +
+          "Run: corepack pnpm --filter @loong/studio build. Falling back to gateway-dashboard.",
       );
     }
     dashboardRoot = resolveDashboardDist();
@@ -69,8 +69,8 @@ export function getDashboardHtml(): string {
       const mode = resolveUiMode();
       const buildHint =
         mode === "studio"
-          ? "corepack pnpm --filter @dragon/studio build"
-          : "corepack pnpm --filter @dragon/gateway-dashboard build";
+          ? "corepack pnpm --filter @loong/studio build"
+          : "corepack pnpm --filter @loong/gateway-dashboard build";
       throw new Error(`Dashboard bundle missing. Run: ${buildHint}`);
     }
     cachedHtml = readFileSync(indexPath, "utf8");

@@ -1,8 +1,8 @@
-# @dragon/cli 技术方案
+# @loong/cli 技术方案
 
 ## 1. 职责边界
 
-**负责**：`dragon` 可执行入口、子命令解析、**Composition Root**（装配 Runtime/Gateway/插件/工具/记忆/技能/Cron）、本地配置读写、TTY 权限提示。
+**负责**：`loong` 可执行入口、子命令解析、**Composition Root**（装配 Runtime/Gateway/插件/工具/记忆/技能/Cron）、本地配置读写、TTY 权限提示。
 
 **不负责**：回合逻辑（core）、HTTP 协议（gateway）、具体工具/Provider 实现。
 
@@ -11,17 +11,17 @@
 本包以 **CLI 二进制** 为主，非库导向：
 
 ```json
-"bin": { "dragon": "./dist/index.js" }
+"bin": { "loong": "./dist/index.js" }
 ```
 
 命令：
 
 | 命令 | 模式 | 说明 |
 |------|------|------|
-| `dragon chat` | 轻量对话 | 无工具/记忆 |
-| `dragon agent` | 完整 Agent | 工具+记忆+权限+技能 |
-| `dragon gateway` | 控制面 | HTTP Gateway + 内嵌 Cron Runner |
-| `dragon cron` | 定时 | `--once` 或长驻 Runner |
+| `loong chat` | 轻量对话 | 无工具/记忆 |
+| `loong agent` | 完整 Agent | 工具+记忆+权限+技能 |
+| `loong gateway` | 控制面 | HTTP Gateway + 内嵌 Cron Runner |
+| `loong cron` | 定时 | `--once` 或长驻 Runner |
 
 ## 3. 内部设计
 
@@ -29,12 +29,12 @@
 
 | 函数 | 职责 |
 |------|------|
-| `createRuntime()` | 加载插件 → Provider Registry → Session/Trajectory/Memory → Tools → Context Providers → `createDragonRuntime` |
-| `createBuiltinProviders()` | `.dragon/config/providers.json` + 环境变量 OpenAI/Anthropic |
+| `createRuntime()` | 加载插件 → Provider Registry → Session/Trajectory/Memory → Tools → Context Providers → `createLoongRuntime` |
+| `createBuiltinProviders()` | `.loong/config/providers.json` + 环境变量 OpenAI/Anthropic |
 | `runChat()` | 单回合 + 事件 stderr 输出 + 可选 CLI 权限 Handler |
 | `runGateway()` | `createHttpGateway` + Cron + Config Stores |
 | `runCron()` | File store + Webhook delivery target |
-| `loadConfiguredPlugins()` | `.dragon/plugins`、`DRAGON_PLUGIN_ROOTS`、`--plugin-root` |
+| `loadConfiguredPlugins()` | `.loong/plugins`、`LOONG_PLUGIN_ROOTS`、`--plugin-root` |
 | `createAgentTools()` | file/shell/sandbox/browser/memory/delegation/trajectory/skills |
 | `createCliPermissionHandler()` | TTY `[y/N]` 提示 |
 
@@ -49,11 +49,11 @@
 
 | 变量 | 用途 |
 |------|------|
-| `DRAGON_MODEL` / `DRAGON_MODEL_FALLBACKS` | 模型与 fallback |
-| `DRAGON_PLUGIN_ROOTS` | 插件搜索路径 |
-| `DRAGON_MEMORY_BACKEND` | 记忆后端 id |
-| `DRAGON_MODEL_CONFIG` / `DRAGON_AGENT_CONFIG` | 配置路径覆盖 |
-| `DRAGON_OPENAI_*` / `DRAGON_ANTHROPIC_*` | Provider 密钥 |
+| `LOONG_MODEL` / `LOONG_MODEL_FALLBACKS` | 模型与 fallback |
+| `LOONG_PLUGIN_ROOTS` | 插件搜索路径 |
+| `LOONG_MEMORY_BACKEND` | 记忆后端 id |
+| `LOONG_MODEL_CONFIG` / `LOONG_AGENT_CONFIG` | 配置路径覆盖 |
+| `LOONG_OPENAI_*` / `LOONG_ANTHROPIC_*` | Provider 密钥 |
 
 ### 3.4 依赖（workspace 最全）
 
@@ -94,4 +94,4 @@ argv → parseChatArgs → createRuntime → runTurn
 1. 拆分子命令模块：`commands/agent.ts`、`commands/gateway.ts`、`wiring/runtime.ts`。
 2. 增加 `--fail-on-ask`、`--yes`（非交互 CI 模式）。
 3. API Key 支持环境变量引用或 OS keychain，文件内仅存引用 id。
-4. 文档强调 `dragon agent` 为默认开发入口；`chat` 标注为无工具对话。
+4. 文档强调 `loong agent` 为默认开发入口；`chat` 标注为无工具对话。

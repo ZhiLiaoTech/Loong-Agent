@@ -1,10 +1,10 @@
-import { parseCronSchedule } from "@dragon/cron";
-import type { ApprovalStatus, EmployeeRegistry, OrgTicket, ToolPolicyDocument } from "@dragon/org";
+import { parseCronSchedule } from "@loong/cron";
+import type { ApprovalStatus, EmployeeRegistry, OrgTicket, ToolPolicyDocument } from "@loong/org";
 import { parseGatewayAgentParams } from "./agent-params.js";
 import { parseAgentConfigSaveParams } from "./gateway-agent-config.js";
 import { badRequest } from "./gateway-http.js";
 import {
-  isDragonThinking,
+  isLoongThinking,
   isRecord,
   normalizeBoundedText,
   normalizeShortText,
@@ -15,6 +15,8 @@ import type {
   GatewayCronJobRemoveParams,
   GatewayCronJobUpsertParams,
   GatewayEmployeeSaveParams,
+  GatewayEmployeeWorkspaceGetParams,
+  GatewayEmployeeWorkspaceSaveParams,
   GatewayKpiSnapshotParams,
   GatewayMemoryCandidateListParams,
   GatewayMemoryCandidatePromoteParams,
@@ -33,7 +35,7 @@ import type {
   GatewayTrajectoryListParams,
 } from "./gateway-rpc-params.js";
 import type { GatewayRequest } from "./gateway-rpc-types.js";
-import type { DragonTurnResult } from "@dragon/core";
+import type { LoongTurnResult } from "@loong/core";
 
 export function parseGatewayRequest(value: unknown): GatewayRequest {
   if (!isRecord(value) || typeof value.type !== "string" || typeof value.id !== "string" || !value.id.trim()) {
@@ -126,6 +128,26 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
       id: value.id,
       params: parseEmployeeSaveParams(value.params),
     };
+  }
+  if (value.type === "employee.workspace.get") {
+    return {
+      type: "employee.workspace.get",
+      id: value.id,
+      ...(value.params !== undefined ? { params: parseEmployeeWorkspaceGetParams(value.params) } : {}),
+    };
+  }
+  if (value.type === "employee.workspace.save") {
+    return {
+      type: "employee.workspace.save",
+      id: value.id,
+      params: parseEmployeeWorkspaceSaveParams(value.params),
+    };
+  }
+  if (value.type === "skills.list") {
+    return { type: "skills.list", id: value.id };
+  }
+  if (value.type === "org.bootstrap.example") {
+    return { type: "org.bootstrap.example", id: value.id };
   }
   if (value.type === "policy.tool.get") {
     return { type: "policy.tool.get", id: value.id };
@@ -306,7 +328,35 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
   if (value.type === "cron.tick") {
     return { type: "cron.tick", id: value.id };
   }
+  if (value.type === "fs.directory.browse") {
+    const params = parseDirectoryBrowseParams(value.params);
+    const request: GatewayRequest = {
+      type: "fs.directory.browse",
+      id: value.id,
+    };
+    if (params !== undefined) {
+      request.params = params;
+    }
+    return request;
+  }
   badRequest(`Unknown Gateway RPC type: ${value.type}`);
+}
+
+function parseDirectoryBrowseParams(value: unknown): { path?: string } | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    badRequest("fs.directory.browse params must be an object.");
+  }
+  const params: { path?: string } = {};
+  if (value.path !== undefined) {
+    if (typeof value.path !== "string") {
+      badRequest("fs.directory.browse params.path must be a string.");
+    }
+    params.path = value.path;
+  }
+  return params;
 }
 
 function parsePairingTokenCreateParams(value: unknown): { label?: string; ttlMs?: number } | undefined {
@@ -453,6 +503,47 @@ function parseModelProviderConfig(value: unknown, index: number): GatewayModelPr
     provider.enabled = value.enabled;
   }
   return provider;
+}
+
+function parseEmployeeWorkspaceGetParams(value: unknown): GatewayEmployeeWorkspaceGetParams {
+  if (!isRecord(value)) {
+    badRequest("employee.workspace.get params must be an object.");
+  }
+  const params: GatewayEmployeeWorkspaceGetParams = {};
+  if (typeof value.workspace === "string" && value.workspace.trim()) {
+    params.workspace = normalizeShortText(value.workspace, "workspace", 4000);
+  }
+  if (typeof value.employeeId === "string" && value.employeeId.trim()) {
+    params.employeeId = normalizeShortText(value.employeeId, "employeeId", 120);
+  }
+  if (typeof value.profileId === "string" && value.profileId.trim()) {
+    params.profileId = normalizeShortText(value.profileId, "profileId", 120);
+  }
+  return params;
+}
+
+function parseEmployeeWorkspaceSaveParams(value: unknown): GatewayEmployeeWorkspaceSaveParams {
+  if (!isRecord(value) || typeof value.workspace !== "string" || !value.workspace.trim()) {
+    badRequest("employee.workspace.save requires params.workspace.");
+  }
+  const params: GatewayEmployeeWorkspaceSaveParams = {
+    workspace: normalizeShortText(value.workspace, "workspace", 4000),
+  };
+  if (typeof value.role === "string") {
+    params.role = normalizeBoundedText(value.role, "role", 32_000);
+  }
+  if (typeof value.workflow === "string") {
+    params.workflow = normalizeBoundedText(value.workflow, "workflow", 32_000);
+  }
+  if (typeof value.memory === "string") {
+    params.memory = normalizeBoundedText(value.memory, "memory", 32_000);
+  }
+  if (Array.isArray(value.enabledSkills)) {
+    params.enabledSkills = value.enabledSkills
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      .map(entry => normalizeShortText(entry, "enabledSkills", 120));
+  }
+  return params;
 }
 
 function parseEmployeeSaveParams(value: unknown): GatewayEmployeeSaveParams {
@@ -642,7 +733,7 @@ function parseTierSpec(value: unknown, ctx: string): GatewayTierSpec | undefined
     if (fallbacks.length > 0) spec.modelFallbacks = fallbacks;
   }
   if (value.thinking !== undefined) {
-    if (!isDragonThinking(value.thinking)) {
+    if (!isLoongThinking(value.thinking)) {
       badRequest(`${ctx}.thinking is invalid.`);
     }
     spec.thinking = value.thinking;
@@ -981,6 +1072,6 @@ function normalizeIsoTimestamp(value: string, fieldName: string): string {
   return parsed.toISOString();
 }
 
-function isTurnStatus(value: unknown): value is DragonTurnResult["status"] {
+function isTurnStatus(value: unknown): value is LoongTurnResult["status"] {
   return ["ok", "error", "cancelled", "timeout"].includes(String(value));
 }

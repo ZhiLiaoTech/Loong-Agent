@@ -1,4 +1,4 @@
-export interface DragonChannelMessage {
+export interface LoongChannelMessage {
   channel: string;
   text: string;
   userId?: string;
@@ -7,9 +7,9 @@ export interface DragonChannelMessage {
   metadata?: Record<string, unknown>;
 }
 
-export type DragonGatewayThinkingLevel = "none" | "low" | "medium" | "high";
+export type LoongGatewayThinkingLevel = "none" | "low" | "medium" | "high";
 
-export interface DragonGatewayWebhookPayload {
+export interface LoongGatewayWebhookPayload {
   sessionId: string;
   message: string;
   channel: string;
@@ -18,46 +18,46 @@ export interface DragonGatewayWebhookPayload {
   workspace?: string;
   model?: string;
   profileId?: string;
-  thinking?: DragonGatewayThinkingLevel;
+  thinking?: LoongGatewayThinkingLevel;
   toolsEnabled?: boolean;
   memoryEnabled?: boolean;
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonChannelGatewayOptions {
+export interface LoongChannelGatewayOptions {
   sessionPrefix?: string;
-  sessionId?: string | ((message: Readonly<DragonChannelMessage>) => string);
+  sessionId?: string | ((message: Readonly<LoongChannelMessage>) => string);
   workspace?: string;
   model?: string;
   profileId?: string;
-  thinking?: DragonGatewayThinkingLevel;
+  thinking?: LoongGatewayThinkingLevel;
   toolsEnabled?: boolean;
   memoryEnabled?: boolean;
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonChannelDeliveryResult {
+export interface LoongChannelDeliveryResult {
   ok: boolean;
   status: number;
   payload?: unknown;
   error?: string;
 }
 
-export interface DragonChannelDeliveryTarget {
+export interface LoongChannelDeliveryTarget {
   deliver(
-    message: DragonChannelMessage,
-    options?: DragonChannelGatewayOptions,
-  ): Promise<DragonChannelDeliveryResult>;
+    message: LoongChannelMessage,
+    options?: LoongChannelGatewayOptions,
+  ): Promise<LoongChannelDeliveryResult>;
 }
 
 export interface GatewayWebhookChannelTargetOptions {
   gatewayUrl: string;
   sharedSecret?: string;
   fetchImpl?: typeof fetch;
-  defaults?: DragonChannelGatewayOptions;
+  defaults?: LoongChannelGatewayOptions;
 }
 
-export function parseTelegramWebhook(payload: unknown): DragonChannelMessage | undefined {
+export function parseTelegramWebhook(payload: unknown): LoongChannelMessage | undefined {
   if (!isRecord(payload)) {
     throw new Error("Telegram webhook payload must be an object.");
   }
@@ -93,7 +93,7 @@ export function parseTelegramWebhook(payload: unknown): DragonChannelMessage | u
   };
 }
 
-export function parseSlackWebhook(payload: unknown): DragonChannelMessage | undefined {
+export function parseSlackWebhook(payload: unknown): LoongChannelMessage | undefined {
   if (!isRecord(payload)) {
     throw new Error("Slack webhook payload must be an object.");
   }
@@ -197,7 +197,7 @@ export async function postGatewayWebhook(options: PostGatewayWebhookOptions): Pr
   };
 }
 
-export function createGatewayWebhookChannelTarget(options: GatewayWebhookChannelTargetOptions): DragonChannelDeliveryTarget {
+export function createGatewayWebhookChannelTarget(options: GatewayWebhookChannelTargetOptions): LoongChannelDeliveryTarget {
   const gatewayUrl = normalizeGatewayUrl(options.gatewayUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
   return {
@@ -214,9 +214,9 @@ export function createGatewayWebhookChannelTarget(options: GatewayWebhookChannel
 }
 
 export function toGatewayWebhookPayload(
-  message: DragonChannelMessage,
-  options: DragonChannelGatewayOptions = {},
-): DragonGatewayWebhookPayload {
+  message: LoongChannelMessage,
+  options: LoongChannelGatewayOptions = {},
+): LoongGatewayWebhookPayload {
   const normalized = normalizeChannelMessage(message);
   const sessionId = typeof options.sessionId === "function"
     ? options.sessionId(normalized)
@@ -252,10 +252,10 @@ function readTelegramEvent(payload: Record<string, unknown>): { type: string; me
 }
 
 function mergeGatewayOptions(
-  defaults: DragonChannelGatewayOptions | undefined,
-  options: DragonChannelGatewayOptions,
-): DragonChannelGatewayOptions {
-  const merged: DragonChannelGatewayOptions = {};
+  defaults: LoongChannelGatewayOptions | undefined,
+  options: LoongChannelGatewayOptions,
+): LoongChannelGatewayOptions {
+  const merged: LoongChannelGatewayOptions = {};
   const sessionPrefix = options.sessionPrefix ?? defaults?.sessionPrefix;
   const sessionId = options.sessionId ?? defaults?.sessionId;
   const workspace = options.workspace ?? defaults?.workspace;
@@ -297,8 +297,8 @@ function mergeGatewayOptions(
   return merged;
 }
 
-function normalizeChannelMessage(message: DragonChannelMessage): DragonChannelMessage {
-  const normalized: DragonChannelMessage = {
+function normalizeChannelMessage(message: LoongChannelMessage): LoongChannelMessage {
+  const normalized: LoongChannelMessage = {
     channel: normalizeText(message.channel, "channel", 80),
     text: normalizeText(message.text, "channel text", 16_000),
     ...(message.userId !== undefined ? { userId: normalizeText(message.userId, "channel userId", 200) } : {}),
@@ -309,7 +309,7 @@ function normalizeChannelMessage(message: DragonChannelMessage): DragonChannelMe
   return normalized;
 }
 
-function defaultSessionId(message: DragonChannelMessage, prefix = "channel"): string {
+function defaultSessionId(message: LoongChannelMessage, prefix = "channel"): string {
   const stablePart = message.threadId ?? message.userId ?? message.messageId ?? "default";
   return `${prefix}:${message.channel}:${stablePart}`;
 }

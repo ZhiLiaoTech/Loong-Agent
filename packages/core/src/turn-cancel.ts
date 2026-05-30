@@ -1,4 +1,4 @@
-import type { ModelMessage, ModelToolCall } from "@dragon/providers";
+import type { ModelMessage, ModelToolCall } from "@loong/providers";
 
 export const TOOL_CANCELLED_CODE = "turn_cancelled";
 
@@ -94,7 +94,7 @@ export function isTurnCancelled(signal: AbortSignal | undefined, error?: unknown
   if (signal?.aborted) {
     return true;
   }
-  if (error instanceof Error && error.name === "DragonCancelledError") {
+  if (error instanceof Error && error.name === "LoongCancelledError") {
     return true;
   }
   return false;

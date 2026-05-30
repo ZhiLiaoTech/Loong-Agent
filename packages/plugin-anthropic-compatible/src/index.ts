@@ -1,15 +1,15 @@
-import type { DragonPlugin, DragonPluginManifest } from "@dragon/plugin-sdk";
-import { createAnthropicProvider, type AnthropicProviderOptions } from "@dragon/providers";
+import type { LoongPlugin, LoongPluginManifest } from "@loong/plugin-sdk";
+import { createAnthropicProvider, type AnthropicProviderOptions } from "@loong/providers";
 
-const manifest: DragonPluginManifest = {
-  name: "dragon.anthropic-compatible",
+const manifest: LoongPluginManifest = {
+  name: "loong.anthropic-compatible",
   version: "0.0.0",
   entry: "dist/index.js",
   description: "Registers an Anthropic Messages API model provider from environment variables.",
-  dragonVersion: "0.x",
+  loongVersion: "0.x",
 };
 
-const plugin: DragonPlugin = {
+const plugin: LoongPlugin = {
   manifest,
   activate(context) {
     const options = readProviderOptions(process.env);
@@ -24,8 +24,8 @@ export default plugin;
 
 function readProviderOptions(env: NodeJS.ProcessEnv): AnthropicProviderOptions | undefined {
   const apiKey = firstNonEmpty(
-    env.DRAGON_PLUGIN_ANTHROPIC_API_KEY,
-    env.DRAGON_ANTHROPIC_API_KEY,
+    env.LOONG_PLUGIN_ANTHROPIC_API_KEY,
+    env.LOONG_ANTHROPIC_API_KEY,
     env.ANTHROPIC_API_KEY,
   );
   if (!apiKey) {
@@ -33,19 +33,19 @@ function readProviderOptions(env: NodeJS.ProcessEnv): AnthropicProviderOptions |
   }
 
   const options: AnthropicProviderOptions = {
-    id: firstNonEmpty(env.DRAGON_PLUGIN_ANTHROPIC_PROVIDER_ID) ?? "dragon-anthropic",
-    displayName: firstNonEmpty(env.DRAGON_PLUGIN_ANTHROPIC_DISPLAY_NAME) ?? "Dragon Anthropic Compatible",
+    id: firstNonEmpty(env.LOONG_PLUGIN_ANTHROPIC_PROVIDER_ID) ?? "loong-anthropic",
+    displayName: firstNonEmpty(env.LOONG_PLUGIN_ANTHROPIC_DISPLAY_NAME) ?? "Loong Anthropic Compatible",
     apiKey,
     defaultModel: firstNonEmpty(
-      env.DRAGON_PLUGIN_ANTHROPIC_MODEL,
-      env.DRAGON_ANTHROPIC_MODEL,
+      env.LOONG_PLUGIN_ANTHROPIC_MODEL,
+      env.LOONG_ANTHROPIC_MODEL,
       env.ANTHROPIC_MODEL,
     ) ?? "claude-3-5-haiku-latest",
   };
 
   const baseUrl = firstNonEmpty(
-    env.DRAGON_PLUGIN_ANTHROPIC_BASE_URL,
-    env.DRAGON_ANTHROPIC_BASE_URL,
+    env.LOONG_PLUGIN_ANTHROPIC_BASE_URL,
+    env.LOONG_ANTHROPIC_BASE_URL,
     env.ANTHROPIC_BASE_URL,
   );
   if (baseUrl !== undefined) {
@@ -54,19 +54,19 @@ function readProviderOptions(env: NodeJS.ProcessEnv): AnthropicProviderOptions |
 
   const maxTokens = parseOptionalInteger(
     firstNonEmpty(
-      env.DRAGON_PLUGIN_ANTHROPIC_MAX_TOKENS,
-      env.DRAGON_ANTHROPIC_MAX_TOKENS,
+      env.LOONG_PLUGIN_ANTHROPIC_MAX_TOKENS,
+      env.LOONG_ANTHROPIC_MAX_TOKENS,
       env.ANTHROPIC_MAX_TOKENS,
     ),
-    "DRAGON_PLUGIN_ANTHROPIC_MAX_TOKENS",
+    "LOONG_PLUGIN_ANTHROPIC_MAX_TOKENS",
   );
   if (maxTokens !== undefined) {
     options.maxTokens = maxTokens;
   }
 
   const apiVersion = firstNonEmpty(
-    env.DRAGON_PLUGIN_ANTHROPIC_API_VERSION,
-    env.DRAGON_ANTHROPIC_API_VERSION,
+    env.LOONG_PLUGIN_ANTHROPIC_API_VERSION,
+    env.LOONG_ANTHROPIC_API_VERSION,
     env.ANTHROPIC_API_VERSION,
   );
   if (apiVersion !== undefined) {

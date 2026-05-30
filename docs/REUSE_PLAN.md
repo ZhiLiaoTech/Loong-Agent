@@ -1,16 +1,16 @@
-# Dragon Reuse Plan
+# Loong Reuse Plan
 
-Dragon has two goals:
+Loong has two goals:
 
 1. Reuse high-quality source code where license and architecture allow it.
-2. Reimplement ideas where direct reuse is unsafe or would make Dragon messy.
+2. Reimplement ideas where direct reuse is unsafe or would make Loong messy.
 
 ## Reuse Matrix
 
-| Source | License status | Dragon action |
+| Source | License status | Loong action |
 | --- | --- | --- |
 | OpenClaw | MIT | Primary TypeScript source for gateway, plugins, tools, sessions, cron, memory, providers, and security. |
-| Hermes Agent | MIT | Study and reimplement selected ideas in TypeScript. Direct code copying is allowed by license, but Python code should not be imported into Dragon runtime. |
+| Hermes Agent | MIT | Study and reimplement selected ideas in TypeScript. Direct code copying is allowed by license, but Python code should not be imported into Loong runtime. |
 | Claude Code sourcemap | All rights reserved / research-only reconstruction | Do not copy source. Use only as product and architecture research. |
 
 ## OpenClaw Modules To Migrate First
@@ -82,7 +82,7 @@ Recommended header:
 ```ts
 // Derived from OpenClaw, MIT License.
 // Upstream path: openclaw/src/...
-// Dragon changes: renamed interfaces, simplified dependencies, adapted package boundary.
+// Loong changes: renamed interfaces, simplified dependencies, adapted package boundary.
 ```
 
 Every migrated package or folder should include `MIGRATION.md` with:
@@ -94,7 +94,7 @@ Every migrated package or folder should include `MIGRATION.md` with:
 - known gaps
 
 Do not migrate large directories blindly. Bring over the smallest slice that
-compiles inside a Dragon package boundary.
+compiles inside a Loong package boundary.
 
 ## Clean-Room Rule For Claude Code
 
@@ -102,9 +102,9 @@ Claude Code may be used for behavioral comparison and design notes only.
 
 Allowed:
 
-- describe workflows in Dragon docs
+- describe workflows in Loong docs
 - build equivalent interfaces from observed behavior
-- implement original code based on Dragon requirements
+- implement original code based on Loong requirements
 
 Not allowed:
 

@@ -34,7 +34,7 @@ export async function loadMcpConfig(configPath: string): Promise<McpServerConfig
 }
 
 export function defaultMcpConfigPath(cwd = process.cwd()): string {
-  return path.join(cwd, ".dragon", "config", "mcp.json");
+  return path.join(cwd, ".loong", "config", "mcp.json");
 }
 
 function normalizeMcpServerConfig(server: unknown): McpServerConfig | undefined {

@@ -1,7 +1,7 @@
 import type { GatewayClientConfig } from "./config.js";
 import { fetchGatewayHealth, type GatewayHealthResult } from "./health.js";
 import { gatewayRpc } from "./rpc.js";
-import { openDragonEventStream, type DragonEventStreamOptions, type DragonEventStreamHandle } from "./sse.js";
+import { openLoongEventStream, type LoongEventStreamOptions, type LoongEventStreamHandle } from "./sse.js";
 import type {
   GatewayConnectPayload,
   GatewayProviderSummary,
@@ -13,7 +13,7 @@ export interface GatewayClient {
   fetchHealth(options?: { authorized?: boolean }): Promise<GatewayHealthResult>;
   connect(): Promise<GatewayConnectPayload>;
   listProviders(): Promise<readonly GatewayProviderSummary[]>;
-  openEvents(options: DragonEventStreamOptions): DragonEventStreamHandle;
+  openEvents(options: LoongEventStreamOptions): LoongEventStreamHandle;
 }
 
 export function createGatewayClient(config: GatewayClientConfig): GatewayClient {
@@ -25,6 +25,6 @@ export function createGatewayClient(config: GatewayClientConfig): GatewayClient 
       const payload = await gatewayRpc<GatewayProvidersListPayload>(config, "providers.list");
       return payload.providers ?? [];
     },
-    openEvents: (options) => openDragonEventStream(config, options),
+    openEvents: (options) => openLoongEventStream(config, options),
   };
 }

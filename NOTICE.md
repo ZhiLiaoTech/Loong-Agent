@@ -1,6 +1,6 @@
-# Dragon Notice
+# Loong Notice
 
-Dragon is designed as a TypeScript-native agent framework.
+Loong is designed as a TypeScript-native agent framework.
 
 ## Reuse Policy
 
@@ -10,7 +10,7 @@ Dragon is designed as a TypeScript-native agent framework.
   MIT License. If any code is copied or substantially translated, keep upstream
   copyright notices.
 - Claude Code source from `claude-code-sourcemap` must not be copied into
-  Dragon. It is used only as research material for product and architecture
+  Loong. It is used only as research material for product and architecture
   inspiration.
 
 Every migrated module should include a local `MIGRATION.md` or source header

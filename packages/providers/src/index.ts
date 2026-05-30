@@ -13,8 +13,8 @@ export type {
   ProviderResolution,
 } from "./types.js";
 export type {
-  DragonProviderModelCatalogEntry,
-} from "@dragon/model-catalog";
+  LoongProviderModelCatalogEntry,
+} from "@loong/model-catalog";
 export {
   ProviderError,
   sanitizeProviderBody,

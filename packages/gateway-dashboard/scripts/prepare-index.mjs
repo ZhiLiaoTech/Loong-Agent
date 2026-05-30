@@ -10,7 +10,7 @@ const html = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dragon · 潜龙</title>
+  <title>Loong</title>
 </head>
 ${body}
 </html>

@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { GatewayApiError, type GatewayProviderSummary } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
+import { buildEmployeeIdentity } from "../organization/buildEmployeeIdentity.js";
+import type { OrgPositionOption, OrgUnitOption } from "../organization/types.js";
 import type { AgentConfigState, EmployeeCatalogState, GatewayRunRecord } from "./types.js";
 
 const EMPTY_EMPLOYEES: EmployeeCatalogState = { employees: [] };
 
 export function useRunCatalog(sessionId: string) {
   const client = useGatewayClient();
+  const [units, setUnits] = useState<readonly OrgUnitOption[]>([]);
+  const [positions, setPositions] = useState<readonly OrgPositionOption[]>([]);
   const [agentConfig, setAgentConfig] = useState<AgentConfigState>({ profiles: [] });
   const [employeeCatalog, setEmployeeCatalog] = useState<EmployeeCatalogState>(EMPTY_EMPLOYEES);
   const [providers, setProviders] = useState<readonly GatewayProviderSummary[]>([]);
@@ -29,11 +33,17 @@ export function useRunCatalog(sessionId: string) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [configPayload, providerList, employeePayload] = await Promise.all([
+      const [configPayload, providerList, employeePayload, orgPayload] = await Promise.all([
         client.rpc<AgentConfigState>("agent.config.get").catch((): AgentConfigState => ({ profiles: [] })),
         client.listProviders(),
         client.rpc<EmployeeCatalogState>("employee.list").catch((): EmployeeCatalogState => EMPTY_EMPLOYEES),
+        client.rpc<{ units?: OrgUnitOption[]; positions?: OrgPositionOption[] }>("org.get").catch(() => ({
+          units: [],
+          positions: [],
+        })),
       ]);
+      setUnits(orgPayload.units ?? []);
+      setPositions(orgPayload.positions ?? []);
       setAgentConfig({
         profiles: configPayload.profiles ?? [],
         ...(configPayload.defaultProfileId
@@ -67,9 +77,19 @@ export function useRunCatalog(sessionId: string) {
     return models;
   });
 
+  const employeeIdentity = buildEmployeeIdentity(
+    employeeCatalog.employees,
+    employeeCatalog.defaultEmployeeId,
+    units,
+    positions,
+  );
+
   return {
     agentConfig,
     employeeCatalog,
+    employeeIdentity,
+    units,
+    positions,
     providers,
     runs,
     modelSuggestions,

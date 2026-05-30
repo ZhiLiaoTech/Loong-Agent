@@ -2,6 +2,7 @@
 
 import { parseChannelsServeArgs, runChannelsServe } from "./channels-serve.js";
 import { runCron } from "./commands/cron.js";
+import { runPlugins } from "./commands/plugins.js";
 import { runGateway } from "./commands/gateway.js";
 import { isHelpArgs } from "./cli-impl.js";
 import { runChat } from "./commands/chat.js";
@@ -42,6 +43,13 @@ try {
       await runCron(args);
     }
     process.exitCode = 0;
+  } else if (command === "plugins") {
+    if (isHelpArgs(args)) {
+      printHelp();
+    } else {
+      await runPlugins(args);
+    }
+    process.exitCode = 0;
   } else if (command === "channels") {
     const sub = args[0];
     if (sub === "serve") {
@@ -51,13 +59,13 @@ try {
       } else {
         const options = await parseChannelsServeArgs(serveArgs);
         const bridge = await runChannelsServe(options);
-        process.stderr.write(`Dragon channels bridge listening on ${bridge.url}\n`);
+        process.stderr.write(`Loong channels bridge listening on ${bridge.url}\n`);
         process.stderr.write(`Forwarding to ${options.gatewayUrl}/channels/webhook\n`);
         await waitForShutdown();
         await bridge.stop();
       }
     } else {
-      console.error("Usage: dragon channels serve [--port <port>] [--gateway-url <url>]");
+      console.error("Usage: loong channels serve [--port <port>] [--gateway-url <url>]");
       process.exitCode = 2;
     }
     process.exitCode = 0;

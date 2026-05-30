@@ -1,13 +1,13 @@
 /** Default model HTTP timeout: 300 seconds. */
 export const DEFAULT_MODEL_TIMEOUT_MS = 300_000;
 
-export class DragonModelTimeoutError extends Error {
+export class LoongModelTimeoutError extends Error {
   readonly timeoutMs: number;
 
   constructor(timeoutMs: number) {
     const seconds = Math.round(timeoutMs / 1000);
     super(`Model request timed out after ${seconds}s.`);
-    this.name = "DragonModelTimeoutError";
+    this.name = "LoongModelTimeoutError";
     this.timeoutMs = timeoutMs;
   }
 }
@@ -42,7 +42,7 @@ export function createModelTurnAbort(
       return;
     }
     didTimeout = true;
-    controller.abort(new DragonModelTimeoutError(timeoutMs));
+    controller.abort(new LoongModelTimeoutError(timeoutMs));
   };
 
   if (timeoutMs > 0) {
@@ -69,10 +69,10 @@ export function createModelTurnAbort(
 }
 
 export function isModelTimeoutError(error: unknown): boolean {
-  if (error instanceof DragonModelTimeoutError) {
+  if (error instanceof LoongModelTimeoutError) {
     return true;
   }
-  if (error instanceof Error && error.cause instanceof DragonModelTimeoutError) {
+  if (error instanceof Error && error.cause instanceof LoongModelTimeoutError) {
     return true;
   }
   return false;
@@ -87,10 +87,10 @@ export function resolveTurnFailureStatus(
     return "timeout";
   }
   const reason = turnAbort.signal.reason;
-  if (reason instanceof DragonModelTimeoutError) {
+  if (reason instanceof LoongModelTimeoutError) {
     return "timeout";
   }
-  if (error instanceof Error && error.name === "DragonCancelledError") {
+  if (error instanceof Error && error.name === "LoongCancelledError") {
     return "cancelled";
   }
   if (userSignal?.aborted) {

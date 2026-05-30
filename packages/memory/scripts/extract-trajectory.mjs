@@ -114,7 +114,7 @@ for (const prefix of [
   }
 }
 
-const insertAfterToolsImport = lines.findIndex(line => line.includes('from "@dragon/tools"'));
+const insertAfterToolsImport = lines.findIndex(line => line.includes('from "@loong/tools"'));
 const block = `
 export type {
   FileTrajectoryStoreOptions,

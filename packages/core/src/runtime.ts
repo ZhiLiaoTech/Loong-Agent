@@ -7,9 +7,9 @@ import type {
   ModelToolCall,
   ProviderRegistry,
   ProviderResolution,
-} from "@dragon/providers";
-import { ProviderError, createProviderRegistry } from "@dragon/providers";
-import { isSensitiveKey, redactSecretsInText } from "@dragon/security";
+} from "@loong/providers";
+import { ProviderError, createProviderRegistry } from "@loong/providers";
+import { isSensitiveKey, redactSecretsInText } from "@loong/security";
 import {
   applyTierToInput,
   decideTier,
@@ -42,6 +42,8 @@ import {
   repairModelMessagesAfterCancel,
 } from "./turn-cancel.js";
 import { resolveSessionCompactionForTurn } from "./session-compaction-config.js";
+import { resolveAiSummarizationForTurn } from "./ai-summarization-config.js";
+import type { AISummarizationConfig, AISummarizationOptions } from "./ai-summarization.js";
 import type { SessionMessageCompactionOptions } from "./session-message-compaction.js";
 import { prepareSessionHistoryForModel } from "./session-history-prep.js";
 import type {
@@ -50,42 +52,43 @@ import type {
   ToolPermissionEngine,
   ToolPermissionResult,
   ToolRegistry,
-} from "@dragon/tools";
-import { createToolPermissionEngine, createToolRegistry, normalizeToolName } from "@dragon/tools";
+} from "@loong/tools";
+import { createToolPermissionEngine, createToolRegistry, normalizeToolName } from "@loong/tools";
 import { canRunToolCallsInParallel } from "./tool-parallel.js";
+import { formatToolActivityDisplay } from "./tool-activity-display.js";
 import type {
-  DragonAgentRuntime,
-  DragonAttachment,
-  DragonContextItem,
-  DragonContextProvider,
-  DragonEvent,
-  DragonLifecycleHook,
-  DragonLifecycleHookRequest,
-  DragonMessage,
-  DragonPermissionEventPayload,
-  DragonPermissionHandler,
-  DragonPermissionRequest,
-  DragonPermissionResponse,
-  DragonSessionStore,
-  DragonSessionTurnRecord,
-  DragonTrajectoryRecord,
-  DragonTrajectoryStore,
-  DragonTurnInput,
-  DragonTurnResult,
-  DragonUsage,
+  LoongAgentRuntime,
+  LoongAttachment,
+  LoongContextItem,
+  LoongContextProvider,
+  LoongEvent,
+  LoongLifecycleHook,
+  LoongLifecycleHookRequest,
+  LoongMessage,
+  LoongPermissionEventPayload,
+  LoongPermissionHandler,
+  LoongPermissionRequest,
+  LoongPermissionResponse,
+  LoongSessionStore,
+  LoongSessionTurnRecord,
+  LoongTrajectoryRecord,
+  LoongTrajectoryStore,
+  LoongTurnInput,
+  LoongTurnResult,
+  LoongUsage,
 } from "./types.js";
 
-export interface DragonRuntimeOptions {
+export interface LoongRuntimeOptions {
   providerRegistry?: ProviderRegistry;
   providers?: ModelProvider[];
   toolRegistry?: ToolRegistry;
   tools?: ToolDefinition[];
   permissionEngine?: ToolPermissionEngine;
-  permissionHandler?: DragonPermissionHandler;
-  sessionStore?: DragonSessionStore;
-  trajectoryStore?: DragonTrajectoryStore;
-  contextProviders?: DragonContextProvider[];
-  lifecycleHooks?: DragonLifecycleHook[];
+  permissionHandler?: LoongPermissionHandler;
+  sessionStore?: LoongSessionStore;
+  trajectoryStore?: LoongTrajectoryStore;
+  contextProviders?: LoongContextProvider[];
+  lifecycleHooks?: LoongLifecycleHook[];
   defaultModel?: string;
   modelFallbacks?: string[];
   systemPrompt?: string;
@@ -108,6 +111,8 @@ export interface DragonRuntimeOptions {
   turnPrepEnabled?: boolean;
   /** L2 cross-turn compaction for session history; `false` disables. */
   sessionCompaction?: SessionMessageCompactionOptions | false;
+  /** L1 AI summarization for older session turns; `false` disables. Default off. */
+  aiSummarization?: AISummarizationConfig | false;
   /** When true, denied tool permissions fail the turn instead of returning a soft tool error. */
   failOnPermissionDeny?: boolean;
 }
@@ -122,15 +127,15 @@ interface ModelAttemptFailure {
   code?: string;
 }
 
-export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
+export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
   #providerRegistry: ProviderRegistry;
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
-  readonly #permissionHandler: DragonPermissionHandler | undefined;
-  readonly #sessionStore: DragonSessionStore | undefined;
-  readonly #trajectoryStore: DragonTrajectoryStore | undefined;
-  readonly #contextProviders: DragonContextProvider[];
-  readonly #lifecycleHooks: DragonLifecycleHook[];
+  readonly #permissionHandler: LoongPermissionHandler | undefined;
+  readonly #sessionStore: LoongSessionStore | undefined;
+  readonly #trajectoryStore: LoongTrajectoryStore | undefined;
+  readonly #contextProviders: LoongContextProvider[];
+  readonly #lifecycleHooks: LoongLifecycleHook[];
   readonly #defaultModel: string | undefined;
   readonly #modelFallbacks: string[];
   readonly #systemPrompt: string;
@@ -138,17 +143,18 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   readonly #maxContextChars: number;
   readonly #lifecycleHookTimeoutMs: number;
   readonly #denyAskWithoutHandler: boolean;
-  readonly #permissionEvaluator: DragonRuntimeOptions["permissionEvaluator"];
+  readonly #permissionEvaluator: LoongRuntimeOptions["permissionEvaluator"];
   readonly #modelTimeoutMs: number;
   readonly #turnPrepEnabled: boolean;
   readonly #sessionCompaction: SessionMessageCompactionOptions | false;
+  readonly #aiSummarization: AISummarizationConfig | false;
   readonly #failOnPermissionDeny: boolean;
   #tierConfig: ModelTierConfig | undefined;
   readonly #maxToolResultChars = 64_000;
-  readonly #listeners = new Set<(event: DragonEvent) => void>();
-  readonly #eventCollectors = new Map<string, DragonEvent[]>();
+  readonly #listeners = new Set<(event: LoongEvent) => void>();
+  readonly #eventCollectors = new Map<string, LoongEvent[]>();
 
-  constructor(options: DragonRuntimeOptions = {}) {
+  constructor(options: LoongRuntimeOptions = {}) {
     this.#providerRegistry = options.providerRegistry ?? createProviderRegistry(options.providers ?? []);
     this.#toolRegistry = options.toolRegistry ?? createToolRegistry(options.tools ?? []);
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine();
@@ -159,7 +165,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#lifecycleHooks = [...(options.lifecycleHooks ?? [])];
     this.#defaultModel = options.defaultModel;
     this.#modelFallbacks = normalizeModelRefs(options.modelFallbacks ?? []);
-    this.#systemPrompt = options.systemPrompt ?? "You are Dragon, a TypeScript-native local-first agent.";
+    this.#systemPrompt = options.systemPrompt ?? "You are Loong, a TypeScript-native local-first agent.";
     this.#maxToolIterations = options.maxToolIterations ?? 20;
     this.#maxContextChars = options.maxContextChars ?? 12_000;
     this.#lifecycleHookTimeoutMs = 500;
@@ -168,11 +174,12 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     this.#modelTimeoutMs = options.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
     this.#turnPrepEnabled = options.turnPrepEnabled !== false;
     this.#sessionCompaction = options.sessionCompaction === false ? false : (options.sessionCompaction ?? {});
+    this.#aiSummarization = options.aiSummarization === false ? false : (options.aiSummarization ?? { enabled: false });
     this.#failOnPermissionDeny = options.failOnPermissionDeny === true;
     this.#tierConfig = options.tierConfig;
   }
 
-  subscribe(listener: (event: DragonEvent) => void): () => void {
+  subscribe(listener: (event: LoongEvent) => void): () => void {
     this.#listeners.add(listener);
     return () => {
       this.#listeners.delete(listener);
@@ -180,7 +187,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   }
 
   /**
-   * Hot-swap the tier scheduling config. Takes effect on the NEXT turn — runs
+   * Hot-swap the tier scheduling config. Takes effect on the NEXT turn �?runs
    * already in flight see the previous decision. Pass `undefined` to disable
    * tier scheduling for subsequent turns.
    */
@@ -189,7 +196,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   }
 
   /**
-   * Hot-swap the provider registry. Takes effect on the NEXT turn — runs already
+   * Hot-swap the provider registry. Takes effect on the NEXT turn �?runs already
    * in flight keep the previous registry.
    */
   setProviderRegistry(registry: ProviderRegistry): void {
@@ -202,7 +209,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     return JSON.parse(JSON.stringify(this.#tierConfig)) as ModelTierConfig;
   }
 
-  async runTurn(input: DragonTurnInput): Promise<DragonTurnResult> {
+  async runTurn(input: LoongTurnInput): Promise<LoongTurnResult> {
     const runId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     // Validate + resolve attachments BEFORE persisting the user message so we
@@ -219,7 +226,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       userMessageMetadata.attachments = attachmentSummary;
     }
     const userMessage = createMessage("user", input.message, createdAt, userMessageMetadata);
-    let resultMessages: DragonMessage[] = [userMessage];
+    let resultMessages: LoongMessage[] = [userMessage];
     this.#eventCollectors.set(runId, []);
 
     // Resolve tier BEFORE the lifecycle:start event so its metadata reflects
@@ -251,12 +258,12 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     }
     const turnMaxContextChars = tierAdjustedMaxContextChars ?? this.#maxContextChars;
     const turnAbort = createModelTurnAbort(input.signal, this.#modelTimeoutMs);
-    const activeInput: DragonTurnInput = { ...input, signal: turnAbort.signal };
+    const activeInput: LoongTurnInput = { ...input, signal: turnAbort.signal };
     let modelMessages: ModelMessage[] | undefined;
 
     try {
       if (activeInput.signal?.aborted) {
-        throw new DragonCancelledError("Turn was cancelled before it started.");
+        throw new LoongCancelledError("Turn was cancelled before it started.");
       }
 
       this.#emit({
@@ -277,10 +284,15 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       );
       const userContent = buildUserMessageContent(activeInput.message, resolvedAttachments);
       const rawHistory = toModelHistory(history);
-      const sessionHistoryPrep = prepareSessionHistoryForModel(
+      const aiSummarizationConfig = resolveAiSummarizationForTurn(this.#aiSummarization, activeInput);
+      const aiSummarizationOptions = aiSummarizationConfig !== false && aiSummarizationConfig.enabled === true
+        ? await this.#buildAiSummarizationOptions(aiSummarizationConfig, activeInput, runId)
+        : undefined;
+      const sessionHistoryPrep = await prepareSessionHistoryForModel(
         rawHistory,
         turnMaxContextChars,
         resolveSessionCompactionForTurn(this.#sessionCompaction, activeInput),
+        aiSummarizationOptions ? { aiSummarization: aiSummarizationOptions } : {},
       );
       if (sessionHistoryPrep.report.sessionCompaction?.compactedToolMessages) {
         this.#emit({
@@ -326,12 +338,12 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         this.#emit({
           type: "assistant_replace",
           runId,
-          text: cleaned.length > 0 ? `${cleaned}\n\n[正在执行工具调用…]\n` : "[正在执行工具调用…]\n",
+          text: cleaned.length > 0 ? `${cleaned}\n\n[????????�]\n` : "[????????�]\n",
         });
       }
 
       if (activeInput.signal?.aborted) {
-        throw new DragonCancelledError("Turn was cancelled.");
+        throw new LoongCancelledError("Turn was cancelled.");
       }
 
       let toolIterations = 0;
@@ -354,12 +366,12 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         const toolOutcome = await this.#executeToolCallsForRound(toolCalls, modelMessages, activeInput, runId);
         if (toolOutcome === "cancelled") {
           repairModelMessagesAfterCancel(modelMessages);
-          throw new DragonCancelledError("Turn was cancelled.");
+          throw new LoongCancelledError("Turn was cancelled.");
         }
 
         if (activeInput.signal?.aborted) {
           repairModelMessagesAfterCancel(modelMessages);
-          throw new DragonCancelledError("Turn was cancelled.");
+          throw new LoongCancelledError("Turn was cancelled.");
         }
 
         completion = await this.#completeModelWithPrep(modelRefs, modelMessages, activeInput, runId, turnMaxContextChars);
@@ -417,13 +429,13 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       const assistantMessage = createMessage("assistant", assistantText, new Date().toISOString(), assistantMetadata);
       resultMessages = [userMessage, assistantMessage];
 
-      const result: DragonTurnResult = {
+      const result: LoongTurnResult = {
         runId,
         status: "ok",
         messages: resultMessages,
       };
 
-      const usage = toDragonUsage(providerResponse.usage);
+      const usage = toLoongUsage(providerResponse.usage);
       if (usage) {
         result.usage = usage;
       }
@@ -440,16 +452,16 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       }
       const errorDetails = errorToDetails(error);
       const status = resolveTurnFailureStatus(error, input.signal, turnAbort);
-      const result: DragonTurnResult = {
+      const result: LoongTurnResult = {
         runId,
         status,
         messages: resultMessages,
         error: errorDetails.message,
       };
-      if (!(error instanceof DragonPersistenceError)) {
+      if (!(error instanceof LoongPersistenceError)) {
         await this.#tryPersistTurn(activeInput, result, createdAt);
       }
-      const lifecycleEvent: DragonEvent = {
+      const lifecycleEvent: LoongEvent = {
         type: "lifecycle",
         phase: status === "cancelled" ? "cancelled" : "error",
         runId,
@@ -470,7 +482,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     }
   }
 
-  #emit(event: DragonEvent): void {
+  #emit(event: LoongEvent): void {
     this.#eventCollectors.get(event.runId)?.push(cloneEvent(event));
     for (const listener of this.#listeners) {
       try {
@@ -481,26 +493,55 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     }
   }
 
-  async #loadSessionMessages(sessionId: string): Promise<DragonMessage[]> {
+  async #loadSessionMessages(sessionId: string): Promise<LoongMessage[]> {
     if (!this.#sessionStore) {
       return [];
     }
     try {
       return await this.#sessionStore.loadMessages(sessionId);
     } catch (error) {
-      throw new DragonPersistenceError(
+      throw new LoongPersistenceError(
         `Failed to load session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
 
+  async #buildAiSummarizationOptions(
+    config: AISummarizationConfig,
+    input: LoongTurnInput,
+    runId: string,
+  ): Promise<AISummarizationOptions> {
+    const modelRef = config.model?.trim() || input.model?.trim() || this.#defaultModel;
+    const resolution = modelRef ? this.#providerRegistry.resolveModel(modelRef) : undefined;
+    return {
+      ...config,
+      enabled: true,
+      ...(resolution ? { provider: resolution.provider, model: resolution.model } : {}),
+      onSummaryGenerated: report => {
+        if (report.skipped && !report.error) {
+          return;
+        }
+        this.#emit({
+          type: "context",
+          runId,
+          providerName: "ai_summarization",
+          phase: "end",
+          payload: {
+            ok: !report.error,
+            ...report,
+          },
+        });
+      },
+    };
+  }
+
   async #buildContextItems(
-    input: DragonTurnInput,
-    history: DragonMessage[],
+    input: LoongTurnInput,
+    history: LoongMessage[],
     runId: string,
     createdAt: string,
-  ): Promise<DragonContextItem[]> {
-    const items: DragonContextItem[] = [];
+  ): Promise<LoongContextItem[]> {
+    const items: LoongContextItem[] = [];
     for (const provider of this.#contextProviders) {
       if (input.memoryEnabled === false && isMemoryContextProvider(provider.name)) {
         continue;
@@ -531,19 +572,19 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         });
       }
       if (input.signal?.aborted) {
-        throw new DragonCancelledError("Turn was cancelled.");
+        throw new LoongCancelledError("Turn was cancelled.");
       }
     }
     return items;
   }
 
   async #notifyLifecycleHooks(
-    phase: DragonLifecycleHookRequest["phase"],
-    input: DragonTurnInput,
+    phase: LoongLifecycleHookRequest["phase"],
+    input: LoongTurnInput,
     runId: string,
     createdAt: string,
     completedAt?: string,
-    result?: DragonTurnResult,
+    result?: LoongTurnResult,
   ): Promise<void> {
     if (this.#lifecycleHooks.length === 0) {
       return;
@@ -562,8 +603,8 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   }
 
   async #persistTurn(
-    input: DragonTurnInput,
-    result: DragonTurnResult,
+    input: LoongTurnInput,
+    result: LoongTurnResult,
     createdAt: string,
   ): Promise<void> {
     if (!this.#sessionStore) {
@@ -573,15 +614,15 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     try {
       await this.#sessionStore.appendTurn(record);
     } catch (error) {
-      throw new DragonPersistenceError(
+      throw new LoongPersistenceError(
         `Failed to persist session ${input.sessionId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
 
   async #tryPersistTurn(
-    input: DragonTurnInput,
-    result: DragonTurnResult,
+    input: LoongTurnInput,
+    result: LoongTurnResult,
     createdAt: string,
   ): Promise<void> {
     try {
@@ -592,8 +633,8 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   }
 
   async #tryPersistTrajectory(
-    input: DragonTurnInput,
-    result: DragonTurnResult,
+    input: LoongTurnInput,
+    result: LoongTurnResult,
     createdAt: string,
     completedAt: string,
   ): Promise<void> {
@@ -612,7 +653,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     provider: ModelProvider,
     model: string,
     messages: ModelMessage[],
-    input: DragonTurnInput,
+    input: LoongTurnInput,
     runId: string,
     onTextDeltaSink?: (delta: string) => void,
   ): Promise<ModelResponse> {
@@ -652,7 +693,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     modelRefs: Array<string | undefined>,
     modelMessages: ModelMessage[],
     providerResponse: ModelResponse,
-    input: DragonTurnInput,
+    input: LoongTurnInput,
     runId: string,
     turnMaxContextChars: number,
   ): Promise<{ resolution: ProviderResolution; response: ModelResponse; failures: ModelAttemptFailure[] }> {
@@ -688,7 +729,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   async #completeModelWithPrep(
     modelRefs: Array<string | undefined>,
     messages: ModelMessage[],
-    input: DragonTurnInput,
+    input: LoongTurnInput,
     runId: string,
     turnMaxContextChars: number,
   ): Promise<{ resolution: ProviderResolution; response: ModelResponse; failures: ModelAttemptFailure[] }> {
@@ -743,7 +784,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   async #completeModelWithFallback(
     modelRefs: Array<string | undefined>,
     messages: ModelMessage[],
-    input: DragonTurnInput,
+    input: LoongTurnInput,
     runId: string,
   ): Promise<{ resolution: ProviderResolution; response: ModelResponse; failures: ModelAttemptFailure[] }> {
     const failures: ModelAttemptFailure[] = [];
@@ -796,18 +837,18 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         failures.push(failure);
         const hasNext = index < modelRefs.length - 1;
         if (!hasNext || !isFallbackEligible(error)) {
-          throw failures.length > 1 ? new DragonModelFallbackError(failures) : error;
+          throw failures.length > 1 ? new LoongModelFallbackError(failures) : error;
         }
       }
     }
 
-    throw new DragonModelFallbackError(failures);
+    throw new LoongModelFallbackError(failures);
   }
 
   async #executeToolCallsForRound(
     toolCalls: ModelToolCall[],
     modelMessages: ModelMessage[],
-    input: DragonTurnInput,
+    input: LoongTurnInput,
     runId: string,
   ): Promise<"completed" | "cancelled"> {
     if (input.toolsEnabled === false) {
@@ -906,11 +947,11 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
 
   async #runToolCall(
     toolCall: ModelToolCall,
-    input: DragonTurnInput,
+    input: LoongTurnInput,
     runId: string,
   ): Promise<{ content: string }> {
     if (input.signal?.aborted) {
-      throw new DragonCancelledError("Turn was cancelled during tool execution.");
+      throw new LoongCancelledError("Turn was cancelled during tool execution.");
     }
 
     const toolName = toolCall.function?.name;
@@ -983,7 +1024,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
         payload: { toolCallId: toolCall.id, permission, skipped: true },
       });
       if (this.#failOnPermissionDeny) {
-        throw new DragonPermissionDeniedError(tool.name, permission);
+        throw new LoongPermissionDeniedError(tool.name, permission);
       }
       return {
         content: JSON.stringify({
@@ -998,16 +1039,31 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
       runId,
       toolName: tool.name,
       phase: "start",
-      payload: { toolCallId: toolCall.id, inputSummary: summarizePermissionInput(parsedInput.value) },
+      payload: (() => {
+        const inputSummary = summarizePermissionInput(parsedInput.value);
+        const display = formatToolActivityDisplay(tool.name, parsedInput.value, "start");
+        return {
+          toolCallId: toolCall.id,
+          inputSummary,
+          displayLabel: display.displayLabel,
+          ...(display.displayDetail ? { displayDetail: display.displayDetail } : {}),
+        };
+      })(),
     });
     try {
       const result = await tool.invoke(invocation);
+      const display = formatToolActivityDisplay(tool.name, parsedInput.value, "end");
       this.#emit({
         type: "tool",
         runId,
         toolName: tool.name,
         phase: "end",
-        payload: { toolCallId: toolCall.id, resultSummary: summarizePermissionInput(result) },
+        payload: {
+          toolCallId: toolCall.id,
+          resultSummary: summarizePermissionInput(result),
+          displayLabel: display.displayLabel,
+          ...(display.displayDetail ? { displayDetail: display.displayDetail } : {}),
+        },
       });
       return { content: safeStringifyToolResult(result, this.#maxToolResultChars) };
     } catch (error) {
@@ -1039,7 +1095,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     const preview = resultContent === undefined
       ? undefined
       : resultContent.length > 400
-        ? `${resultContent.slice(0, 400)}…`
+        ? `${resultContent.slice(0, 400)}�`
         : resultContent;
     this.#emit({
       type: "tool",
@@ -1068,7 +1124,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     }
 
     if (signal?.aborted) {
-      throw new DragonCancelledError("Turn was cancelled while waiting for permission.");
+      throw new LoongCancelledError("Turn was cancelled while waiting for permission.");
     }
 
     const request = toPermissionRequest(runId, tool, invocation, permission.reason);
@@ -1092,7 +1148,7 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
     }
 
     if (signal?.aborted) {
-      throw new DragonCancelledError("Turn was cancelled while waiting for permission.");
+      throw new LoongCancelledError("Turn was cancelled while waiting for permission.");
     }
 
     try {
@@ -1128,17 +1184,17 @@ export class DefaultDragonAgentRuntime implements DragonAgentRuntime {
   }
 }
 
-export function createDragonRuntime(options: DragonRuntimeOptions = {}): DragonAgentRuntime {
-  return new DefaultDragonAgentRuntime(options);
+export function createLoongRuntime(options: LoongRuntimeOptions = {}): LoongAgentRuntime {
+  return new DefaultLoongAgentRuntime(options);
 }
 
 function createMessage(
-  role: DragonMessage["role"],
+  role: LoongMessage["role"],
   content: string,
   createdAt: string,
   metadata?: Record<string, unknown>,
-): DragonMessage {
-  const message: DragonMessage = {
+): LoongMessage {
+  const message: LoongMessage = {
     id: crypto.randomUUID(),
     role,
     content,
@@ -1151,7 +1207,7 @@ function createMessage(
 }
 
 function toLifecycleMetadata(
-  input: DragonTurnInput,
+  input: LoongTurnInput,
   tierDecision?: TierDecision,
   maxContextChars?: number,
 ): Record<string, unknown> {
@@ -1187,14 +1243,14 @@ function toLifecycleMetadata(
 }
 
 function toLifecycleHookRequest(
-  phase: DragonLifecycleHookRequest["phase"],
-  input: DragonTurnInput,
+  phase: LoongLifecycleHookRequest["phase"],
+  input: LoongTurnInput,
   runId: string,
   createdAt: string,
   completedAt?: string,
-  result?: DragonTurnResult,
-): DragonLifecycleHookRequest {
-  const request: DragonLifecycleHookRequest = {
+  result?: LoongTurnResult,
+): LoongLifecycleHookRequest {
+  const request: LoongLifecycleHookRequest = {
     phase,
     runId,
     sessionId: input.sessionId,
@@ -1230,10 +1286,10 @@ function toLifecycleHookRequest(
   return request;
 }
 
-function freezeLifecycleHookRequest(request: DragonLifecycleHookRequest): Readonly<DragonLifecycleHookRequest> {
-  const clone: DragonLifecycleHookRequest = {
+function freezeLifecycleHookRequest(request: LoongLifecycleHookRequest): Readonly<LoongLifecycleHookRequest> {
+  const clone: LoongLifecycleHookRequest = {
     ...request,
-    ...(request.usage !== undefined ? { usage: deepCloneAndFreeze(request.usage) as DragonUsage } : {}),
+    ...(request.usage !== undefined ? { usage: deepCloneAndFreeze(request.usage) as LoongUsage } : {}),
     ...(request.metadata !== undefined ? { metadata: deepCloneAndFreeze(request.metadata) as Record<string, unknown> } : {}),
   };
   return Object.freeze(clone);
@@ -1305,8 +1361,8 @@ function toPermissionRequest(
   tool: ToolDefinition,
   invocation: ToolInvocation,
   reason: string,
-): DragonPermissionRequest {
-  const request: DragonPermissionRequest = {
+): LoongPermissionRequest {
+  const request: LoongPermissionRequest = {
     runId,
     toolCallId: invocation.id,
     toolName: tool.name,
@@ -1327,9 +1383,9 @@ function toPermissionRequest(
 }
 
 function normalizePermissionResponse(
-  response: DragonPermissionResponse | "allow" | "deny",
+  response: LoongPermissionResponse | "allow" | "deny",
   previousReason: string,
-): DragonPermissionResponse {
+): LoongPermissionResponse {
   if (response === "allow" || response === "deny") {
     return {
       decision: response,
@@ -1348,11 +1404,11 @@ function normalizePermissionResponse(
 }
 
 function toPermissionEventPayload(
-  request: DragonPermissionRequest,
+  request: LoongPermissionRequest,
   result?: ToolPermissionResult,
   metadata?: Record<string, unknown>,
-): DragonPermissionEventPayload {
-  const payload: DragonPermissionEventPayload = {
+): LoongPermissionEventPayload {
+  const payload: LoongPermissionEventPayload = {
     toolCallId: request.toolCallId,
     toolName: request.toolName,
     reason: result?.reason ?? request.reason,
@@ -1444,11 +1500,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function toSessionTurnRecord(
-  input: DragonTurnInput,
-  result: DragonTurnResult,
+  input: LoongTurnInput,
+  result: LoongTurnResult,
   createdAt: string,
-): DragonSessionTurnRecord {
-  const record: DragonSessionTurnRecord = {
+): LoongSessionTurnRecord {
+  const record: LoongSessionTurnRecord = {
     sessionId: input.sessionId,
     runId: result.runId,
     source: input.source,
@@ -1488,14 +1544,14 @@ function toSessionTurnRecord(
 }
 
 function toTrajectoryRecord(
-  input: DragonTurnInput,
-  result: DragonTurnResult,
+  input: LoongTurnInput,
+  result: LoongTurnResult,
   createdAt: string,
   completedAt: string,
-  events: DragonEvent[],
-): DragonTrajectoryRecord {
+  events: LoongEvent[],
+): LoongTrajectoryRecord {
   const assistantMessage = [...result.messages].reverse().find(message => message.role === "assistant");
-  const record: DragonTrajectoryRecord = {
+  const record: LoongTrajectoryRecord = {
     runId: result.runId,
     sessionId: input.sessionId,
     source: input.source,
@@ -1526,9 +1582,9 @@ function toTrajectoryRecord(
   return record;
 }
 
-function cloneEvent(event: DragonEvent): DragonEvent {
+function cloneEvent(event: LoongEvent): LoongEvent {
   try {
-    return JSON.parse(JSON.stringify(event)) as DragonEvent;
+    return JSON.parse(JSON.stringify(event)) as LoongEvent;
   } catch {
     return {
       type: "lifecycle",
@@ -1539,24 +1595,24 @@ function cloneEvent(event: DragonEvent): DragonEvent {
   }
 }
 
-function toDragonUsage(
+function toLoongUsage(
   usage: { inputTokens?: number; outputTokens?: number } | undefined,
-): DragonUsage | undefined {
+): LoongUsage | undefined {
   if (!usage) {
     return undefined;
   }
 
-  const dragonUsage: DragonUsage = {};
+  const loongUsage: LoongUsage = {};
   if (usage.inputTokens !== undefined) {
-    dragonUsage.inputTokens = usage.inputTokens;
+    loongUsage.inputTokens = usage.inputTokens;
   }
   if (usage.outputTokens !== undefined) {
-    dragonUsage.outputTokens = usage.outputTokens;
+    loongUsage.outputTokens = usage.outputTokens;
   }
   if (usage.inputTokens !== undefined && usage.outputTokens !== undefined) {
-    dragonUsage.totalTokens = usage.inputTokens + usage.outputTokens;
+    loongUsage.totalTokens = usage.inputTokens + usage.outputTokens;
   }
-  return dragonUsage;
+  return loongUsage;
 }
 
 function modelAttemptRefs(
@@ -1669,7 +1725,7 @@ interface ResolvedAttachment {
   originalMimeType?: string;
 }
 
-async function resolveAttachments(attachments: readonly DragonAttachment[] | undefined): Promise<ResolvedAttachment[]> {
+async function resolveAttachments(attachments: readonly LoongAttachment[] | undefined): Promise<ResolvedAttachment[]> {
   if (!attachments || attachments.length === 0) {
     return [];
   }
@@ -1747,7 +1803,7 @@ async function resolveAttachments(attachments: readonly DragonAttachment[] | und
         throw new Error(`Attachment ${index + 1} (${mime}) extraction failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (!extracted.trim()) {
-        extracted = `[empty document: ${safeName} (${mime}, ${buffer.byteLength} bytes) — no extractable text]`;
+        extracted = `[empty document: ${safeName} (${mime}, ${buffer.byteLength} bytes) �?no extractable text]`;
       }
       if (Buffer.byteLength(extracted, "utf8") > MAX_INLINED_TEXT_BYTES) {
         extracted = extracted.slice(0, MAX_INLINED_TEXT_BYTES) + `\n[document truncated: extracted text exceeds ${MAX_INLINED_TEXT_BYTES} bytes]`;
@@ -1796,7 +1852,7 @@ function buildUserMessageContent(
   }
   const combinedText = textPieces.join("\n\n");
   if (!hasImage) {
-    // No images → plain string is enough for any provider.
+    // No images �?plain string is enough for any provider.
     return combinedText;
   }
   // Multimodal: emit a text part (text + inlined file contents) followed by
@@ -1830,7 +1886,7 @@ function summarizeAttachments(attachments: ResolvedAttachment[]): Array<Record<s
 }
 
 // ---------------------------------------------------------------------------
-// Document text extractors (lazy-loaded). Each is best-effort — failures
+// Document text extractors (lazy-loaded). Each is best-effort �?failures
 // surface a clear error to the caller via resolveAttachments.
 // ---------------------------------------------------------------------------
 
@@ -1899,7 +1955,7 @@ async function extractPptxText(buffer: Buffer, _name: string): Promise<string> {
 }
 
 async function extractRtfText(buffer: Buffer, _name: string): Promise<string> {
-  // Minimal RTF stripper — good enough for most plain RTF files.
+  // Minimal RTF stripper �?good enough for most plain RTF files.
   const raw = buffer.toString("latin1");
   // Strip groups, control words, and binary content
   let out = raw
@@ -1923,7 +1979,7 @@ function decodeXmlEntities(value: string): string {
     .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code) || 0));
 }
 
-function toModelHistory(history: DragonMessage[]): ModelMessage[] {
+function toModelHistory(history: LoongMessage[]): ModelMessage[] {
   return history
     .filter(message => message.role === "user" || message.role === "assistant" || message.role === "tool")
     .map(message => {
@@ -2005,16 +2061,16 @@ function isMemoryContextProvider(name: string): boolean {
 
 function composeSystemPrompt(
   systemPrompt: string,
-  contextItems: DragonContextItem[],
+  contextItems: LoongContextItem[],
   maxContextChars: number,
 ): string {
   const contextText = formatContextItems(contextItems, maxContextChars);
   return contextText
-    ? `${systemPrompt}\n\nDragon recall context:\n${contextText}`
+    ? `${systemPrompt}\n\nLoong recall context:\n${contextText}`
     : systemPrompt;
 }
 
-function formatContextItems(contextItems: DragonContextItem[], maxContextChars: number): string {
+function formatContextItems(contextItems: LoongContextItem[], maxContextChars: number): string {
   if (contextItems.length === 0 || maxContextChars <= 0) {
     return "";
   }
@@ -2069,7 +2125,7 @@ interface ErrorDetails {
 }
 
 function errorToDetails(error: unknown): ErrorDetails {
-  if (error instanceof DragonModelFallbackError) {
+  if (error instanceof LoongModelFallbackError) {
     return {
       message: error.message,
       metadata: {
@@ -2108,38 +2164,38 @@ function errorToDetails(error: unknown): ErrorDetails {
   };
 }
 
-class DragonCancelledError extends Error {
+class LoongCancelledError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "DragonCancelledError";
+    this.name = "LoongCancelledError";
   }
 }
 
-class DragonPermissionDeniedError extends Error {
+class LoongPermissionDeniedError extends Error {
   readonly toolName: string;
   readonly permission: ToolPermissionResult;
 
   constructor(toolName: string, permission: ToolPermissionResult) {
     super(`Tool permission ${permission.decision} for ${toolName}: ${permission.reason}`);
-    this.name = "DragonPermissionDeniedError";
+    this.name = "LoongPermissionDeniedError";
     this.toolName = toolName;
     this.permission = permission;
   }
 }
 
-class DragonModelFallbackError extends Error {
+class LoongModelFallbackError extends Error {
   readonly failures: ModelAttemptFailure[];
 
   constructor(failures: ModelAttemptFailure[]) {
     super(formatModelFallbackError(failures));
-    this.name = "DragonModelFallbackError";
+    this.name = "LoongModelFallbackError";
     this.failures = failures;
   }
 }
 
 function formatModelFallbackError(failures: ModelAttemptFailure[]): string {
   if (failures.length === 0) {
-    return "No model provider is configured. Register a provider or set an API key (e.g. DRAGON_OPENAI_API_KEY, DRAGON_ANTHROPIC_API_KEY, DRAGON_OPENROUTER_API_KEY).";
+    return "No model provider is configured. Register a provider or set an API key (e.g. LOONG_OPENAI_API_KEY, LOONG_ANTHROPIC_API_KEY, LOONG_OPENROUTER_API_KEY).";
   }
   return `All model fallback attempts failed: ${failures.map(formatModelFailure).join("; ")}`;
 }
@@ -2147,10 +2203,10 @@ function formatModelFallbackError(failures: ModelAttemptFailure[]): string {
 function formatNoProviderMessage(registry: ProviderRegistry): string {
   const providers = registry.list();
   if (providers.length === 0) {
-    return "No model provider is configured. Register a provider or set an API key (e.g. DRAGON_OPENAI_API_KEY, DRAGON_ANTHROPIC_API_KEY, DRAGON_OPENROUTER_API_KEY).";
+    return "No model provider is configured. Register a provider or set an API key (e.g. LOONG_OPENAI_API_KEY, LOONG_ANTHROPIC_API_KEY, LOONG_OPENROUTER_API_KEY).";
   }
   const ids = providers.map(provider => provider.id).join(", ");
-  return `No default model provider could be selected. Configured providers: [${ids}]. Pass --model <provider:model> or set DRAGON_MODEL.`;
+  return `No default model provider could be selected. Configured providers: [${ids}]. Pass --model <provider:model> or set LOONG_MODEL.`;
 }
 
 function formatModelFailure(failure: ModelAttemptFailure): string {
@@ -2161,9 +2217,9 @@ function formatModelFailure(failure: ModelAttemptFailure): string {
   return `${target}: ${failure.message}`;
 }
 
-class DragonPersistenceError extends Error {
+class LoongPersistenceError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "DragonPersistenceError";
+    this.name = "LoongPersistenceError";
   }
 }

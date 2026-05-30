@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { theme } from "@dragon/ui";
+import { theme } from "@loong/ui";
 
 interface Props {
   children: ReactNode;

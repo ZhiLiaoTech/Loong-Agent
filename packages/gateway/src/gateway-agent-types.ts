@@ -1,4 +1,4 @@
-import type { DragonSource, DragonThinkingLevel, SessionMessageCompactionOptions } from "@dragon/core";
+import type { LoongSource, LoongThinkingLevel, SessionMessageCompactionOptions, AISummarizationConfig } from "@loong/core";
 
 export type GatewayTierName = "fast" | "standard" | "deep";
 
@@ -13,10 +13,10 @@ export interface GatewayAgentAttachment {
 export interface GatewayAgentParams {
   sessionId: string;
   message: string;
-  source?: DragonSource;
+  source?: LoongSource;
   workspace?: string;
   model?: string;
-  thinking?: DragonThinkingLevel;
+  thinking?: LoongThinkingLevel;
   profileId?: string;
   employeeId?: string;
   systemPrompt?: string;
@@ -41,11 +41,12 @@ export interface GatewayAgentProfileConfig {
   description?: string;
   defaultModel?: string;
   workspace?: string;
-  thinking?: DragonThinkingLevel;
+  thinking?: LoongThinkingLevel;
   memoryEnabled?: boolean;
   toolsEnabled?: boolean;
   systemPrompt?: string;
   sessionCompaction?: SessionMessageCompactionOptions | false;
+  aiSummarization?: AISummarizationConfig | false;
 }
 
 export interface GatewayAgentConfig {
@@ -53,12 +54,14 @@ export interface GatewayAgentConfig {
   defaultProfileId?: string;
   configPath?: string;
   sessionCompaction?: SessionMessageCompactionOptions | false;
+  aiSummarization?: AISummarizationConfig | false;
 }
 
 export interface GatewayAgentConfigSaveParams {
   profiles: readonly GatewayAgentProfileConfig[];
   defaultProfileId?: string;
   sessionCompaction?: SessionMessageCompactionOptions | false;
+  aiSummarization?: AISummarizationConfig | false;
 }
 
 export interface GatewayAgentConfigStore {

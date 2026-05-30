@@ -43,7 +43,7 @@ export class SqliteMemoryStore implements MemoryStore {
   #databasePromise: Promise<DatabaseSync> | undefined;
 
   constructor(options: SqliteMemoryStoreOptions = {}) {
-    const defaultRootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "memory"));
+    const defaultRootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "memory"));
     this.#memoryOnly = options.databasePath === ":memory:";
     this.#databasePath = this.#memoryOnly
       ? ":memory:"

@@ -1118,7 +1118,7 @@
       if (!data) return;
       try {
         const parsed = JSON.parse(data);
-        if (name === "dragon.event") {
+        if (name === "loong.event") {
           state.events.unshift(parsed);
           state.events = state.events.slice(0, 80);
           handleRunStreamEvent(parsed.event || {});

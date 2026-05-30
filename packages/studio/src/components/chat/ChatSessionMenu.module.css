@@ -1,0 +1,114 @@
+.root {
+  position: relative;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--loong-border, #232333);
+  background: var(--loong-surface-1, #101018);
+  color: var(--loong-text, #eaeaf2);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.trigger:hover {
+  border-color: color-mix(in srgb, var(--loong-accent, #7c6cf0) 35%, transparent);
+}
+
+.label {
+  color: var(--loong-text-muted, #4a4a60);
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.chevron {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: min(280px, 80vw);
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--loong-border, #232333);
+  background: var(--loong-surface-1, #101018);
+  box-shadow: 0 16px 40px color-mix(in srgb, #000 35%, transparent);
+}
+
+.newBtn {
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: 1px dashed color-mix(in srgb, var(--loong-accent, #7c6cf0) 40%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--loong-accent, #7c6cf0) 6%, transparent);
+  color: var(--loong-accent-light, #a89eff);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.newBtn:hover {
+  background: color-mix(in srgb, var(--loong-accent, #7c6cf0) 12%, transparent);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--loong-text, #eaeaf2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: color-mix(in srgb, var(--loong-accent, #7c6cf0) 8%, transparent);
+}
+
+.itemActive {
+  background: color-mix(in srgb, var(--loong-accent, #7c6cf0) 14%, transparent);
+}
+
+.itemTitle {
+  font-size: 13px;
+  font-weight: 500;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemMeta {
+  font-size: 11px;
+  color: var(--loong-text-muted, #4a4a60);
+}

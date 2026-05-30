@@ -1,46 +1,42 @@
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+  gap: var(--space-3);
+  padding: 0;
   overflow: hidden;
+}
+
+.banners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
 }
 
 .panelDisabled {
   opacity: 0.72;
 }
 
-.panelDisabled .section,
-.panelDisabled .laneGrid {
+.panelDisabled .advancedBody {
   pointer-events: none;
 }
 
-.hero {
+.header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
   flex-wrap: wrap;
-  padding: var(--space-5);
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, var(--soft) 0%, var(--surface) 100%);
+  padding: var(--space-4);
+  padding-bottom: 0;
 }
 
-.heroText {
+.headerText {
   flex: 1 1 280px;
   min-width: 0;
 }
 
-.heroTitle {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: -0.02em;
-}
-
-.heroLead {
+.lead {
   margin: var(--space-2) 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
@@ -48,7 +44,7 @@
   max-width: 52ch;
 }
 
-.heroActions {
+.headerActions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -101,8 +97,7 @@
 }
 
 .switch input:focus-visible + .switchTrack {
-  outline: var(--focus-ring);
-  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
 }
 
 .switchLabel {
@@ -111,83 +106,75 @@
   color: var(--text);
 }
 
-.btnPrimary,
-.btnSecondary {
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.btnPrimary {
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-.btnPrimary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-.btnSecondary {
-  border: 1px solid var(--line);
-  background: var(--soft);
-  color: var(--text);
-}
-
-.btnSecondary:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.btnPrimary:disabled,
-.btnSecondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.bannerError,
-.bannerOk {
-  margin: 0;
-  padding: var(--space-2) var(--space-5);
-  font-size: var(--text-sm);
-}
-
-.bannerError {
-  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
-  color: var(--danger);
-  border-bottom: 1px solid color-mix(in srgb, var(--danger) 25%, var(--line));
-}
-
-.bannerOk {
-  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
-  color: var(--ok);
-  border-bottom: 1px solid color-mix(in srgb, var(--ok) 25%, var(--line));
-}
-
 .configPath {
   margin: 0;
-  padding: var(--space-2) var(--space-5) 0;
+  padding: 0 var(--space-4);
   color: var(--muted);
   font-size: var(--text-xs);
   font-family: var(--font-mono);
 }
 
-.section {
-  padding: var(--space-5);
+.advanced {
   border-top: 1px solid var(--line);
 }
 
-.sectionTitle {
-  margin: 0 0 var(--space-3);
+.advancedSummary {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.advancedSummary::-webkit-details-marker {
+  display: none;
+}
+
+.advancedSummary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: var(--space-2);
+  color: var(--muted);
+  transition: transform var(--transition-fast);
+}
+
+.advanced[open] .advancedSummary::before {
+  transform: rotate(90deg);
+}
+
+.advancedBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.lanesSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lanesTitle {
+  margin: 0;
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  color: var(--text);
+}
+
+.routingSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.routingTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
 }
 
 .sectionHint {
@@ -309,7 +296,7 @@
 .laneSummary {
   display: flex;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-3) var(--space-2);
+  padding: var(--space-3);
   cursor: pointer;
   list-style: none;
 }
@@ -352,7 +339,7 @@
 }
 
 .laneTitle {
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
   color: var(--text);
 }
@@ -398,12 +385,6 @@
   font-size: var(--text-sm);
 }
 
-.field input:focus-visible,
-.field select:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: 1px;
-}
-
 .fieldPair {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -427,10 +408,6 @@
   color: var(--muted);
   font-size: var(--text-xs);
   cursor: pointer;
-  transition:
-    border-color var(--transition-fast),
-    background var(--transition-fast),
-    color var(--transition-fast);
 }
 
 .pill input {
@@ -443,7 +420,6 @@
   color: var(--text);
 }
 
-/* Drawer content */
 .drawerField {
   display: flex;
   flex-direction: column;
@@ -465,15 +441,16 @@
   min-height: 120px;
 }
 
-.drawerField textarea:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: 1px;
-}
-
 .drawerEmpty {
   margin: var(--space-4) 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
+}
+
+.drawerResultModel {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text);
 }
 
 .decisionCard {
@@ -528,7 +505,6 @@
 .decisionRow code {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  line-height: var(--line-height-normal);
 }
 
 .resultBadge {
@@ -536,7 +512,6 @@
   border-radius: 999px;
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.02em;
 }
 
 .resultBadge_fast {
@@ -554,18 +529,6 @@
   color: var(--warn);
 }
 
-@media (min-width: 960px) {
-  .laneSummary {
-    cursor: default;
-    pointer-events: none;
-  }
-
-  .lane[open] .laneBody,
-  .lane .laneBody {
-    display: flex;
-  }
-}
-
 @media (max-width: 959px) {
   .laneGrid {
     grid-template-columns: 1fr;
@@ -575,11 +538,11 @@
     grid-template-columns: 1fr;
   }
 
-  .heroActions {
+  .headerActions {
     width: 100%;
   }
 
-  .btnPrimary {
+  .saveBtn {
     flex: 1;
   }
 }

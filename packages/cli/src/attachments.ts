@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { DragonAttachment } from "@dragon/core";
+import type { LoongAttachment } from "@loong/core";
 
 const TEXT_FILE_EXTENSIONS = new Map<string, string>([
   [".md", "text/markdown"],
@@ -48,7 +48,7 @@ const DOCUMENT_FILE_EXTENSIONS = new Map<string, string>([
   [".rtf", "application/rtf"],
 ]);
 
-export async function readAttachmentFromDisk(filePath: string): Promise<DragonAttachment> {
+export async function readAttachmentFromDisk(filePath: string): Promise<LoongAttachment> {
   const absolute = path.resolve(filePath);
   const buffer = await readFile(absolute);
   const ext = path.extname(absolute).toLowerCase();

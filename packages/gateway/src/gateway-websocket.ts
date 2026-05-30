@@ -5,7 +5,7 @@ import { fitUtf8Text } from "./gateway-text.js";
 import type { EventStreamFilters } from "./gateway-event-stream.js";
 
 export const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-export const WEBSOCKET_PROTOCOL = "dragon.gateway.v1";
+export const WEBSOCKET_PROTOCOL = "loong.gateway.v1";
 export const MAX_WEBSOCKET_MESSAGE_BYTES = MAX_REQUEST_BYTES;
 export const MAX_WEBSOCKET_BUFFER_BYTES = MAX_REQUEST_BYTES * 2;
 

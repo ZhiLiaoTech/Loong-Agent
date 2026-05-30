@@ -1,7 +1,7 @@
-import { parseSessionCompactionValue } from "@dragon/core";
+import { parseAiSummarizationValue, parseSessionCompactionValue } from "@loong/core";
 import { badRequest } from "./gateway-http.js";
 import {
-  isDragonThinking,
+  isLoongThinking,
   isRecord,
   normalizeBoundedText,
   normalizeShortText,
@@ -25,6 +25,10 @@ export function parseAgentConfigSaveParams(value: unknown): GatewayAgentConfigSa
   const rootCompaction = parseSessionCompactionValue(value.sessionCompaction);
   if (rootCompaction !== undefined) {
     params.sessionCompaction = rootCompaction;
+  }
+  const rootAiSummarization = parseAiSummarizationValue(value.aiSummarization);
+  if (rootAiSummarization !== undefined) {
+    params.aiSummarization = rootAiSummarization;
   }
   return params;
 }
@@ -53,7 +57,7 @@ export function parseAgentProfileConfig(value: unknown, index: number): GatewayA
     profile.workspace = normalizeShortText(value.workspace, "workspace", 4000);
   }
   if (value.thinking !== undefined) {
-    if (!isDragonThinking(value.thinking)) {
+    if (!isLoongThinking(value.thinking)) {
       badRequest("agent.config.save profile thinking is invalid.");
     }
     profile.thinking = value.thinking;
@@ -71,6 +75,10 @@ export function parseAgentProfileConfig(value: unknown, index: number): GatewayA
   if (profileCompaction !== undefined) {
     profile.sessionCompaction = profileCompaction;
   }
+  const profileAiSummarization = parseAiSummarizationValue(value.aiSummarization);
+  if (profileAiSummarization !== undefined) {
+    profile.aiSummarization = profileAiSummarization;
+  }
   return profile;
 }
 
@@ -86,6 +94,9 @@ export function sanitizeAgentConfig(config: GatewayAgentConfig): GatewayAgentCon
   }
   if (config.sessionCompaction !== undefined) {
     sanitized.sessionCompaction = config.sessionCompaction;
+  }
+  if (config.aiSummarization !== undefined) {
+    sanitized.aiSummarization = config.aiSummarization;
   }
   return sanitized;
 }
@@ -118,6 +129,9 @@ function sanitizeAgentProfile(profile: GatewayAgentProfileConfig): GatewayAgentP
   }
   if (profile.sessionCompaction !== undefined) {
     summary.sessionCompaction = profile.sessionCompaction;
+  }
+  if (profile.aiSummarization !== undefined) {
+    summary.aiSummarization = profile.aiSummarization;
   }
   return summary;
 }

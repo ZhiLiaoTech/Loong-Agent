@@ -76,7 +76,7 @@ export type {
 export {
   createFileSessionStore,
   FileSessionStore,
-  isDragonSource,
+  isLoongSource,
   isTurnStatus,
   parseTurnRecord,
   sessionPath,

@@ -1,0 +1,36 @@
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--loong-border, var(--line)) 80%, transparent);
+}
+
+.text {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.02em;
+  color: var(--loong-text, var(--text));
+}
+
+.lead {
+  margin: var(--space-2) 0 0;
+  max-width: 56ch;
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+  color: var(--loong-text-secondary, var(--muted));
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}

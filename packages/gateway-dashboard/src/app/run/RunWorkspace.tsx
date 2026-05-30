@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useDragonEvents } from "../events/EventsContext.js";
+import { useLoongEvents } from "../events/EventsContext.js";
 import { ChatTranscript } from "./components/ChatTranscript.js";
 import { Composer, type ComposerAttachment } from "./components/Composer.js";
 import { ProfilePreview } from "./components/ProfilePreview.js";
@@ -27,7 +27,7 @@ const DEFAULT_SETTINGS: RunSettings = {
 export function RunWorkspace() {
   const [settings, setSettings] = useState<RunSettings>(DEFAULT_SETTINGS);
   const catalog = useRunCatalog(settings.sessionId);
-  const { events } = useDragonEvents();
+  const { events } = useLoongEvents();
 
   const selectedProfile = useMemo(
     () => catalog.agentConfig.profiles.find(profile => profile.id === settings.profileId),

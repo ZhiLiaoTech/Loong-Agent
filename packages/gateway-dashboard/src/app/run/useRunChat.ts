@@ -1,25 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GatewayApiError } from "../../api/index.js";
-import { useDragonEvents } from "../events/EventsContext.js";
+import type { GatewayEventEnvelope } from "../../api/index.js";
+import { useLoongEvents } from "../events/EventsContext.js";
+import type { TranslateFn } from "../events/formatGatewayEvent.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
+import { applyActivityEvent, isActivityEvent } from "./activity/activityFromEvent.js";
+import {
+  loadChatActivityPreferences,
+  saveChatActivityPreferences,
+} from "./activity/chatActivityPreferences.js";
+import type { ChatActivityPreferences } from "./activity/types.js";
 import { pickAssistantDisplayText, stripTextToolBlocks } from "./chatDisplay.js";
 import { buildErrorDetail, type RunFailureInfo } from "./runFailure.js";
-import type { AgentProfile, AgentRunResult, ChatTurn, RunSettings } from "./types.js";
-
-const MAX_CHAT_TURNS = 80;
-/** Fallback when Gateway returns runId but no SSE lifecycle (sync-only providers). */
-const RUN_FINALIZE_TIMEOUT_MS = 30_000;
-
-function trimChatTurns(turns: ChatTurn[]): ChatTurn[] {
-  return turns.length > MAX_CHAT_TURNS ? turns.slice(-MAX_CHAT_TURNS) : turns;
-}
+import {
+  hydrateChatHistory,
+  MAX_CHAT_TURNS,
+  normalizeChatSessionId,
+  trimChatTurns,
+} from "./chatHistoryRestore.js";
+import { saveLocalChatTurns, loadLocalChatTurns } from "./chatSessionStorage.js";
+import type { AgentProfile, AgentRunResult, ChatActivityStep, ChatTurn, RunSettings } from "./types.js";
+import type { WorkspaceScopeSelection } from "./workspaceScope.js";
+import { resolveEffectiveWorkspace } from "./workspaceScope.js";
 
 // Module-level cache so chat state survives RunWorkspace unmount when the user
-// navigates to Models/Agents/etc. and returns. This is intentionally NOT
-// sessionStorage — the smoke test forbids browser storage for secret-safety,
-// and a module-scoped variable already gives us cross-route persistence
-// within a single tab load (cleared on full refresh, which is the right
-// trust boundary).
+// navigates to Models/Agents/etc. and returns. Full page refresh restores from
+// gateway trajectory records for the same sessionId.
 export interface LastTierInfo {
   tier: "fast" | "standard" | "deep";
   source: "heuristic" | "fixed" | "inherited" | "explicit-input";
@@ -34,20 +40,51 @@ interface CachedChatState {
   activeRunId: string;
   lastResult: AgentRunResult | null;
   lastTier: LastTierInfo | null;
+  hydrated: boolean;
 }
-const chatStateCache: CachedChatState = {
+
+const emptyCache = (): CachedChatState => ({
   chatTurns: [],
   activeRunId: "",
   lastResult: null,
   lastTier: null,
-};
+  hydrated: false,
+});
+
+const chatStateCacheBySession = new Map<string, CachedChatState>();
+
+function getChatCache(sessionId: string): CachedChatState {
+  const key = normalizeChatSessionId(sessionId);
+  const existing = chatStateCacheBySession.get(key);
+  if (existing) {
+    return existing;
+  }
+  const created = emptyCache();
+  chatStateCacheBySession.set(key, created);
+  return created;
+}
+
+/** Fallback when Gateway returns runId but no SSE lifecycle (sync-only providers). */
+const RUN_FINALIZE_TIMEOUT_MS = 30_000;
 
 export function useRunChat(
   settings: RunSettings,
   selectedProfile: AgentProfile | undefined,
+  options?: {
+    gatewayOnline?: boolean;
+    translate?: TranslateFn;
+    workspaceScope?: WorkspaceScopeSelection;
+    profileWorkspace?: string;
+  },
 ) {
+  const gatewayOnline = options?.gatewayOnline ?? true;
+  const translate = options?.translate ?? (key => key);
+  const workspaceScope = options?.workspaceScope ?? { kind: "global" as const };
+  const profileWorkspace = options?.profileWorkspace ?? selectedProfile?.workspace;
   const client = useGatewayClient();
-  const { events, connectionEpoch } = useDragonEvents();
+  const { events, connectionEpoch } = useLoongEvents();
+  const sessionKey = normalizeChatSessionId(settings.sessionId);
+  const chatStateCache = getChatCache(sessionKey);
   // Hydrate from the module cache. Any assistant turn that was mid-stream
   // when the user navigated away gets settled so we don't show a stuck "...".
   const initialChatTurns = chatStateCache.chatTurns.map(turn =>
@@ -64,6 +101,15 @@ export function useRunChat(
   const [lastTier, setLastTier] = useState<LastTierInfo | null>(chatStateCache.lastTier);
   const [showRaw, setShowRaw] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [activityPreferences, setActivityPreferences] = useState(loadChatActivityPreferences);
+
+  const updateActivityPreferences = useCallback((patch: Partial<ChatActivityPreferences>) => {
+    setActivityPreferences(current => {
+      const next = { ...current, ...patch };
+      saveChatActivityPreferences(next);
+      return next;
+    });
+  }, []);
 
   // Mirror current chat state into the module cache so the next mount can
   // restore it after a navigation.
@@ -72,7 +118,74 @@ export function useRunChat(
     chatStateCache.activeRunId = activeRunId;
     chatStateCache.lastResult = lastResult;
     chatStateCache.lastTier = lastTier;
-  }, [chatTurns, activeRunId, lastResult, lastTier]);
+  }, [chatTurns, activeRunId, lastResult, lastTier, chatStateCache]);
+
+  useEffect(() => {
+    const persistable = chatTurns
+      .filter(turn => !turn.streaming)
+      .map(({ activities, activitiesExpanded, runId, ...turn }) => turn);
+    if (persistable.length > 0) {
+      saveLocalChatTurns(sessionKey, persistable);
+    }
+  }, [chatTurns, sessionKey]);
+
+  useEffect(() => {
+    const cache = getChatCache(sessionKey);
+    const local = loadLocalChatTurns(sessionKey);
+    const base = cache.chatTurns.length > 0 ? cache.chatTurns : local;
+    const settled = base.map(turn =>
+      turn.role === "assistant" && turn.streaming
+        ? { ...turn, streaming: false, text: turn.text || "[interrupted by navigation]" }
+        : turn,
+    );
+    setChatTurns(settled);
+    setActiveRunId(cache.activeRunId);
+    setLastResult(cache.lastResult);
+    setLastTier(cache.lastTier);
+    setSending(false);
+    setExpectingRun(false);
+    setTimelineRunId("");
+    setCancelError(null);
+    if (settled.length > 0) {
+      cache.chatTurns = settled;
+    }
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (!gatewayOnline) {
+      return;
+    }
+    const cache = getChatCache(sessionKey);
+    if (cache.hydrated) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const hydrated = await hydrateChatHistory(client, sessionKey);
+        if (cancelled || !hydrated.length) {
+          return;
+        }
+        setChatTurns(current => {
+          if (current.length > 0 && current.length >= hydrated.length) {
+            return current;
+          }
+          cache.chatTurns = hydrated;
+          return hydrated;
+        });
+      } catch {
+        // Keep whatever local state we already have.
+      } finally {
+        if (!cancelled) {
+          cache.hydrated = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, gatewayOnline, sessionKey]);
+
   const lastSequenceRef = useRef(0);
   const activeRunIdRef = useRef("");
   const expectingRunRef = useRef(false);
@@ -84,6 +197,56 @@ export function useRunChat(
   const rpcSettledRef = useRef(false);
   const runFinalizedRef = useRef(false);
   const finalizeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const activitiesRef = useRef<ChatActivityStep[]>([]);
+  const activityCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const clearActivityCollapseTimer = useCallback(() => {
+    if (activityCollapseTimerRef.current !== undefined) {
+      clearTimeout(activityCollapseTimerRef.current);
+      activityCollapseTimerRef.current = undefined;
+    }
+  }, []);
+
+  const syncAssistantActivities = useCallback((
+    steps: readonly ChatActivityStep[],
+    runId: string,
+    patch?: { activitiesExpanded?: boolean },
+  ) => {
+    activitiesRef.current = [...steps];
+    setChatTurns(turns => {
+      const next = [...turns];
+      const last = next[next.length - 1];
+      if (last?.role !== "assistant") {
+        return turns;
+      }
+      next[next.length - 1] = {
+        ...last,
+        runId,
+        activities: steps,
+        activitiesExpanded: patch?.activitiesExpanded ?? last.activitiesExpanded ?? true,
+      };
+      return trimChatTurns(next);
+    });
+  }, []);
+
+  const scheduleActivityCollapse = useCallback(() => {
+    clearActivityCollapseTimer();
+    if (!activityPreferences.showActivities || activityPreferences.autoCollapseMs <= 0) {
+      return;
+    }
+    activityCollapseTimerRef.current = setTimeout(() => {
+      activityCollapseTimerRef.current = undefined;
+      setChatTurns(turns => {
+        const next = [...turns];
+        const last = next[next.length - 1];
+        if (last?.role !== "assistant") {
+          return turns;
+        }
+        next[next.length - 1] = { ...last, activitiesExpanded: false };
+        return next;
+      });
+    }, activityPreferences.autoCollapseMs);
+  }, [activityPreferences.autoCollapseMs, activityPreferences.showActivities, clearActivityCollapseTimer]);
 
   const clearFinalizeTimer = useCallback(() => {
     if (finalizeTimerRef.current !== undefined) {
@@ -109,12 +272,14 @@ export function useRunChat(
     lifecycleEndedRef.current = false;
     rpcSettledRef.current = false;
     runFinalizedRef.current = false;
+    activitiesRef.current = [];
     clearFinalizeTimer();
   }, [clearFinalizeTimer, connectionEpoch]);
 
   useEffect(() => () => {
     clearFinalizeTimer();
-  }, [clearFinalizeTimer]);
+    clearActivityCollapseTimer();
+  }, [clearActivityCollapseTimer, clearFinalizeTimer]);
 
   const replaceAssistant = useCallback((text: string) => {
     if (!text) {
@@ -171,8 +336,13 @@ export function useRunChat(
     runFinalizedRef.current = true;
     clearFinalizeTimer();
     const resolvedFailure = failure ?? pendingRunFailureRef.current ?? undefined;
-    if (activeRunIdRef.current) {
-      setTimelineRunId(activeRunIdRef.current);
+    const runId = activeRunIdRef.current;
+    if (runId) {
+      setTimelineRunId(runId);
+      if (activityPreferences.showActivities) {
+        syncAssistantActivities(activitiesRef.current, runId);
+        scheduleActivityCollapse();
+      }
     }
     finalizeAssistant(text, resolvedFailure);
     pendingRpcAssistantRef.current = "";
@@ -185,7 +355,7 @@ export function useRunChat(
     receivedStreamDeltaRef.current = false;
     lifecycleEndedRef.current = false;
     rpcSettledRef.current = false;
-  }, [clearFinalizeTimer, finalizeAssistant]);
+  }, [activityPreferences.showActivities, clearFinalizeTimer, finalizeAssistant, scheduleActivityCollapse, syncAssistantActivities]);
 
   const tryFinalizeRun = useCallback((failure?: RunFailureInfo, options?: { force?: boolean }) => {
     if (runFinalizedRef.current) {
@@ -229,6 +399,41 @@ export function useRunChat(
     });
   }, [clearFinalizeTimer]);
 
+  const handleActivityEnvelope = useCallback((envelope: GatewayEventEnvelope) => {
+    const event = envelope.event;
+    if (!isActivityEvent(event)) {
+      return;
+    }
+    const runId = event.runId;
+    if (!runId) {
+      return;
+    }
+    const isStartingRun = event.type === "lifecycle"
+      && event.phase === "start"
+      && expectingRunRef.current;
+    if (!isStartingRun && activeRunIdRef.current && runId !== activeRunIdRef.current) {
+      return;
+    }
+    if (!activityPreferences.showActivities) {
+      return;
+    }
+    if (isStartingRun) {
+      activeRunIdRef.current = runId;
+      activitiesRef.current = [];
+    }
+    const steps = applyActivityEvent(activitiesRef.current, event, {
+      granularity: activityPreferences.granularity,
+      translate,
+      sequence: envelope.sequence,
+    });
+    syncAssistantActivities(steps, runId, isStartingRun ? { activitiesExpanded: true } : undefined);
+  }, [
+    activityPreferences.granularity,
+    activityPreferences.showActivities,
+    syncAssistantActivities,
+    translate,
+  ]);
+
   const handleStreamEvent = useCallback((event: {
     type?: string;
     phase?: string;
@@ -242,6 +447,22 @@ export function useRunChat(
       setActiveRunId(event.runId);
       expectingRunRef.current = false;
       setExpectingRun(false);
+      if (activityPreferences.showActivities) {
+        activitiesRef.current = [];
+        setChatTurns(turns => {
+          const next = [...turns];
+          const last = next[next.length - 1];
+          if (last?.role === "assistant" && event.runId) {
+            next[next.length - 1] = {
+              ...last,
+              runId: event.runId,
+              activities: [],
+              activitiesExpanded: true,
+            };
+          }
+          return trimChatTurns(next);
+        });
+      }
       const meta = event.metadata ?? {};
       const tierRaw = meta.tier;
       if (tierRaw === "fast" || tierRaw === "standard" || tierRaw === "deep") {
@@ -298,7 +519,7 @@ export function useRunChat(
       lifecycleEndedRef.current = true;
       tryFinalizeRun(failure);
     }
-  }, [appendDelta, replaceAssistant, tryFinalizeRun]);
+  }, [activityPreferences.showActivities, appendDelta, replaceAssistant, tryFinalizeRun]);
 
   useEffect(() => {
     const fresh = events.filter(envelope => envelope.sequence > lastSequenceRef.current);
@@ -306,10 +527,13 @@ export function useRunChat(
       return;
     }
     lastSequenceRef.current = Math.max(...fresh.map(envelope => envelope.sequence));
+    for (const envelope of fresh) {
+      handleActivityEnvelope(envelope);
+    }
     for (const envelope of [...fresh].reverse()) {
       handleStreamEvent(envelope.event);
     }
-  }, [connectionEpoch, events, handleStreamEvent]);
+  }, [connectionEpoch, events, handleActivityEnvelope, handleStreamEvent]);
 
   const sendMessage = useCallback(async (rawMessage: string, attachments: ReadonlyArray<{ kind: "image" | "text" | "document"; mimeType: string; data: string; name: string; size: number }> = []) => {
     const message = rawMessage.trim();
@@ -331,6 +555,8 @@ export function useRunChat(
     lifecycleEndedRef.current = false;
     rpcSettledRef.current = false;
     runFinalizedRef.current = false;
+    activitiesRef.current = [];
+    clearActivityCollapseTimer();
 
     const attachmentSummary = attachments.length > 0
       ? "\n\n" + attachments.map(a => `📎 ${a.name} (${a.kind}, ${a.mimeType})`).join("\n")
@@ -338,7 +564,19 @@ export function useRunChat(
     setChatTurns(turns => trimChatTurns([
       ...turns,
       { role: "user", text: message + attachmentSummary, streaming: false },
-      { role: "assistant", text: "", streaming: true },
+      activityPreferences.showActivities
+        ? {
+            role: "assistant",
+            text: "",
+            streaming: true,
+            activities: [],
+            activitiesExpanded: true,
+          }
+        : {
+            role: "assistant",
+            text: "",
+            streaming: true,
+          },
     ]));
 
     let completedRunId = "";
@@ -347,8 +585,15 @@ export function useRunChat(
         sessionId: settings.sessionId.trim() || "dashboard",
         message,
         source: "web",
-        metadata: { source: "dashboard" },
+        metadata: {
+          source: "dashboard",
+          workspaceScope: resolveEffectiveWorkspace(workspaceScope, profileWorkspace).scope,
+        },
       };
+      const scoped = resolveEffectiveWorkspace(workspaceScope, profileWorkspace);
+      if (scoped.scopePath) {
+        (params.metadata as Record<string, unknown>).workspaceScopePath = scoped.scopePath;
+      }
       const profileId = settings.profileId.trim() || selectedProfile?.id || "";
       if (profileId) {
         params.profileId = profileId;
@@ -358,6 +603,8 @@ export function useRunChat(
       }
       if (settings.workspace.trim()) {
         params.workspace = settings.workspace.trim();
+      } else if (scoped.workspace) {
+        params.workspace = scoped.workspace;
       }
       if (settings.model.trim()) {
         params.model = settings.model.trim();
@@ -403,6 +650,16 @@ export function useRunChat(
         setActiveRunId(result.runId);
         expectingRunRef.current = false;
         setExpectingRun(false);
+        if (activityPreferences.showActivities) {
+          setChatTurns(turns => {
+            const next = [...turns];
+            const last = next[next.length - 1];
+            if (last?.role === "assistant") {
+              next[next.length - 1] = { ...last, runId: result.runId };
+            }
+            return trimChatTurns(next);
+          });
+        }
       }
       setLastResult(result ?? null);
       const assistant = [...(result?.messages ?? [])]
@@ -451,10 +708,16 @@ export function useRunChat(
       }
     }
   }, [
+    activityPreferences,
+    activityPreferences.granularity,
+    activityPreferences.showActivities,
+    clearActivityCollapseTimer,
     clearFinalizeTimer,
     client,
     finalizeAssistant,
     scheduleRunFinalizeFallback,
+    workspaceScope,
+    profileWorkspace,
     selectedProfile,
     sending,
     settings,
@@ -479,6 +742,21 @@ export function useRunChat(
     }
   }, [client]);
 
+  const toggleTurnActivitiesExpanded = useCallback((turnIndex: number) => {
+    setChatTurns(turns => {
+      const next = [...turns];
+      const turn = next[turnIndex];
+      if (!turn || turn.role !== "assistant") {
+        return turns;
+      }
+      next[turnIndex] = {
+        ...turn,
+        activitiesExpanded: !turn.activitiesExpanded,
+      };
+      return next;
+    });
+  }, []);
+
   return {
     chatTurns,
     sending,
@@ -492,5 +770,8 @@ export function useRunChat(
     cancelError,
     sendMessage,
     cancelActiveRun,
+    activityPreferences,
+    updateActivityPreferences,
+    toggleTurnActivitiesExpanded,
   };
 }

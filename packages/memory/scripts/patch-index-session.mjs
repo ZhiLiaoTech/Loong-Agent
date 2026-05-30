@@ -44,7 +44,7 @@ import {
 } from "./memory-util.js";
 `;
 
-const toolImport = lines.findIndex(line => line.includes('from "@dragon/tools"'));
+const toolImport = lines.findIndex(line => line.includes('from "@loong/tools"'));
 lines.splice(toolImport + 1, 0, insert);
 
 fs.writeFileSync(indexPath, `${lines.join("\n")}\n`);

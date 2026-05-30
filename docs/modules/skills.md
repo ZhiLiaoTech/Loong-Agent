@@ -1,4 +1,4 @@
-# @dragon/skills 技术方案
+# @loong/skills 技术方案
 
 ## 1. 职责边界
 
@@ -37,7 +37,7 @@
 
 ### 3.4 依赖
 
-仅 `@dragon/tools`。
+仅 `@loong/tools`。
 
 ## 4. 集成方式
 

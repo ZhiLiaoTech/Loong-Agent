@@ -1,4 +1,4 @@
-import type { DragonPermissionHandler, DragonPermissionRequest, DragonPermissionResponse } from "@dragon/core";
+import type { LoongPermissionHandler, LoongPermissionRequest, LoongPermissionResponse } from "@loong/core";
 import { resolveApprovalAssignee } from "./approval-routing.js";
 import { isOrgApprovalReason, parseApprovalChainId, stripApprovalPrefix } from "./approval-reason.js";
 import { readEmployeeId } from "./policy.js";
@@ -14,8 +14,8 @@ import type {
 } from "./types.js";
 
 interface PendingApproval {
-  request: DragonPermissionRequest;
-  resolve: (response: DragonPermissionResponse | "allow" | "deny") => void;
+  request: LoongPermissionRequest;
+  resolve: (response: LoongPermissionResponse | "allow" | "deny") => void;
 }
 
 export interface ApprovalListFilter {
@@ -24,7 +24,7 @@ export interface ApprovalListFilter {
 }
 
 export interface GatewayApprovalService {
-  readonly handler: DragonPermissionHandler;
+  readonly handler: LoongPermissionHandler;
   list(filter?: ApprovalListFilter): Promise<ApprovalRegistry>;
   approve(id: string, resolvedBy?: string, note?: string): Promise<ApprovalRequest>;
   reject(id: string, resolvedBy?: string, note?: string): Promise<ApprovalRequest>;
@@ -44,7 +44,7 @@ export function createGatewayApprovalService(
   const pending = new Map<string, PendingApproval>();
   const timeoutMs = options.defaultTimeoutMs ?? 30 * 60_000;
 
-  const handler: DragonPermissionHandler = async request => {
+  const handler: LoongPermissionHandler = async request => {
     if (!isOrgApprovalReason(request.reason)) {
       return {
         decision: "deny",
@@ -99,7 +99,7 @@ export function createGatewayApprovalService(
       requests: [...registry.requests, record],
     });
 
-    return await new Promise<DragonPermissionResponse | "allow" | "deny">(resolve => {
+    return await new Promise<LoongPermissionResponse | "allow" | "deny">(resolve => {
       pending.set(id, { request, resolve });
       const timer = setTimeout(() => {
         if (!pending.has(id)) {

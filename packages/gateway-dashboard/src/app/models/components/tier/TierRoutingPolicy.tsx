@@ -1,6 +1,7 @@
 import type { TierConfigState, TierName } from "../../types.js";
+import { useWorkbenchT } from "../../../i18n/WorkbenchI18nContext.js";
 import styles from "../TierConfigPanel.module.css";
-import { TIER_LABELS, TIER_ORDER } from "./labels.js";
+import { TIER_ORDER, tierNameKey } from "./labels.js";
 
 interface Props {
   classifier: TierConfigState["classifier"];
@@ -10,15 +11,12 @@ interface Props {
 }
 
 export function TierRoutingPolicy({ classifier, enabled, loading, onClassifierChange }: Props) {
+  const t = useWorkbenchT();
   const disabled = !enabled || loading;
 
   return (
-    <section className={styles.section} aria-labelledby="tier-routing-heading">
-      <h3 id="tier-routing-heading" className={styles.sectionTitle}>
-        路由策略
-      </h3>
-
-      <div className={styles.segmented} role="group" aria-label="分类模式">
+    <section className={styles.routingSection} aria-label={t("models.tier.routingTitle")}>
+      <div className={styles.segmented} role="group" aria-label={t("models.tier.routingTitle")}>
         <button
           type="button"
           className={
@@ -30,7 +28,7 @@ export function TierRoutingPolicy({ classifier, enabled, loading, onClassifierCh
           aria-pressed={classifier.mode === "heuristic"}
           onClick={() => onClassifierChange({ mode: "heuristic" })}
         >
-          启发式
+          {t("models.tier.modeHeuristic")}
         </button>
         <button
           type="button"
@@ -41,17 +39,15 @@ export function TierRoutingPolicy({ classifier, enabled, loading, onClassifierCh
           aria-pressed={classifier.mode === "fixed"}
           onClick={() => onClassifierChange({ mode: "fixed", fixedTier: classifier.fixedTier ?? "standard" })}
         >
-          固定档位
+          {t("models.tier.modeFixed")}
         </button>
       </div>
 
       {classifier.mode === "heuristic" ? (
-        <p className={styles.sectionHint}>
-          根据提示长度、工具、附件与关键词等信号自动选择档位，无需每次手动指定。
-        </p>
+        <p className={styles.sectionHint}>{t("models.tier.heuristicHint")}</p>
       ) : (
         <div className={styles.chipRow}>
-          <span className={styles.chipLabel}>固定为</span>
+          <span className={styles.chipLabel}>{t("models.tier.fixedTo")}</span>
           {TIER_ORDER.map(name => (
             <button
               key={name}
@@ -65,7 +61,7 @@ export function TierRoutingPolicy({ classifier, enabled, loading, onClassifierCh
               aria-pressed={(classifier.fixedTier ?? "standard") === name}
               onClick={() => onClassifierChange({ fixedTier: name as TierName })}
             >
-              {TIER_LABELS[name]}
+              {t(tierNameKey(name))}
             </button>
           ))}
         </div>

@@ -13,8 +13,8 @@ import {
   parseSlackWebhook,
   parseTelegramWebhook,
   toGatewayWebhookPayload,
-} from "@dragon/channels";
-import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
+} from "@loong/channels";
+import type { LoongAgentRuntime, LoongEvent, LoongTurnInput, LoongTurnResult } from "@loong/core";
 import {
   appendCancelledToolResults,
   appendWorkspaceToolGuidance,
@@ -23,7 +23,7 @@ import {
   buildTurnPrepOptions,
   classifyTierHeuristic,
   canRunToolCallsInParallel,
-  createDragonRuntime,
+  createLoongRuntime,
   runTurnWithQueryLoop,
   isParallelSafeTool,
   decideTier,
@@ -34,27 +34,29 @@ import {
   compactSessionMessagesByTurn,
   estimateModelMessagesChars,
   mergeAgentProfileIntoTurnInput,
+  resolveAiSummarizationForTurn,
   resolveSessionCompactionForTurn,
+  summarizeOldTurnsWithAI,
   prepareSessionHistoryForModel,
   repairModelMessagesAfterCancel,
   TOOL_CANCELLED_CODE,
-} from "@dragon/core";
-import type { ModelMessage } from "@dragon/providers";
-import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
+} from "@loong/core";
+import type { ModelMessage, ModelProvider } from "@loong/providers";
+import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@loong/cron";
 import {
   createDelegationPlan,
   createRuntimeDelegatedTaskExecutor,
   createRuntimeDelegationTool,
   runDelegationPlan,
-  type DragonRuntimeDelegationToolInput,
-} from "@dragon/delegation";
+  type LoongRuntimeDelegationToolInput,
+} from "@loong/delegation";
 import {
   applyModelCatalogToAgentParams,
-  assertDragonGatewayWebhookPayload,
+  assertLoongGatewayWebhookPayload,
   createHttpGateway,
   createModelCatalogFromProviderSummaries,
   FilePairingStore,
-} from "@dragon/gateway";
+} from "@loong/gateway";
 import {
   createFileMemoryStore,
   createFileTrajectoryStore,
@@ -66,14 +68,14 @@ import {
   type MemoryCandidatePromoteOutput,
   type MemoryCandidateRejectInput,
   type MemoryCandidateRejectOutput,
-} from "@dragon/memory";
+} from "@loong/memory";
 import {
   applyModelCatalogToParams,
   catalogEntriesFromProviders,
   createModelCatalog,
-} from "@dragon/model-catalog";
-import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@dragon/providers";
-import { isSensitiveKey, redactSecretsInText } from "@dragon/security";
+} from "@loong/model-catalog";
+import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@loong/providers";
+import { isSensitiveKey, redactSecretsInText } from "@loong/security";
 import {
   createBrowserFormSubmitTool,
   createBrowserPlaywrightSnapshotTool,
@@ -85,7 +87,7 @@ import {
   registerMcpTools,
   validateBrowserTargetUrl,
   type ToolDefinition,
-} from "@dragon/tools";
+} from "@loong/tools";
 
 import {
   assert,
@@ -140,12 +142,12 @@ async function testRuntimeModelFallback(): Promise<void> {
       return { id: "backup-ok", text: `backup:${request.model}` };
     },
   };
-  const runtime = createDragonRuntime({
+  const runtime = createLoongRuntime({
     providers: [primary, backup],
     defaultModel: "primary:broken",
     modelFallbacks: ["backup:stable"],
   });
-  const events: DragonEvent[] = [];
+  const events: LoongEvent[] = [];
   const unsubscribe = runtime.subscribe(event => events.push(event));
   try {
     const result = await runtime.runTurn({
@@ -166,7 +168,7 @@ async function testRuntimeModelFallback(): Promise<void> {
     unsubscribe();
   }
 
-  const nonRetryableRuntime = createDragonRuntime({
+  const nonRetryableRuntime = createLoongRuntime({
     providers: [{
       ...primary,
       async complete() {
@@ -274,7 +276,7 @@ async function testRuntimeTierOverrides(): Promise<void> {
     },
   };
 
-  const runtime = createDragonRuntime({
+  const runtime = createLoongRuntime({
     providers: [fastProvider, deepProvider],
     tierConfig: normalizeTierConfig({
       enabled: true,
@@ -287,7 +289,7 @@ async function testRuntimeTierOverrides(): Promise<void> {
     }),
   });
 
-  const events: DragonEvent[] = [];
+  const events: LoongEvent[] = [];
   const unsubscribe = runtime.subscribe(event => events.push(event));
   try {
     // Heuristic should fire fast for "翻译"
@@ -333,7 +335,7 @@ async function testRuntimeTierOverrides(): Promise<void> {
   }
 
   // setTierConfig hot-swap: passing undefined disables tier scheduling on next turn.
-  const setter = runtime as DragonAgentRuntime & { setTierConfig?: (c: unknown) => void };
+  const setter = runtime as LoongAgentRuntime & { setTierConfig?: (c: unknown) => void };
   assert(typeof setter.setTierConfig === "function", "runtime should expose setTierConfig");
   setter.setTierConfig?.(undefined);
   const afterDisable = await runtime.runTurn({
@@ -438,7 +440,7 @@ async function testRuntimeToolCallLoop(): Promise<void> {
       workspace: invocation.workspace,
     };
   });
-  const runtime = createDragonRuntime({
+  const runtime = createLoongRuntime({
     providers: [provider],
     defaultModel: "mock-tool-model",
     tools: [echoTool],
@@ -447,7 +449,7 @@ async function testRuntimeToolCallLoop(): Promise<void> {
       rules: [{ toolName: "echo_tool", decision: "allow", reason: "test allow" }],
     }),
   });
-  const events: DragonEvent[] = [];
+  const events: LoongEvent[] = [];
   const unsubscribe = runtime.subscribe(event => events.push(event));
   try {
     const result = await runtime.runTurn({
@@ -507,7 +509,7 @@ async function testRuntimeParallelReadOnlyTools(): Promise<void> {
       return { id: "second", text: "done" };
     },
   };
-  const runtime = createDragonRuntime({
+  const runtime = createLoongRuntime({
     providers: [provider],
     defaultModel: "mock",
     tools: [toolA, toolB],
@@ -556,8 +558,8 @@ async function testRuntimeParallelReadStreamingEvents(): Promise<void> {
       return { id: "second", text: "done" };
     },
   };
-  const events: DragonEvent[] = [];
-  const runtime = createDragonRuntime({
+  const events: LoongEvent[] = [];
+  const runtime = createLoongRuntime({
     providers: [provider],
     defaultModel: "mock",
     tools: [toolA, toolB],
@@ -571,7 +573,7 @@ async function testRuntimeParallelReadStreamingEvents(): Promise<void> {
       message: "run parallel reads",
     });
     assert(result.status === "ok", `parallel stream turn failed: ${result.error}`);
-    const updates = events.filter((event): event is Extract<DragonEvent, { type: "tool" }> =>
+    const updates = events.filter((event): event is Extract<LoongEvent, { type: "tool" }> =>
       event.type === "tool"
       && event.phase === "update"
       && isRecord(event.payload)
@@ -667,13 +669,13 @@ async function testRuntimeTurnPrepReactiveRetry(): Promise<void> {
       return { id: "ok", text: "recovered" };
     },
   };
-  const runtime = createDragonRuntime({
+  const runtime = createLoongRuntime({
     providers: [provider],
     defaultModel: "mock-prep-model",
     turnPrepEnabled: true,
     maxContextChars: 4_000,
   });
-  const events: DragonEvent[] = [];
+  const events: LoongEvent[] = [];
   const unsubscribe = runtime.subscribe(event => events.push(event));
   try {
     const result = await runtime.runTurn({
@@ -684,7 +686,7 @@ async function testRuntimeTurnPrepReactiveRetry(): Promise<void> {
     assert(result.status === "ok", `reactive prep retry failed: ${result.error}`);
     assert(result.messages[1]?.content === "recovered", "second model attempt should succeed");
     assert(attempts === 2, "provider should be called twice after reactive prep");
-    const prepEvents = events.filter((event): event is Extract<DragonEvent, { type: "context" }> =>
+    const prepEvents = events.filter((event): event is Extract<LoongEvent, { type: "context" }> =>
       event.type === "context" && event.providerName === "turn_prep" && event.phase === "end",
     );
     assert(prepEvents.length >= 1, "turn_prep context event should be emitted");
@@ -727,7 +729,7 @@ async function testRuntimeToolIterationLimitGraceful(): Promise<void> {
     ok: true,
     step: readPath(invocation.input, ["text"]),
   }));
-  const runtime = createDragonRuntime({
+  const runtime = createLoongRuntime({
     providers: [provider],
     defaultModel: "mock-tool-limit-model",
     maxToolIterations: 2,
@@ -737,7 +739,7 @@ async function testRuntimeToolIterationLimitGraceful(): Promise<void> {
       rules: [{ toolName: "echo_tool", decision: "allow", reason: "test allow" }],
     }),
   });
-  const events: DragonEvent[] = [];
+  const events: LoongEvent[] = [];
   const unsubscribe = runtime.subscribe(event => events.push(event));
   try {
     const result = await runtime.runTurn({
@@ -829,7 +831,7 @@ async function testRuntimeTurnCancelDuringTool(): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, waitMs));
     return { ok: true };
   });
-  const runtime = createDragonRuntime({
+  const runtime = createLoongRuntime({
     providers: [provider],
     defaultModel: "mock-cancel-model",
     tools: [slowTool],
@@ -838,7 +840,7 @@ async function testRuntimeTurnCancelDuringTool(): Promise<void> {
       rules: [{ toolName: "slow_tool", decision: "allow", reason: "test allow" }],
     }),
   });
-  const events: DragonEvent[] = [];
+  const events: LoongEvent[] = [];
   const unsubscribe = runtime.subscribe(event => events.push(event));
   try {
     const turn = runtime.runTurn({
@@ -869,7 +871,7 @@ async function testSessionHistoryPrep(): Promise<void> {
     { role: "tool", content: "payload".repeat(3_000), toolCallId: "call_old" },
     { role: "assistant", content: "analysis".repeat(2_000) },
   ];
-  const { messages, report } = prepareSessionHistoryForModel(history, 4_000);
+  const { messages, report } = await prepareSessionHistoryForModel(history, 4_000);
   assert(report.providerName === "session_history_prep", "session history prep report should be tagged");
   assert(report.truncatedToolResults >= 1, "historical tool output should be truncated");
   assert(messages[1]?.role === "tool", "tool message should remain in order");
@@ -920,12 +922,125 @@ async function testAgentProfileMergeIntoTurnInput(): Promise<void> {
   assert(readPath(withCompaction.metadata, ["sessionCompaction", "keepRecentTurns"]) === 2, "profile sessionCompaction should be in metadata");
   const resolved = resolveSessionCompactionForTurn({ keepRecentTurns: 4 }, withCompaction);
   assert(resolved !== false && resolved.keepRecentTurns === 2, "profile compaction should override runtime default");
+
+  const withAiSummary = mergeAgentProfileIntoTurnInput(
+    { sessionId: "s1", source: "cli", message: "hi" },
+    { id: "summary", name: "Summary", aiSummarization: { enabled: true, maxSummaryChars: 1500 } },
+  );
+  assert(readPath(withAiSummary.metadata, ["aiSummarization", "enabled"]) === true, "profile aiSummarization should be in metadata");
+  const resolvedAi = resolveAiSummarizationForTurn({ enabled: false }, withAiSummary);
+  assert(resolvedAi !== false && resolvedAi.enabled === true, "profile aiSummarization should override runtime default");
+}
+
+
+function createSummaryMockProvider(summaryText: string): ModelProvider {
+  return {
+    id: "summary-mock",
+    displayName: "Summary Mock",
+    supportsToolCalling: false,
+    defaultModel: "mock-summary",
+    async complete() {
+      return { id: "sum-1", text: summaryText };
+    },
+  };
+}
+
+
+async function testAiSummarizationEnabled(): Promise<void> {
+  const history: ModelMessage[] = [];
+  for (let turn = 0; turn < 8; turn += 1) {
+    history.push({ role: "user", content: `question ${turn}` });
+    history.push({ role: "tool", content: `result-${turn}-`.repeat(500), toolCallId: `call_${turn}` });
+    history.push({ role: "assistant", content: `answer ${turn}` });
+  }
+  const provider = createSummaryMockProvider("- decided to use TypeScript\n- edited packages/core/src/runtime.ts");
+  const { messages, report } = await summarizeOldTurnsWithAI(history, {
+    enabled: true,
+    provider,
+    model: "mock-summary",
+    keepRecentTurns: 2,
+  });
+  assert(report.summarizedTurns === 6, "should summarize 6 older turns");
+  assert(messages.length < history.length, "summarized history should shrink");
+  assert(messages[0]?.role === "user", "summary should be injected as user message");
+  const firstContent = messages[0]?.content;
+  assert(typeof firstContent === "string" && firstContent.includes("AI summary"), "summary prefix should be present");
+  assert(typeof firstContent === "string" && firstContent.includes("TypeScript"), "summary content should be preserved");
+}
+
+
+async function testAiSummarizationFallback(): Promise<void> {
+  const history: ModelMessage[] = [
+    { role: "user", content: "old" },
+    { role: "assistant", content: "old reply" },
+    { role: "user", content: "recent" },
+    { role: "assistant", content: "recent reply" },
+    { role: "user", content: "latest" },
+    { role: "assistant", content: "latest reply" },
+  ];
+  const provider: ModelProvider = {
+    id: "failing-mock",
+    displayName: "Failing Mock",
+    supportsToolCalling: false,
+    defaultModel: "fail",
+    async complete() {
+      throw new Error("provider unavailable");
+    },
+  };
+  const { messages, report } = await summarizeOldTurnsWithAI(history, {
+    enabled: true,
+    provider,
+    model: "fail",
+    keepRecentTurns: 1,
+  });
+  assert(report.error?.includes("provider unavailable"), "should record summarization error");
+  assert(messages.length === history.length, "failed summarization should preserve original messages");
+}
+
+
+async function testAiSummarizationPipeline(): Promise<void> {
+  const history: ModelMessage[] = [];
+  for (let turn = 0; turn < 6; turn += 1) {
+    history.push({ role: "user", content: `q${turn}` });
+    history.push({ role: "tool", content: "x".repeat(5_000), toolCallId: `t${turn}` });
+    history.push({ role: "assistant", content: `a${turn}` });
+  }
+  const provider = createSummaryMockProvider("compressed older context");
+  const { messages, report } = await prepareSessionHistoryForModel(
+    history,
+    4_000,
+    { keepRecentTurns: 2, olderToolMaxChars: 400 },
+    {
+      aiSummarization: {
+        enabled: true,
+        provider,
+        model: "mock-summary",
+        keepRecentTurns: 2,
+      },
+    },
+  );
+  assert(report.aiSummarization?.summarizedTurns === 4, "pipeline should run L1 before L2");
+  const firstContent = messages[0]?.content;
+  assert(typeof firstContent === "string" && firstContent.includes("compressed"), "summary should appear in final prep output");
+}
+
+
+async function testAiSummarizationDisabledByDefault(): Promise<void> {
+  const history: ModelMessage[] = [
+    { role: "user", content: "a" },
+    { role: "assistant", content: "b" },
+    { role: "user", content: "c" },
+    { role: "assistant", content: "d" },
+  ];
+  const { messages, report } = await summarizeOldTurnsWithAI(history, {});
+  assert(report.skipped === true, "disabled summarization should skip");
+  assert(messages.length === history.length, "disabled summarization should not mutate messages");
 }
 
 
 async function testCoreRunTurnWithQueryLoop(): Promise<void> {
   let turnCount = 0;
-  const runtime: DragonAgentRuntime = {
+  const runtime: LoongAgentRuntime = {
     async runTurn(input) {
       turnCount += 1;
       const needsContinue = turnCount === 1;
@@ -979,7 +1094,7 @@ async function testRuntimeFailOnPermissionDeny(): Promise<void> {
     },
   };
   const patchTool = createMockTool("file_patch", ["write"], async () => ({ ok: true }));
-  const runtime = createDragonRuntime({
+  const runtime = createLoongRuntime({
     providers: [provider],
     defaultModel: "mock-perm-model",
     tools: [patchTool],
@@ -1013,6 +1128,10 @@ export const runtimeTestCases: TestCase[] = [
   ["runtime turn cancel during tool", testRuntimeTurnCancelDuringTool],
   ["session history prep", testSessionHistoryPrep],
   ["session message compaction by turn", testSessionMessageCompactionByTurn],
+  ["ai summarization enabled", testAiSummarizationEnabled],
+  ["ai summarization fallback", testAiSummarizationFallback],
+  ["ai summarization pipeline", testAiSummarizationPipeline],
+  ["ai summarization disabled by default", testAiSummarizationDisabledByDefault],
   ["agent profile merge into turn input", testAgentProfileMergeIntoTurnInput],
   ["core runTurnWithQueryLoop", testCoreRunTurnWithQueryLoop],
   ["runtime fail on permission deny", testRuntimeFailOnPermissionDeny],

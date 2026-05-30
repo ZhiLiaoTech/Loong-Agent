@@ -1,4 +1,4 @@
-# Dragon Roadmap
+# Loong Roadmap
 
 > **Loong 桌面一体化**（Host + Studio + Desktop Surface）的详细阶段与任务 ID 见 [LOONG_PRODUCT_ARCHITECTURE.md](./LOONG_PRODUCT_ARCHITECTURE.md)。
 
@@ -24,12 +24,12 @@ Goal: establish the TypeScript workspace and design boundaries.
 
 ## Phase 1: Minimal Coding Agent
 
-Goal: make Dragon useful from the CLI.
+Goal: make Loong useful from the CLI.
 
 - Implement provider registry.
   Initial runtime fallback routing is implemented for retryable provider
-  failures, with CLI `--model-fallback` / `DRAGON_MODEL_FALLBACKS` support.
-- Implement model catalog. Initial `@dragon/model-catalog` package is
+  failures, with CLI `--model-fallback` / `LOONG_MODEL_FALLBACKS` support.
+- Implement model catalog. Initial `@loong/model-catalog` package is
   implemented with provider-scoped metadata, default model derivation, aliases,
   and Gateway provider list exposure.
 - Add one model provider.
@@ -38,30 +38,30 @@ Goal: make Dragon useful from the CLI.
 - Implement shell execution tool.
 - Implement patch editing tool.
 - Implement basic permission prompts.
-- Add shared security redaction. Initial `@dragon/security` package is
+- Add shared security redaction. Initial `@loong/security` package is
   implemented and reused by provider diagnostics, runtime permission summaries,
   and CLI metadata output.
-- Implement `dragon chat`.
-- Implement `dragon agent`.
+- Implement `loong chat`.
+- Implement `loong agent`.
 
 Success criteria:
 
 ```bash
-dragon chat "hello"
-dragon agent "summarize this repo"
-dragon agent "edit README and show diff"
+loong chat "hello"
+loong agent "summarize this repo"
+loong agent "edit README and show diff"
 ```
 
 ## Phase 2: Gateway Runtime
 
-Goal: turn Dragon from a CLI into a local agent runtime.
+Goal: turn Loong from a CLI into a local agent runtime.
 
 - Implement WebSocket/HTTP gateway.
 - Add handshake and health RPC.
 - Add agent run RPC.
 - Add event streaming.
 - Add session queue and per-session lane.
-- Add `dragon gateway`.
+- Add `loong gateway`.
 - Add simple local dashboard.
 
 Initial Gateway status:
@@ -77,7 +77,7 @@ Initial Gateway status:
   text deltas into existing Gateway SSE/WebSocket event streams.
 - `POST /rpc` implements `run.status`, `run.cancel`, and `runs.list`.
 - Per-session lane serialization implemented.
-- `dragon gateway` implemented.
+- `loong gateway` implemented.
 - Minimal local dashboard served at `/`.
 - Dashboard tools panel implemented for `tools.catalog` and conservative
   direct `tool.invoke` actions.
@@ -88,7 +88,7 @@ Initial Gateway status:
 
 ## Phase 3: Skills And Memory
 
-Goal: make Dragon improve from repeated use.
+Goal: make Loong improve from repeated use.
 
 - Implement `SKILL.md` loader.
 - Implement `/skills` command. Initial local CLI slash command is implemented
@@ -110,11 +110,11 @@ Goal: make Dragon improve from repeated use.
 
 ## Phase 4: Plugin And Provider Ecosystem
 
-Goal: make Dragon extensible without editing core.
+Goal: make Loong extensible without editing core.
 
 - Stabilize plugin SDK.
 - Add plugin discovery. Initial CLI/gateway discovery is implemented for
-  `.dragon/plugins`, `DRAGON_PLUGIN_ROOTS`, and `--plugin-root`.
+  `.loong/plugins`, `LOONG_PLUGIN_ROOTS`, and `--plugin-root`.
 - Add plugin observability. Initial gateway RPC and dashboard summary are
   implemented with `plugins.list`.
 - Add provider observability. Initial gateway RPC and dashboard summary are
@@ -124,27 +124,27 @@ Goal: make Dragon extensible without editing core.
   `tools.catalog` and conservative `tool.invoke` RPCs are implemented with a
   default direct allowlist for read-only Git inspection tools.
 - Add tool provider plugins. Initial read-only Git tools plugin is implemented
-  as `@dragon/plugin-git-tools`.
+  as `@loong/plugin-git-tools`.
 - Add model provider plugins.
 - Add OpenAI-compatible provider plugin example. Initial workspace package is
-  implemented as `@dragon/plugin-openai-compatible`.
+  implemented as `@loong/plugin-openai-compatible`.
 - Add OpenRouter-compatible provider plugin example. Initial workspace package
-  is implemented as `@dragon/plugin-openrouter-compatible`.
+  is implemented as `@loong/plugin-openrouter-compatible`.
 - Add Anthropic-compatible provider plugin example. Initial workspace package
-  is implemented as `@dragon/plugin-anthropic-compatible` with Messages API
+  is implemented as `@loong/plugin-anthropic-compatible` with Messages API
   tool-use translation.
 - Add memory backend plugins. Initial explicit-selection memory backend
-  registration is implemented with `DRAGON_MEMORY_BACKEND` / `--memory-backend`.
+  registration is implemented with `LOONG_MEMORY_BACKEND` / `--memory-backend`.
 - Add hook lifecycle. Initial read-only lifecycle hooks are implemented.
 - Migrate selected OpenClaw provider plugins.
 
 ## Phase 5: Multi-Surface Agent
 
-Goal: make Dragon available wherever the user works.
+Goal: make Loong available wherever the user works.
 
-- IDE integration is out of scope for the current Dragon plan.
+- IDE integration is out of scope for the current Loong plan.
 - Add selected chat channels. Initial authenticated Gateway webhook channel is
-  implemented at `POST /channels/webhook`. Initial `@dragon/channels`
+  implemented at `POST /channels/webhook`. Initial `@loong/channels`
   adapters normalize Telegram and Slack payloads into that Gateway surface, and
   a Gateway webhook delivery target can forward normalized messages from
   channel bridge workers.
@@ -153,18 +153,18 @@ Goal: make Dragon available wherever the user works.
   extraction. Initial `browser_form_submit` handles basic GET and URL-encoded
   POST HTML forms with same-origin protection by default.
 - Add Docker and SSH sandbox backends. Initial `sandbox_exec` support routes
-  Dragon's conservative read-only command allowlist through local, Docker, or
+  Loong's conservative read-only command allowlist through local, Docker, or
   SSH backends. Sandbox policy profiles are implemented for `versions`,
   `inspect`, `git-read`, `search-read`, and `repo-read`.
-- Add cron delivery targets. Initial `@dragon/cron` package implements
+- Add cron delivery targets. Initial `@loong/cron` package implements
   five-field schedule parsing, next-run calculation, file-backed job storage,
-  due-job runner controls, Gateway webhook delivery, and a `dragon cron`
+  due-job runner controls, Gateway webhook delivery, and a `loong cron`
   CLI entrypoint for once-off or long-running execution. Gateway exposes
   `cron.jobs.list`, `cron.job.upsert`, `cron.job.remove`, and `cron.tick`, and
-  `dragon gateway` starts a local cron runner backed by `.dragon/cron/jobs.json`.
-- Add multi-agent delegation. Initial `@dragon/delegation` package implements
+  `loong gateway` starts a local cron runner backed by `.loong/cron/jobs.json`.
+- Add multi-agent delegation. Initial `@loong/delegation` package implements
   task plan validation, dependency-aware concurrent execution, failure-aware
   skipping, cycle rejection, and runtime-backed worker execution through a
-  provided `DragonAgentRuntime`. The bounded `delegation_run` tool is wired
-  into `dragon agent` so the model can run independent or dependency-ordered
+  provided `LoongAgentRuntime`. The bounded `delegation_run` tool is wired
+  into `loong agent` so the model can run independent or dependency-ordered
   subtasks through the same runtime and permission engine.

@@ -31,14 +31,28 @@ export function readSingleHeader(request: IncomingMessage, name: string): string
   return value;
 }
 
+function isLoopbackHttpOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost");
+  } catch {
+    return false;
+  }
+}
+
 export function applyCors(request: IncomingMessage, response: ServerResponse): void {
-  const host = request.headers.host?.split(":")[0]?.toLowerCase();
-  const origin = host === "127.0.0.1"
-    ? "http://127.0.0.1"
-    : "http://localhost";
-  response.setHeader("access-control-allow-origin", origin);
+  const originHeader = request.headers.origin;
+  const origin = typeof originHeader === "string" ? originHeader : originHeader?.[0];
+  if (origin && isLoopbackHttpOrigin(origin)) {
+    response.setHeader("access-control-allow-origin", origin);
+  } else {
+    const host = request.headers.host?.split(":")[0]?.toLowerCase();
+    const fallback = host === "127.0.0.1" ? "http://127.0.0.1" : "http://localhost";
+    response.setHeader("access-control-allow-origin", fallback);
+  }
   response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-  response.setHeader("access-control-allow-headers", "content-type,authorization,x-dragon-secret");
+  response.setHeader("access-control-allow-headers", "content-type,authorization,x-loong-secret");
+  response.setHeader("vary", "Origin");
 }
 
 export async function readJsonBody(request: IncomingMessage): Promise<unknown> {

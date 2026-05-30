@@ -1,38 +1,38 @@
 export type {
-  DragonAttachment,
-  DragonAttachmentKind,
-  DragonAgentRuntime,
-  DragonTierHint,
-  DragonContextItem,
-  DragonContextProvider,
-  DragonContextRequest,
-  DragonEvent,
-  DragonLifecycleHook,
-  DragonLifecycleHookPhase,
-  DragonLifecycleHookRequest,
-  DragonMessage,
-  DragonPermissionEventPayload,
-  DragonPermissionHandler,
-  DragonPermissionRequest,
-  DragonPermissionResponse,
-  DragonSessionStore,
-  DragonSessionTurnRecord,
-  DragonSource,
-  DragonThinkingLevel,
-  DragonTrajectoryRecord,
-  DragonTrajectoryStore,
-  DragonTurnInput,
-  DragonTurnResult,
-  DragonUsage,
+  LoongAttachment,
+  LoongAttachmentKind,
+  LoongAgentRuntime,
+  LoongTierHint,
+  LoongContextItem,
+  LoongContextProvider,
+  LoongContextRequest,
+  LoongEvent,
+  LoongLifecycleHook,
+  LoongLifecycleHookPhase,
+  LoongLifecycleHookRequest,
+  LoongMessage,
+  LoongPermissionEventPayload,
+  LoongPermissionHandler,
+  LoongPermissionRequest,
+  LoongPermissionResponse,
+  LoongSessionStore,
+  LoongSessionTurnRecord,
+  LoongSource,
+  LoongThinkingLevel,
+  LoongTrajectoryRecord,
+  LoongTrajectoryStore,
+  LoongTurnInput,
+  LoongTurnResult,
+  LoongUsage,
 } from "./types.js";
 export {
-  DefaultDragonAgentRuntime,
-  createDragonRuntime,
-  type DragonRuntimeOptions,
+  DefaultLoongAgentRuntime,
+  createLoongRuntime,
+  type LoongRuntimeOptions,
 } from "./runtime.js";
 export {
   DEFAULT_MODEL_TIMEOUT_MS,
-  DragonModelTimeoutError,
+  LoongModelTimeoutError,
   createModelTurnAbort,
   resolveTurnFailureStatus,
   type ModelTurnAbortHandle,
@@ -43,9 +43,9 @@ export {
   decideTier,
   applyTierToInput,
   normalizeTierConfig,
-  type DragonTierName,
-  type DragonTierClassifierMode,
-  type DragonTierKeywordHint,
+  type LoongTierName,
+  type LoongTierClassifierMode,
+  type LoongTierKeywordHint,
   type ModelTierConfig,
   type ModelTierSpec,
   type ClassifierSignals,
@@ -63,6 +63,13 @@ export {
   canRunToolCallsInParallel,
   isParallelSafeTool,
 } from "./tool-parallel.js";
+export {
+  formatToolActivityDisplay,
+  type ToolActivityDisplay,
+} from "./tool-activity-display.js";
+export {
+  evaluateStudioWorkspaceScopePermission,
+} from "./studio-scope-permission.js";
 export {
   applyTurnPrep,
   buildTurnPrepOptions,
@@ -87,6 +94,7 @@ export {
 } from "./turn-cancel.js";
 export {
   prepareSessionHistoryForModel,
+  type SessionHistoryPrepOptions,
   type SessionHistoryPrepReport,
 } from "./session-history-prep.js";
 export {
@@ -101,10 +109,22 @@ export {
   resolveSessionCompactionForTurn,
 } from "./session-compaction-config.js";
 export {
+  DEFAULT_AI_SUMMARY_PROMPT,
+  summarizeOldTurnsWithAI,
+  type AISummarizationConfig,
+  type AISummarizationOptions,
+  type AISummarizationReport,
+} from "./ai-summarization.js";
+export {
+  mergeAiSummarizationLayers,
+  parseAiSummarizationValue,
+  resolveAiSummarizationForTurn,
+} from "./ai-summarization-config.js";
+export {
   findAgentProfile,
   mergeAgentProfileIntoTurnInput,
-  type DragonAgentConfigSnapshot,
-  type DragonAgentProfile,
+  type LoongAgentConfigSnapshot,
+  type LoongAgentProfile,
 } from "./agent-profile.js";
 export {
   DEFAULT_QUERY_LOOP_MAX_TURNS,

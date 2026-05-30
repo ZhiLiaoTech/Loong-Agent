@@ -1,9 +1,9 @@
-import type { DragonModelCapabilities, DragonModelCatalog, DragonModelStatus } from "@dragon/model-catalog";
+import type { LoongModelCapabilities, LoongModelCatalog, LoongModelStatus } from "@loong/model-catalog";
 import {
   applyModelCatalogToParams,
   createModelCatalogFromProviders,
   type ModelRefCarrier,
-} from "@dragon/model-catalog";
+} from "@loong/model-catalog";
 
 export interface GatewayProviderCatalogSource {
   id: string;
@@ -19,8 +19,8 @@ export interface GatewayProviderModelCatalogSource {
   aliases?: readonly string[];
   contextWindow?: number;
   maxOutputTokens?: number;
-  capabilities?: DragonModelCapabilities;
-  status?: DragonModelStatus;
+  capabilities?: LoongModelCapabilities;
+  status?: LoongModelStatus;
   default?: boolean;
 }
 
@@ -28,7 +28,7 @@ export type AgentParamsWithOptionalModel = ModelRefCarrier;
 
 export function createModelCatalogFromProviderSummaries(
   providers: readonly GatewayProviderCatalogSource[],
-): DragonModelCatalog {
+): LoongModelCatalog {
   return createModelCatalogFromProviders(providers);
 }
 

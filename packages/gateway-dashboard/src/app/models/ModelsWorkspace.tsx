@@ -1,72 +1,139 @@
-import { LoadedProvidersTable } from "./components/LoadedProvidersTable.js";
-import { ModelConfigTable } from "./components/ModelConfigTable.js";
-import { ModelProviderForm } from "./components/ModelProviderForm.js";
-import { TierConfigPanel } from "./components/TierConfigPanel.js";
+import { useCallback, useState } from "react";
+import { ModelProviderDrawer } from "./components/ModelProviderDrawer.js";
+import { ProviderCardList } from "./components/ProviderCardList.js";
+import { TierTab } from "./components/TierTab.js";
+import { useWorkbenchT } from "../i18n/WorkbenchI18nContext.js";
+import wb from "../workbench.module.css";
 import styles from "./ModelsWorkspace.module.css";
 import { useModelsPage } from "./useModelsPage.js";
 import { useTiersPage } from "./useTiersPage.js";
 
+type ModelsTab = "providers" | "tiers";
+
 export function ModelsWorkspace() {
+  const t = useWorkbenchT();
   const page = useModelsPage();
   const tiers = useTiersPage();
+  const [activeTab, setActiveTab] = useState<ModelsTab>("providers");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<"add" | "edit">("add");
+
+  const openAddDrawer = useCallback(() => {
+    page.clearForm();
+    setDrawerMode("add");
+    setDrawerOpen(true);
+  }, [page]);
+
+  const openEditDrawer = useCallback(
+    (id: string) => {
+      page.editProvider(id);
+      setDrawerMode("edit");
+      setDrawerOpen(true);
+    },
+    [page],
+  );
+
+  const closeDrawer = useCallback(() => {
+    if (page.saving) {
+      return;
+    }
+    setDrawerOpen(false);
+    page.clearForm();
+  }, [page]);
+
+  const handleSaveProvider = useCallback(async () => {
+    try {
+      await page.upsertDraft();
+      setDrawerOpen(false);
+    } catch {
+      // error surfaced via page.error
+    }
+  }, [page]);
 
   return (
-    <div className={styles.workspace}>
-      <header className={styles.header}>
+    <div className={wb.page}>
+      <header className={wb.pageHeader}>
         <div>
-          <h2 className={styles.title}>Models</h2>
-          <p className={styles.lead}>
-            Configure provider credentials. Add, update, or remove providers to save to disk;
-            the Gateway reloads providers on save when hot reload is enabled.
-          </p>
+          <h1 className={wb.pageTitle}>{t("models.title")}</h1>
+          <p className={wb.pageLead}>{t("models.lead")}</p>
         </div>
-        <div className={styles.headerActions}>
+        <div className={wb.pageHeaderActions}>
           <button
             type="button"
-            className={styles.secondary}
+            className={wb.btnSecondary}
             onClick={() => void page.load()}
-            disabled={page.loading}
+            disabled={page.loading || page.saving}
           >
-            Refresh
-          </button>
-          <button
-            type="button"
-            className={styles.primary}
-            onClick={() => void page.saveConfig()}
-            disabled={page.saving || page.loading}
-          >
-            {page.saving ? "Saving…" : "Save"}
+            {t("common.refresh")}
           </button>
         </div>
       </header>
 
-      {page.error ? <p className={styles.error}>{page.error}</p> : null}
-      {page.status ? <p className={styles.status}>{page.status}</p> : null}
+      {page.error || page.status ? (
+        <div className={wb.pageAlerts}>
+          {page.error ? <p className={wb.bannerError}>{page.error}</p> : null}
+          {page.status ? <p className={wb.bannerOk}>{page.status}</p> : null}
+        </div>
+      ) : null}
 
-      <div className={styles.grid}>
-        <ModelProviderForm
-          form={page.form}
-          onChange={patch => page.setForm(current => ({ ...current, ...patch }))}
-          onUpsert={page.upsertDraft}
-          onClear={page.clearForm}
-        />
-        <ModelConfigTable
-          providers={page.modelConfig.providers}
-          {...(page.modelConfig.configPath
-            ? { configPath: page.modelConfig.configPath }
-            : {})}
-          onEdit={page.editProvider}
-          onRemove={id => void page.removeProvider(id)}
-        />
+      <div className={styles.tabs} role="tablist" aria-label={t("models.title")}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "providers"}
+          className={activeTab === "providers" ? `${styles.tab} ${styles.tabActive}` : styles.tab}
+          onClick={() => setActiveTab("providers")}
+        >
+          {t("models.tabProviders")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "tiers"}
+          className={activeTab === "tiers" ? `${styles.tab} ${styles.tabActive}` : styles.tab}
+          onClick={() => setActiveTab("tiers")}
+        >
+          {t("models.tabTiers")}
+        </button>
       </div>
 
-      <LoadedProvidersTable
-        providers={page.liveProviders}
-        loading={page.loading}
-        onRefresh={() => void page.load()}
-      />
+      {activeTab === "providers" ? (
+        <section className={styles.tabPanel} role="tabpanel">
+          <div className={styles.panelToolbar}>
+            <div className={styles.panelToolbarCopy}>
+              <h2 className={styles.panelToolbarTitle}>
+                {t("models.configTableTitle")} ({page.modelConfig.providers.length})
+              </h2>
+            </div>
+            <div className={styles.panelToolbarActions}>
+              <button type="button" className={wb.btnPrimary} onClick={openAddDrawer}>
+                {t("models.addProvider")}
+              </button>
+            </div>
+          </div>
 
-      <TierConfigPanel page={tiers} />
+          <ProviderCardList
+            providers={page.modelConfig.providers}
+            onAdd={openAddDrawer}
+            onEdit={openEditDrawer}
+            onRemove={id => void page.removeProvider(id)}
+          />
+        </section>
+      ) : (
+        <section className={styles.tabPanel} role="tabpanel">
+          <TierTab page={tiers} providers={page.modelConfig.providers} />
+        </section>
+      )}
+
+      <ModelProviderDrawer
+        open={drawerOpen}
+        mode={drawerMode}
+        form={page.form}
+        saving={page.saving}
+        onChange={patch => page.setForm(current => ({ ...current, ...patch }))}
+        onClose={closeDrawer}
+        onSave={() => void handleSaveProvider()}
+      />
     </div>
   );
 }

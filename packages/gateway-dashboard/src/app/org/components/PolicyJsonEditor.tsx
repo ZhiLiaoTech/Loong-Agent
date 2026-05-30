@@ -28,7 +28,7 @@ export function PolicyJsonEditor({
           </button>
         </div>
       </div>
-      <p className={styles.hint}>编辑 `policies` 数组后保存，将写入 `.dragon/org/policies/tool-policies.json`。</p>
+      <p className={styles.hint}>编辑 `policies` 数组后保存，将写入 `.loong/org/policies/tool-policies.json`。</p>
       <textarea
         className={styles.textarea}
         value={jsonText}

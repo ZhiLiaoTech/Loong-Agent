@@ -2,15 +2,16 @@ import { existsSync, statSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  createDragonRuntime,
+  createLoongRuntime,
   mergeSessionCompactionLayers,
+  parseAiSummarizationValue,
   parseSessionCompactionValue,
   normalizeTierConfig,
-  type DragonAgentRuntime,
-  type DragonLifecycleHook,
-  type DragonPermissionHandler,
+  type LoongAgentRuntime,
+  type LoongLifecycleHook,
+  type LoongPermissionHandler,
   type ModelTierConfig,
-} from "@dragon/core";
+} from "@loong/core";
 import {
   loadGatewaySettingsFile,
   mergeGatewayConfigFromFile,
@@ -19,15 +20,15 @@ import {
   parseModelTimeoutSecArg,
   resolveModelTimeoutMs,
 } from "./gateway-settings.js";
-import { dragonConfigDir, resolveDragonDataRoot } from "./dragon-paths.js";
+import { loongConfigDir, resolveLoongDataRoot } from "./loong-paths.js";
 import { parsePort } from "./parse-cli-args.js";
 import { bootstrapAgentToolRegistry } from "./bootstrap-agent-tool-registry.js";
 import { loadContextConfig } from "./context-config.js";
-import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
+import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@loong/cron";
 import {
   createToolRegistry,
   type ToolRegistry,
-} from "@dragon/tools";
+} from "@loong/tools";
 import {
   createFileApprovalStore,
   createFileEmployeeStore,
@@ -46,7 +47,7 @@ import {
   evaluateOrgAwarePermission,
   type EmployeeStore,
   type ToolPolicyStore,
-} from "@dragon/org";
+} from "@loong/org";
 import {
   createHttpGateway,
   type GatewayAgentConfig,
@@ -63,7 +64,7 @@ import {
   type GatewayTierConfig,
   type GatewayTierConfigSaveParams,
   type GatewayTierConfigStore,
-} from "@dragon/gateway";
+} from "@loong/gateway";
 import {
   createFileMemoryStore,
   createFileSessionStore,
@@ -77,13 +78,13 @@ import {
   type MemorySearchResult,
   type MemoryStore,
   type TrajectoryStore,
-} from "@dragon/memory";
-import { loadDragonPlugin, type DragonPluginMemoryBackend, type LoadedDragonPlugin } from "@dragon/plugin-sdk";
+} from "@loong/memory";
+import { loadLoongPlugin, type LoongPluginMemoryBackend, type LoadedLoongPlugin } from "@loong/plugin-sdk";
 import {
   catalogEntriesFromProviders,
   createModelCatalog,
-  type DragonModelCatalog,
-} from "@dragon/model-catalog";
+  type LoongModelCatalog,
+} from "@loong/model-catalog";
 import {
   createAnthropicProvider,
   createAnthropicProviderFromEnv,
@@ -91,9 +92,9 @@ import {
   createOpenAICompatibleProviderFromEnv,
   createProviderRegistry,
   type ModelProvider,
-} from "@dragon/providers";
-import { DEFAULT_REDACTION } from "@dragon/security";
-import { createFileSkillRuntime, createSkillTools, type LoadedSkill, type SkillSummary } from "@dragon/skills";
+} from "@loong/providers";
+import { DEFAULT_REDACTION } from "@loong/security";
+import { createFileSkillRuntime, createSkillTools, type LoadedSkill, type SkillSummary } from "@loong/skills";
 import {
   createFilePatchTool,
   createBrowserFormSubmitTool,
@@ -107,7 +108,7 @@ import {
   type ToolDefinition,
   type ToolPermissionEngine,
   type ToolPermissionRule,
-} from "@dragon/tools";
+} from "@loong/tools";
 
 export async function createBuiltinProviders(): Promise<{ providers: ModelProvider[]; defaultProviderId?: string }> {
   const modelConfigPath = configuredModelConfigPath();
@@ -156,9 +157,9 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
   const fileSettings = await loadGatewaySettingsFile();
   let modelTimeoutMsCli: number | undefined;
   let config: GatewayConfig = mergeGatewayConfigFromFile({}, fileSettings);
-  const envHost = process.env.DRAGON_GATEWAY_HOST?.trim();
-  const envPort = process.env.DRAGON_GATEWAY_PORT?.trim();
-  const envSecret = process.env.DRAGON_GATEWAY_SECRET?.trim();
+  const envHost = process.env.LOONG_GATEWAY_HOST?.trim();
+  const envPort = process.env.LOONG_GATEWAY_PORT?.trim();
+  const envSecret = process.env.LOONG_GATEWAY_SECRET?.trim();
   if (envHost) {
     config.host = envHost;
   }
@@ -171,11 +172,11 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
   }
 
   let allowWrite = false;
-  const dataRoot = resolveDragonDataRoot();
-  let sessionDir = process.env.DRAGON_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
-  let memoryDir = process.env.DRAGON_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");
-  let cronJobsFile = process.env.DRAGON_CRON_JOBS?.trim() || path.join(dataRoot, "cron", "jobs.json");
-  let memoryBackendId = process.env.DRAGON_MEMORY_BACKEND?.trim() || undefined;
+  const dataRoot = resolveLoongDataRoot();
+  let sessionDir = process.env.LOONG_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
+  let memoryDir = process.env.LOONG_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");
+  let cronJobsFile = process.env.LOONG_CRON_JOBS?.trim() || path.join(dataRoot, "cron", "jobs.json");
+  let memoryBackendId = process.env.LOONG_MEMORY_BACKEND?.trim() || undefined;
   const defaultSkillRoots = configuredSkillRoots();
   const skillRoots: string[] = [];
   const pluginRoots = configuredPluginRoots();
@@ -189,7 +190,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--host") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --host <host>");
+        throw new Error("Usage: loong gateway --host <host>");
       }
       config.host = value;
       index += 1;
@@ -198,7 +199,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--host=")) {
       const value = arg.slice("--host=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --host=<host>");
+        throw new Error("Usage: loong gateway --host=<host>");
       }
       config.host = value;
       continue;
@@ -206,7 +207,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--port") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --port <port>");
+        throw new Error("Usage: loong gateway --port <port>");
       }
       config.port = parsePort(value);
       index += 1;
@@ -219,7 +220,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--secret") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --secret <value>");
+        throw new Error("Usage: loong gateway --secret <value>");
       }
       config.authMode = "shared-secret";
       config.sharedSecret = value;
@@ -229,7 +230,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--secret=")) {
       const value = arg.slice("--secret=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --secret=<value>");
+        throw new Error("Usage: loong gateway --secret=<value>");
       }
       config.authMode = "shared-secret";
       config.sharedSecret = value;
@@ -238,7 +239,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--session-dir") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --session-dir <path>");
+        throw new Error("Usage: loong gateway --session-dir <path>");
       }
       sessionDir = path.resolve(value);
       index += 1;
@@ -247,7 +248,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--session-dir=")) {
       const value = arg.slice("--session-dir=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --session-dir=<path>");
+        throw new Error("Usage: loong gateway --session-dir=<path>");
       }
       sessionDir = path.resolve(value);
       continue;
@@ -255,7 +256,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--memory-dir") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --memory-dir <path>");
+        throw new Error("Usage: loong gateway --memory-dir <path>");
       }
       memoryDir = path.resolve(value);
       index += 1;
@@ -264,7 +265,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--memory-dir=")) {
       const value = arg.slice("--memory-dir=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --memory-dir=<path>");
+        throw new Error("Usage: loong gateway --memory-dir=<path>");
       }
       memoryDir = path.resolve(value);
       continue;
@@ -272,7 +273,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--memory-backend") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --memory-backend <id>");
+        throw new Error("Usage: loong gateway --memory-backend <id>");
       }
       memoryBackendId = value;
       index += 1;
@@ -281,7 +282,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--memory-backend=")) {
       const value = arg.slice("--memory-backend=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --memory-backend=<id>");
+        throw new Error("Usage: loong gateway --memory-backend=<id>");
       }
       memoryBackendId = value;
       continue;
@@ -289,7 +290,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--cron-jobs") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --cron-jobs <path>");
+        throw new Error("Usage: loong gateway --cron-jobs <path>");
       }
       cronJobsFile = path.resolve(value);
       index += 1;
@@ -298,7 +299,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--cron-jobs=")) {
       const value = arg.slice("--cron-jobs=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --cron-jobs=<path>");
+        throw new Error("Usage: loong gateway --cron-jobs=<path>");
       }
       cronJobsFile = path.resolve(value);
       continue;
@@ -306,7 +307,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--skill-root") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --skill-root <path>");
+        throw new Error("Usage: loong gateway --skill-root <path>");
       }
       skillRoots.push(resolveSkillRoot(value));
       index += 1;
@@ -315,7 +316,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--skill-root=")) {
       const value = arg.slice("--skill-root=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --skill-root=<path>");
+        throw new Error("Usage: loong gateway --skill-root=<path>");
       }
       skillRoots.push(resolveSkillRoot(value));
       continue;
@@ -323,7 +324,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--plugin-root") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --plugin-root <path>");
+        throw new Error("Usage: loong gateway --plugin-root <path>");
       }
       pluginRoots.push(resolveExistingPluginRoot(value));
       index += 1;
@@ -332,7 +333,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--plugin-root=")) {
       const value = arg.slice("--plugin-root=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --plugin-root=<path>");
+        throw new Error("Usage: loong gateway --plugin-root=<path>");
       }
       pluginRoots.push(resolveExistingPluginRoot(value));
       continue;
@@ -340,7 +341,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--model-timeout-ms") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --model-timeout-ms <milliseconds>");
+        throw new Error("Usage: loong gateway --model-timeout-ms <milliseconds>");
       }
       modelTimeoutMsCli = parseModelTimeoutMsArg(value, "--model-timeout-ms");
       index += 1;
@@ -349,7 +350,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--model-timeout-ms=")) {
       const value = arg.slice("--model-timeout-ms=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --model-timeout-ms=<milliseconds>");
+        throw new Error("Usage: loong gateway --model-timeout-ms=<milliseconds>");
       }
       modelTimeoutMsCli = parseModelTimeoutMsArg(value, "--model-timeout-ms");
       continue;
@@ -357,7 +358,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg === "--model-timeout-sec") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --model-timeout-sec <seconds>");
+        throw new Error("Usage: loong gateway --model-timeout-sec <seconds>");
       }
       modelTimeoutMsCli = parseModelTimeoutSecArg(value, "--model-timeout-sec");
       index += 1;
@@ -366,7 +367,7 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
     if (arg?.startsWith("--model-timeout-sec=")) {
       const value = arg.slice("--model-timeout-sec=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon gateway --model-timeout-sec=<seconds>");
+        throw new Error("Usage: loong gateway --model-timeout-sec=<seconds>");
       }
       modelTimeoutMsCli = parseModelTimeoutSecArg(value, "--model-timeout-sec");
       continue;
@@ -395,13 +396,13 @@ async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
 }
 
 export function configuredModelConfigPath(): string {
-  const configured = process.env.DRAGON_MODEL_CONFIG?.trim();
-  return path.resolve(configured || path.join(dragonConfigDir(), "providers.json"));
+  const configured = process.env.LOONG_MODEL_CONFIG?.trim();
+  return path.resolve(configured || path.join(loongConfigDir(), "providers.json"));
 }
 
 export function configuredTierConfigPath(): string {
-  const configured = process.env.DRAGON_TIER_CONFIG?.trim();
-  return path.resolve(configured || path.join(dragonConfigDir(), "tiers.json"));
+  const configured = process.env.LOONG_TIER_CONFIG?.trim();
+  return path.resolve(configured || path.join(loongConfigDir(), "tiers.json"));
 }
 
 export function createModelConfigStore(filePath: string): GatewayModelConfigStore {
@@ -718,8 +719,8 @@ function readModelProviderType(value: unknown, source: string): GatewayModelProv
 }
 
 export function configuredAgentConfigPath(): string {
-  const configured = process.env.DRAGON_AGENT_CONFIG?.trim();
-  return path.resolve(configured || path.join(dragonConfigDir(), "agents.json"));
+  const configured = process.env.LOONG_AGENT_CONFIG?.trim();
+  return path.resolve(configured || path.join(loongConfigDir(), "agents.json"));
 }
 
 export function createAgentConfigStore(filePath: string): GatewayAgentConfigStore {
@@ -766,6 +767,7 @@ async function savePersistedAgentConfig(
     profiles,
     ...(defaultProfileId ? { defaultProfileId } : {}),
     ...(config.sessionCompaction !== undefined ? { sessionCompaction: config.sessionCompaction } : {}),
+    ...(config.aiSummarization !== undefined ? { aiSummarization: config.aiSummarization } : {}),
   };
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
@@ -789,6 +791,10 @@ function normalizePersistedAgentConfig(value: unknown, source: string): GatewayA
   const rootCompaction = parseSessionCompactionValue(value.sessionCompaction);
   if (rootCompaction !== undefined) {
     config.sessionCompaction = rootCompaction;
+  }
+  const rootAiSummarization = parseAiSummarizationValue(value.aiSummarization);
+  if (rootAiSummarization !== undefined) {
+    config.aiSummarization = rootAiSummarization;
   }
   return config;
 }
@@ -816,6 +822,10 @@ function normalizePersistedAgentProfile(value: unknown, index: number, source: s
   if (profileCompaction !== undefined) {
     profile.sessionCompaction = profileCompaction;
   }
+  const profileAiSummarization = parseAiSummarizationValue(value.aiSummarization);
+  if (profileAiSummarization !== undefined) {
+    profile.aiSummarization = profileAiSummarization;
+  }
   return profile;
 }
 
@@ -824,6 +834,7 @@ function toSafeAgentConfig(config: GatewayAgentConfigSaveParams, filePath: strin
     profiles: config.profiles.map(profile => ({ ...profile })),
     ...(config.defaultProfileId !== undefined ? { defaultProfileId: config.defaultProfileId } : {}),
     ...(config.sessionCompaction !== undefined ? { sessionCompaction: config.sessionCompaction } : {}),
+    ...(config.aiSummarization !== undefined ? { aiSummarization: config.aiSummarization } : {}),
     configPath: filePath,
   };
 }
@@ -892,7 +903,7 @@ export function parseSkillsSlashCommand(message: string): SkillsSlashCommand | u
   if (rest.startsWith("load ")) {
     const name = rest.slice("load ".length).trim();
     if (!name) {
-      throw new Error("Usage: dragon agent /skills load <name>");
+      throw new Error("Usage: loong agent /skills load <name>");
     }
     return { action: "load", name };
   }
@@ -924,7 +935,7 @@ export async function runSkillsSlashCommand(skillRoots: string[], command: Skill
 
 function formatSkillList(skills: SkillSummary[], query: string | undefined, skillRoots: string[]): string {
   const lines = [
-    query ? `Dragon skills matching "${query}":` : "Dragon skills:",
+    query ? `Loong skills matching "${query}":` : "Loong skills:",
   ];
   if (skills.length === 0) {
     lines.push("No skills found.");
@@ -961,8 +972,8 @@ function formatLoadedSkill(skill: LoadedSkill): string {
 }
 
 export function configuredSkillRoots(): string[] {
-  const envRoots = parseRootList(process.env.DRAGON_SKILL_ROOTS);
-  const defaultRoot = path.join(resolveDragonDataRoot(), "skills");
+  const envRoots = parseRootList(process.env.LOONG_SKILL_ROOTS);
+  const defaultRoot = path.join(resolveLoongDataRoot(), "skills");
   if (envRoots.length > 0) {
     return [...envRoots.map(resolveSkillRoot), path.resolve(defaultRoot)];
   }
@@ -970,16 +981,15 @@ export function configuredSkillRoots(): string[] {
 }
 
 export function configuredPluginRoots(): string[] {
-  const envRoots = parseRootList(process.env.DRAGON_PLUGIN_ROOTS);
+  const envRoots = parseRootList(process.env.LOONG_PLUGIN_ROOTS);
+  const defaultRoot = path.join(resolveLoongDataRoot(), "plugins");
   if (envRoots.length > 0) {
-    return envRoots.map(resolveExistingPluginRoot);
+    return [...envRoots.map(resolveExistingPluginRoot), path.resolve(defaultRoot)];
   }
-
-  const defaultRoot = path.join(resolveDragonDataRoot(), "plugins");
-  return existsSync(defaultRoot) && isExistingDirectory(defaultRoot) ? [path.resolve(defaultRoot)] : [];
+  return [path.resolve(defaultRoot)];
 }
 
-export { resolveDragonDataRoot } from "./dragon-paths.js";
+export { resolveLoongDataRoot } from "./loong-paths.js";
 
 function parseRootList(value: string | undefined): string[] {
   const trimmed = value?.trim();
@@ -1032,7 +1042,7 @@ export function uniquePaths(values: string[]): string[] {
 }
 
 
-export function summarizeLoadedPlugins(plugins: LoadedDragonPlugin[]): GatewayPluginSummary[] {
+export function summarizeLoadedPlugins(plugins: LoadedLoongPlugin[]): GatewayPluginSummary[] {
   return plugins.map(plugin => {
     const summary: GatewayPluginSummary = {
       name: plugin.manifest.name,
@@ -1061,8 +1071,8 @@ export function summarizeLoadedPlugins(plugins: LoadedDragonPlugin[]): GatewayPl
     if (plugin.manifest.description !== undefined) {
       summary.description = plugin.manifest.description;
     }
-    if (plugin.manifest.dragonVersion !== undefined) {
-      summary.dragonVersion = plugin.manifest.dragonVersion;
+    if (plugin.manifest.loongVersion !== undefined) {
+      summary.loongVersion = plugin.manifest.loongVersion;
     }
     return summary;
   });

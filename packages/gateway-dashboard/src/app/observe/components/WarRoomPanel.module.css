@@ -1,0 +1,107 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border-left: 1px solid var(--loong-border, #232333);
+  background: var(--loong-surface-1, #101018);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--loong-border, #232333);
+}
+
+.title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--loong-text, #eaeaf2);
+}
+
+.count {
+  font-size: 12px;
+  color: var(--loong-text-muted, #4a4a60);
+}
+
+.muted {
+  margin: 0;
+  padding: 16px;
+  font-size: 12px;
+  color: var(--loong-text-secondary, #a0a0b8);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.item {
+  border-left: 3px solid var(--loong-border, #232333);
+  padding-left: 10px;
+  font-size: 12px;
+}
+
+.type-lifecycle { border-left-color: #3b82f6; }
+.type-assistant_delta,
+.type-assistant_replace { border-left-color: var(--loong-success, #34d399); }
+.type-tool { border-left-color: #8b5cf6; }
+.type-permission { border-left-color: #f59e0b; }
+.type-context { border-left-color: #64748b; }
+.type-context-ai_summarization { border-left-color: #06b6d4; }
+.type-context-session_message_compaction { border-left-color: #a855f7; }
+.type-context-session_history_prep,
+.type-context-turn_prep { border-left-color: #f97316; }
+
+.itemHighlighted {
+  background: color-mix(in srgb, var(--loong-accent-light, #a89eff) 10%, transparent);
+  border-radius: 6px;
+  margin-left: -6px;
+  padding: 6px 6px 6px 10px;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.label {
+  font-weight: 600;
+  color: var(--loong-text, #eaeaf2);
+}
+
+.time {
+  flex-shrink: 0;
+  color: var(--loong-text-muted, #4a4a60);
+  font-size: 11px;
+}
+
+.meta {
+  margin-top: 2px;
+  color: var(--loong-text-muted, #4a4a60);
+  font-size: 11px;
+}
+
+.detail {
+  margin: 6px 0 0;
+  padding: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--loong-text-secondary, #a0a0b8);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.45;
+}

@@ -1,4 +1,4 @@
-import type { DragonContextProvider } from "@dragon/core";
+import type { LoongContextProvider } from "@loong/core";
 import { ABSOLUTE_MEMORY_SEARCH_LIMIT, summarizeMemoryResults } from "./memory-record-helpers.js";
 import type { MemoryStore } from "./memory-record-types.js";
 import { clampPositiveInteger } from "./memory-util.js";
@@ -13,7 +13,7 @@ export interface MemoryContextProviderOptions {
   maxContentChars?: number;
 }
 
-export function createMemoryContextProvider(options: MemoryContextProviderOptions): DragonContextProvider {
+export function createMemoryContextProvider(options: MemoryContextProviderOptions): LoongContextProvider {
   const limit = clampPositiveInteger(
     options.limit,
     DEFAULT_MEMORY_CONTEXT_LIMIT,

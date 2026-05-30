@@ -1,8 +1,8 @@
-export type DragonSource = "cli" | "gateway" | "web" | "ide" | "cron" | "api";
+export type LoongSource = "cli" | "gateway" | "web" | "ide" | "cron" | "api";
 
-export type DragonThinkingLevel = "none" | "low" | "medium" | "high";
+export type LoongThinkingLevel = "none" | "low" | "medium" | "high";
 
-export type DragonAttachmentKind = "image" | "text" | "document" | "binary";
+export type LoongAttachmentKind = "image" | "text" | "document" | "binary";
 
 /**
  * A single attachment carried in a turn input. The runtime resolves text
@@ -13,14 +13,14 @@ export type DragonAttachmentKind = "image" | "text" | "document" | "binary";
  *
  * `data` is always base64-encoded.
  */
-export interface DragonAttachment {
+export interface LoongAttachment {
   /**
-   * `image`    â†’ forwarded to the provider as multimodal image content
-   * `text`     â†’ decoded as UTF-8 and inlined into the user prompt
-   * `document` â†’ extracted to text (mammoth/pdfjs/xlsx/jszip-pptx) and inlined
-   * `binary`   â†’ reserved for future use; currently rejected
+   * `image`    â†?forwarded to the provider as multimodal image content
+   * `text`     â†?decoded as UTF-8 and inlined into the user prompt
+   * `document` â†?extracted to text (mammoth/pdfjs/xlsx/jszip-pptx) and inlined
+   * `binary`   â†?reserved for future use; currently rejected
    */
-  kind: DragonAttachmentKind;
+  kind: LoongAttachmentKind;
   mimeType: string;
   /** base64-encoded bytes */
   data: string;
@@ -30,17 +30,17 @@ export interface DragonAttachment {
   size?: number;
 }
 
-export type DragonTierHint = "fast" | "standard" | "deep";
+export type LoongTierHint = "fast" | "standard" | "deep";
 
-export interface DragonTurnInput {
+export interface LoongTurnInput {
   sessionId: string;
   message: string;
-  source: DragonSource;
-  history?: DragonMessage[];
+  source: LoongSource;
+  history?: LoongMessage[];
   workspace?: string;
   model?: string;
   modelFallbacks?: string[];
-  thinking?: DragonThinkingLevel;
+  thinking?: LoongThinkingLevel;
   /** When false, model tool calling is disabled for this turn. */
   toolsEnabled?: boolean;
   /** When false, memory-related context providers are skipped. */
@@ -48,9 +48,9 @@ export interface DragonTurnInput {
   /** Appended to the runtime system prompt for this turn. */
   systemPrompt?: string;
   /** Optional file/image attachments. The runtime validates and resolves them. */
-  attachments?: readonly DragonAttachment[];
+  attachments?: readonly LoongAttachment[];
   /** Caller-forced tier. Bypasses the heuristic classifier entirely. */
-  tier?: DragonTierHint;
+  tier?: LoongTierHint;
   /**
    * When true (default for Gateway when query loop is enabled), a turn that hits
    * the tool-iteration cap may request an automatic continuation turn.
@@ -60,7 +60,7 @@ export interface DragonTurnInput {
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonMessage {
+export interface LoongMessage {
   id: string;
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -68,110 +68,110 @@ export interface DragonMessage {
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonUsage {
+export interface LoongUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
   costUsd?: number;
 }
 
-export interface DragonTurnResult {
+export interface LoongTurnResult {
   runId: string;
   status: "ok" | "error" | "cancelled" | "timeout";
-  messages: DragonMessage[];
-  usage?: DragonUsage;
+  messages: LoongMessage[];
+  usage?: LoongUsage;
   error?: string;
 }
 
-export interface DragonSessionTurnRecord {
+export interface LoongSessionTurnRecord {
   sessionId: string;
   runId: string;
-  source: DragonSource;
+  source: LoongSource;
   createdAt: string;
-  status: DragonTurnResult["status"];
-  messages: DragonMessage[];
+  status: LoongTurnResult["status"];
+  messages: LoongMessage[];
   workspace?: string;
-  usage?: DragonUsage;
+  usage?: LoongUsage;
   error?: string;
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonSessionStore {
-  loadMessages(sessionId: string): Promise<DragonMessage[]>;
-  appendTurn(record: DragonSessionTurnRecord): Promise<void>;
+export interface LoongSessionStore {
+  loadMessages(sessionId: string): Promise<LoongMessage[]>;
+  appendTurn(record: LoongSessionTurnRecord): Promise<void>;
 }
 
-export interface DragonTrajectoryRecord {
+export interface LoongTrajectoryRecord {
   runId: string;
   sessionId: string;
-  source: DragonSource;
+  source: LoongSource;
   createdAt: string;
   completedAt: string;
-  status: DragonTurnResult["status"];
+  status: LoongTurnResult["status"];
   userMessage: string;
   assistantMessage?: string;
   workspace?: string;
   model?: string;
-  usage?: DragonUsage;
+  usage?: LoongUsage;
   error?: string;
-  events: DragonEvent[];
+  events: LoongEvent[];
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonTrajectoryStore {
-  append(record: DragonTrajectoryRecord): Promise<void>;
+export interface LoongTrajectoryStore {
+  append(record: LoongTrajectoryRecord): Promise<void>;
 }
 
-export interface DragonContextItem {
+export interface LoongContextItem {
   title?: string;
   content: string;
   priority?: number;
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonContextRequest {
-  input: DragonTurnInput;
-  history: DragonMessage[];
+export interface LoongContextRequest {
+  input: LoongTurnInput;
+  history: LoongMessage[];
   runId: string;
   createdAt: string;
 }
 
-export interface DragonContextProvider {
+export interface LoongContextProvider {
   name: string;
-  buildContext(request: DragonContextRequest): Promise<DragonContextItem[]>;
+  buildContext(request: LoongContextRequest): Promise<LoongContextItem[]>;
 }
 
-export type DragonLifecycleHookPhase = "start" | "end" | "error" | "cancelled";
+export type LoongLifecycleHookPhase = "start" | "end" | "error" | "cancelled";
 
-export interface DragonLifecycleHookRequest {
-  phase: DragonLifecycleHookPhase;
+export interface LoongLifecycleHookRequest {
+  phase: LoongLifecycleHookPhase;
   runId: string;
   sessionId: string;
-  source: DragonSource;
+  source: LoongSource;
   createdAt: string;
   completedAt?: string;
   workspace?: string;
   model?: string;
-  status?: DragonTurnResult["status"];
+  status?: LoongTurnResult["status"];
   userMessage?: string;
   assistantMessage?: string;
   error?: string;
-  usage?: DragonUsage;
+  usage?: LoongUsage;
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonLifecycleHook {
+export interface LoongLifecycleHook {
   /**
-   * Lifecycle hooks run in the Dragon process. Keep synchronous work small:
+   * Lifecycle hooks run in the Loong process. Keep synchronous work small:
    * the runtime isolates thrown errors, rejected promises, and async hooks that
    * do not settle in time, but JavaScript cannot preempt CPU-bound synchronous
    * hook code on the same event loop.
    */
   name: string;
-  onLifecycle(request: Readonly<DragonLifecycleHookRequest>): Promise<void> | void;
+  onLifecycle(request: Readonly<LoongLifecycleHookRequest>): Promise<void> | void;
 }
 
-export interface DragonPermissionRequest {
+export interface LoongPermissionRequest {
   runId: string;
   toolCallId: string;
   toolName: string;
@@ -183,17 +183,17 @@ export interface DragonPermissionRequest {
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonPermissionResponse {
+export interface LoongPermissionResponse {
   decision: "allow" | "deny";
   reason?: string;
   metadata?: Record<string, unknown>;
 }
 
-export type DragonPermissionHandler = (
-  request: DragonPermissionRequest,
-) => Promise<DragonPermissionResponse | "allow" | "deny">;
+export type LoongPermissionHandler = (
+  request: LoongPermissionRequest,
+) => Promise<LoongPermissionResponse | "allow" | "deny">;
 
-export interface DragonPermissionEventPayload {
+export interface LoongPermissionEventPayload {
   toolCallId: string;
   toolName: string;
   reason?: string;
@@ -205,7 +205,7 @@ export interface DragonPermissionEventPayload {
   metadata?: Record<string, unknown>;
 }
 
-export type DragonEvent =
+export type LoongEvent =
   | {
       type: "lifecycle";
       phase: "start" | "end" | "error" | "cancelled";
@@ -221,7 +221,7 @@ export type DragonEvent =
       toolName: string;
       toolCallId: string;
       phase: "request" | "resolved";
-      payload: DragonPermissionEventPayload;
+      payload: LoongPermissionEventPayload;
     }
   | {
       type: "context";
@@ -232,11 +232,11 @@ export type DragonEvent =
     }
   | { type: "tool"; runId: string; toolName: string; phase: "start" | "update" | "end"; payload?: unknown };
 
-export interface DragonAgentRuntime {
-  runTurn(input: DragonTurnInput): Promise<DragonTurnResult>;
-  subscribe(listener: (event: DragonEvent) => void): () => void;
+export interface LoongAgentRuntime {
+  runTurn(input: LoongTurnInput): Promise<LoongTurnResult>;
+  subscribe(listener: (event: LoongEvent) => void): () => void;
   /** Hot-swap tier scheduling for subsequent turns (optional on concrete runtimes). */
   setTierConfig?(config: import("./tiers.js").ModelTierConfig | undefined): void;
   /** Hot-swap model providers for subsequent turns (optional on concrete runtimes). */
-  setProviderRegistry?(registry: import("@dragon/providers").ProviderRegistry): void;
+  setProviderRegistry?(registry: import("@loong/providers").ProviderRegistry): void;
 }

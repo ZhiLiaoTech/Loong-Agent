@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 const DEFAULT_PORT = 18787;
-const DEFAULT_SECRET = "dragon-smoke-secret";
+const DEFAULT_SECRET = "loong-smoke-secret";
 const START_TIMEOUT_MS = 15_000;
 
 interface SmokeTarget {
@@ -23,15 +23,15 @@ async function main(): Promise<void> {
     await assertHealth(target);
     await assertRpc(target, "connect");
     await assertRpc(target, "providers.list");
-    process.stdout.write(`ok - Dragon Gateway smoke ${target.url}\n`);
+    process.stdout.write(`ok - Loong Gateway smoke ${target.url}\n`);
   } finally {
     await stopTarget(target);
   }
 }
 
 async function resolveTarget(): Promise<SmokeTarget> {
-  const existingUrl = process.env.DRAGON_SMOKE_GATEWAY_URL?.trim();
-  const secret = firstNonEmpty(process.env.DRAGON_SMOKE_GATEWAY_SECRET, process.env.DRAGON_GATEWAY_SECRET);
+  const existingUrl = process.env.LOONG_SMOKE_GATEWAY_URL?.trim();
+  const secret = firstNonEmpty(process.env.LOONG_SMOKE_GATEWAY_SECRET, process.env.LOONG_GATEWAY_SECRET);
   if (existingUrl) {
     return {
       url: trimTrailingSlash(existingUrl),
@@ -39,8 +39,8 @@ async function resolveTarget(): Promise<SmokeTarget> {
     };
   }
 
-  const port = readPort(process.env.DRAGON_SMOKE_GATEWAY_PORT, DEFAULT_PORT);
-  const cleanupDir = await mkdtemp(path.join(os.tmpdir(), "dragon-smoke-"));
+  const port = readPort(process.env.LOONG_SMOKE_GATEWAY_PORT, DEFAULT_PORT);
+  const cleanupDir = await mkdtemp(path.join(os.tmpdir(), "loong-smoke-"));
   const spawned = spawn(process.execPath, [
     "packages/cli/dist/index.js",
     "gateway",
@@ -60,11 +60,11 @@ async function resolveTarget(): Promise<SmokeTarget> {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      DRAGON_OPENAI_API_KEY: "",
+      LOONG_OPENAI_API_KEY: "",
       OPENAI_API_KEY: "",
-      DRAGON_ANTHROPIC_API_KEY: "",
+      LOONG_ANTHROPIC_API_KEY: "",
       ANTHROPIC_API_KEY: "",
-      DRAGON_OPENROUTER_API_KEY: "",
+      LOONG_OPENROUTER_API_KEY: "",
       OPENROUTER_API_KEY: "",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -116,14 +116,14 @@ async function assertDashboard(target: SmokeTarget): Promise<void> {
   const response = await fetch(`${target.url}/`, { signal: AbortSignal.timeout(3000) });
   const html = await response.text();
   assert(response.ok, `Dashboard returned HTTP ${response.status}`);
-  assert(/<title>Dragon\b[^<]*<\/title>/.test(html), "Dashboard title was not rendered.");
+  assert(/<title>Loong\b[^<]*<\/title>/.test(html), "Dashboard title was not rendered.");
   assert(html.includes('data-tab="run"'), "Dashboard Run workspace was not rendered.");
   assert(html.includes('data-tab="models"'), "Dashboard Models workspace was not rendered.");
   assert(html.includes('data-tab="agents"'), "Dashboard Agents workspace was not rendered.");
   assert(html.includes('data-tab="observe"'), "Dashboard Observe workspace was not rendered.");
   assert(html.includes('data-tab="system"'), "Dashboard System workspace was not rendered.");
   assert(!html.includes("localStorage"), "Dashboard must not persist secrets in localStorage.");
-  assert(html.includes("dragon.gateway.secret"), "Dashboard should persist gateway shared secret in sessionStorage for the tab.");
+  assert(html.includes("loong.gateway.secret"), "Dashboard should persist gateway shared secret in sessionStorage for the tab.");
 }
 
 async function assertHealth(target: SmokeTarget): Promise<void> {
@@ -134,7 +134,7 @@ async function assertHealth(target: SmokeTarget): Promise<void> {
   const json = await response.json() as Record<string, unknown>;
   assert(response.ok, `Health returned HTTP ${response.status}`);
   assert(json.ok === true, "Health payload did not report ok.");
-  assert(json.name === "dragon-gateway", "Health payload did not identify Dragon Gateway.");
+  assert(json.name === "loong-gateway", "Health payload did not identify Loong Gateway.");
 }
 
 async function assertRpc(target: SmokeTarget, type: string): Promise<void> {
@@ -188,7 +188,7 @@ function readPort(value: string | undefined, fallback: number): number {
   }
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    throw new Error(`Invalid DRAGON_SMOKE_GATEWAY_PORT: ${value}`);
+    throw new Error(`Invalid LOONG_SMOKE_GATEWAY_PORT: ${value}`);
   }
   return parsed;
 }

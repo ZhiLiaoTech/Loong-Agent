@@ -32,7 +32,7 @@ export function createBrowserHost(options: { gatewayUrl?: string } = {}): HostRu
     },
 
     async startGateway() {
-      throw new Error("Gateway lifecycle is not available in browser mode. Start `dragon gateway` manually.");
+      throw new Error("Gateway lifecycle is not available in browser mode. Start `loong gateway` manually.");
     },
 
     async restartGateway() {

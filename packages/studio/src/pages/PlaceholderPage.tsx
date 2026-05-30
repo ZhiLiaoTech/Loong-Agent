@@ -1,4 +1,4 @@
-import { theme } from "@dragon/ui";
+import { theme } from "@loong/ui";
 
 export function PlaceholderPage({ title, description }: { title: string; description: string }) {
   return (

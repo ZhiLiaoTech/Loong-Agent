@@ -1,8 +1,8 @@
 import { createInterface } from "node:readline/promises";
-import type { DragonEvent, DragonPermissionHandler, DragonPermissionRequest } from "@dragon/core";
-import { DEFAULT_REDACTION, isSensitiveKey, redactSecretsInText } from "@dragon/security";
+import type { LoongEvent, LoongPermissionHandler, LoongPermissionRequest } from "@loong/core";
+import { DEFAULT_REDACTION, isSensitiveKey, redactSecretsInText } from "@loong/security";
 
-export function createCliPermissionHandler(): DragonPermissionHandler | undefined {
+export function createCliPermissionHandler(): LoongPermissionHandler | undefined {
   if (!process.stdin.isTTY || !process.stderr.isTTY) {
     return undefined;
   }
@@ -27,9 +27,9 @@ export function createCliPermissionHandler(): DragonPermissionHandler | undefine
   };
 }
 
-export function renderEvent(event: DragonEvent): void {
+export function renderEvent(event: LoongEvent): void {
   if (event.type === "lifecycle" && event.phase === "start") {
-    process.stderr.write("Dragon is thinking...\n");
+    process.stderr.write("Loong is thinking...\n");
   }
   if (event.type === "tool") {
     process.stderr.write(`Tool ${event.phase}: ${event.toolName}\n`);
@@ -42,7 +42,7 @@ export function formatMetadata(metadata: Record<string, unknown>): string {
     .join("\n");
 }
 
-function formatPermissionRequest(request: DragonPermissionRequest): string {
+function formatPermissionRequest(request: LoongPermissionRequest): string {
   return [
     "",
     `Permission required for tool: ${request.toolName}`,
@@ -52,7 +52,7 @@ function formatPermissionRequest(request: DragonPermissionRequest): string {
   ].join("\n");
 }
 
-function summarizePermissionInput(request: DragonPermissionRequest): string {
+function summarizePermissionInput(request: LoongPermissionRequest): string {
   if (request.toolName === "file_patch" && isRecord(request.input)) {
     return stringifyPreview({
       path: request.input.path,

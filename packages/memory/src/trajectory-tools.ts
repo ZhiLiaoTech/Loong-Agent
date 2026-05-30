@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolJsonSchema } from "@dragon/tools";
+import type { ToolDefinition, ToolJsonSchema } from "@loong/tools";
 import { FileTrajectoryStore } from "./file-trajectory-store.js";
 import { isTurnStatus } from "./file-session-store.js";
 import { MemoryToolError } from "./memory-tool-error.js";
@@ -51,7 +51,7 @@ export function createTrajectoryTools(store: TrajectoryStore): ToolDefinition[] 
 export function createTrajectoryListTool(store: TrajectoryStore): ToolDefinition<TrajectoryListInput, TrajectoryListOutput> {
   return {
     name: "trajectory_list",
-    description: "List recent Dragon trajectory records as bounded summaries for review or debugging.",
+    description: "List recent Loong trajectory records as bounded summaries for review or debugging.",
     inputSchema: trajectoryListSchema,
     capabilities: ["read", "memory"],
     permission: "allow",
@@ -67,7 +67,7 @@ export function createTrajectoryListTool(store: TrajectoryStore): ToolDefinition
 export function createTrajectoryGetTool(store: TrajectoryStore): ToolDefinition<TrajectoryGetInput, TrajectoryGetOutput> {
   return {
     name: "trajectory_get",
-    description: "Load one Dragon trajectory record by runId, optionally limiting returned events.",
+    description: "Load one Loong trajectory record by runId, optionally limiting returned events.",
     inputSchema: trajectoryGetSchema,
     capabilities: ["read", "memory"],
     permission: "allow",

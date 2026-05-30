@@ -1,0 +1,126 @@
+.thread {
+  flex: 1;
+  min-height: 0;
+  padding: 24px 24px 16px;
+  scroll-behavior: smooth;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  width: 100%;
+  color: var(--loong-text-muted, #4a4a60);
+}
+
+.emptyLead {
+  margin: 0;
+  font-size: 15px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+.rowAssistant,
+.rowUser {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.65;
+  font-size: 15px;
+}
+
+.rowAssistant {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.rowUser {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.assistantContent,
+.userContent {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.userContent {
+  justify-content: flex-end;
+}
+
+.senderRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.sender {
+  font-weight: 600;
+  color: var(--loong-accent-light, #a89eff);
+}
+
+.thinking {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--loong-text-muted, #4a4a60);
+}
+
+.senderUser {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--loong-text-secondary, #a0a0b8);
+  padding-top: 1px;
+}
+
+.messageAssistant {
+  flex: 1;
+  min-width: 0;
+  max-width: min(72%, 640px);
+  color: var(--loong-text, #eaeaf2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.messageUser {
+  max-width: min(75%, 640px);
+  color: var(--loong-text, #eaeaf2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.streaming::after {
+  content: "▍";
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.errorDetail {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--loong-error, #f87171) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--loong-error, #f87171) 30%, transparent);
+  color: var(--loong-error, #f87171);
+  font-size: 13px;
+  text-align: left;
+}
+
+.sentinel {
+  height: 1px;
+}

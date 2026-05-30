@@ -1,4 +1,4 @@
-import type { DragonProviderModelCatalogEntry } from "@dragon/model-catalog";
+import type { LoongProviderModelCatalogEntry } from "@loong/model-catalog";
 
 export type ModelMessageRole = "system" | "user" | "assistant" | "tool";
 
@@ -78,7 +78,7 @@ export interface ModelProvider {
   displayName: string;
   supportsToolCalling: boolean;
   defaultModel?: string;
-  models?: readonly DragonProviderModelCatalogEntry[];
+  models?: readonly LoongProviderModelCatalogEntry[];
   canHandleModel?(modelRef: string): boolean;
   normalizeModel?(modelRef: string): string;
   complete(request: ModelRequest): Promise<ModelResponse>;

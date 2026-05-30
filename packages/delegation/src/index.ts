@@ -1,7 +1,7 @@
-import type { DragonAgentRuntime, DragonMessage, DragonThinkingLevel, DragonTurnInput, DragonTurnResult } from "@dragon/core";
-import type { ToolDefinition, ToolJsonSchema } from "@dragon/tools";
+import type { LoongAgentRuntime, LoongMessage, LoongThinkingLevel, LoongTurnInput, LoongTurnResult } from "@loong/core";
+import type { ToolDefinition, ToolJsonSchema } from "@loong/tools";
 
-export interface DragonDelegatedTask {
+export interface LoongDelegatedTask {
   id: string;
   title: string;
   prompt: string;
@@ -10,15 +10,15 @@ export interface DragonDelegatedTask {
   metadata?: Record<string, unknown>;
 }
 
-export interface DragonDelegationPlan {
-  tasks: readonly DragonDelegatedTask[];
+export interface LoongDelegationPlan {
+  tasks: readonly LoongDelegatedTask[];
 }
 
-export type DragonDelegatedTaskStatus = "ok" | "error" | "skipped";
+export type LoongDelegatedTaskStatus = "ok" | "error" | "skipped";
 
-export interface DragonDelegatedTaskResult<TOutput = unknown> {
+export interface LoongDelegatedTaskResult<TOutput = unknown> {
   taskId: string;
-  status: DragonDelegatedTaskStatus;
+  status: LoongDelegatedTaskStatus;
   output?: TOutput;
   error?: string;
   startedAt?: string;
@@ -26,12 +26,12 @@ export interface DragonDelegatedTaskResult<TOutput = unknown> {
   skippedBecause?: readonly string[];
 }
 
-export interface DragonDelegationRunResult<TOutput = unknown> {
-  status: DragonDelegatedTaskStatus;
-  results: readonly DragonDelegatedTaskResult<TOutput>[];
+export interface LoongDelegationRunResult<TOutput = unknown> {
+  status: LoongDelegatedTaskStatus;
+  results: readonly LoongDelegatedTaskResult<TOutput>[];
 }
 
-export interface DragonDelegationRunOptions {
+export interface LoongDelegationRunOptions {
   maxConcurrency?: number;
   signal?: AbortSignal;
   /**
@@ -41,38 +41,38 @@ export interface DragonDelegationRunOptions {
   taskTimeoutMs?: number;
 }
 
-export type DragonDelegatedTaskExecutor<TOutput = unknown> = (
-  task: Readonly<DragonDelegatedTask>,
+export type LoongDelegatedTaskExecutor<TOutput = unknown> = (
+  task: Readonly<LoongDelegatedTask>,
   context: {
-    plan: Readonly<DragonDelegationPlan>;
-    completed: ReadonlyMap<string, DragonDelegatedTaskResult<TOutput>>;
+    plan: Readonly<LoongDelegationPlan>;
+    completed: ReadonlyMap<string, LoongDelegatedTaskResult<TOutput>>;
     signal?: AbortSignal;
   },
 ) => Promise<TOutput> | TOutput;
 
-export interface DragonRuntimeDelegatedTaskOutput {
+export interface LoongRuntimeDelegatedTaskOutput {
   runId: string;
-  status: DragonTurnResult["status"];
-  messages: readonly DragonMessage[];
+  status: LoongTurnResult["status"];
+  messages: readonly LoongMessage[];
   assistantMessage?: string;
-  usage?: DragonTurnResult["usage"];
+  usage?: LoongTurnResult["usage"];
   error?: string;
 }
 
-export interface DragonRuntimeDelegationExecutorOptions {
-  runtime: DragonAgentRuntime;
-  sessionId: string | ((task: Readonly<DragonDelegatedTask>) => string);
-  source?: DragonTurnInput["source"];
-  workspace?: string | ((task: Readonly<DragonDelegatedTask>) => string | undefined);
-  model?: string | ((task: Readonly<DragonDelegatedTask>) => string | undefined);
-  thinking?: DragonThinkingLevel;
-  metadata?: Record<string, unknown> | ((task: Readonly<DragonDelegatedTask>) => Record<string, unknown> | undefined);
+export interface LoongRuntimeDelegationExecutorOptions {
+  runtime: LoongAgentRuntime;
+  sessionId: string | ((task: Readonly<LoongDelegatedTask>) => string);
+  source?: LoongTurnInput["source"];
+  workspace?: string | ((task: Readonly<LoongDelegatedTask>) => string | undefined);
+  model?: string | ((task: Readonly<LoongDelegatedTask>) => string | undefined);
+  thinking?: LoongThinkingLevel;
+  metadata?: Record<string, unknown> | ((task: Readonly<LoongDelegatedTask>) => Record<string, unknown> | undefined);
   includeDependencyResults?: boolean;
   throwOnRuntimeError?: boolean;
 }
 
-export interface DragonRuntimeDelegationToolInput {
-  tasks: DragonDelegatedTask[];
+export interface LoongRuntimeDelegationToolInput {
+  tasks: LoongDelegatedTask[];
   maxConcurrency?: number;
   sessionPrefix?: string;
   workspace?: string;
@@ -81,10 +81,10 @@ export interface DragonRuntimeDelegationToolInput {
   throwOnRuntimeError?: boolean;
 }
 
-export interface DragonRuntimeDelegationToolOptions {
-  runtime: DragonAgentRuntime | (() => DragonAgentRuntime | undefined);
+export interface LoongRuntimeDelegationToolOptions {
+  runtime: LoongAgentRuntime | (() => LoongAgentRuntime | undefined);
   defaultSessionPrefix?: string;
-  source?: DragonTurnInput["source"];
+  source?: LoongTurnInput["source"];
   defaultWorkspace?: string;
   defaultModel?: string;
   maxTasks?: number;
@@ -93,7 +93,7 @@ export interface DragonRuntimeDelegationToolOptions {
   taskTimeoutMs?: number;
 }
 
-export type DragonRuntimeDelegationToolOutput = DragonDelegationRunResult<DragonRuntimeDelegatedTaskOutput>;
+export type LoongRuntimeDelegationToolOutput = LoongDelegationRunResult<LoongRuntimeDelegatedTaskOutput>;
 
 const MAX_TASKS = 100;
 const MAX_CONCURRENCY = 16;
@@ -134,7 +134,7 @@ const runtimeDelegationToolSchema: ToolJsonSchema = {
   additionalProperties: false,
 };
 
-export function createDelegationPlan(tasks: readonly DragonDelegatedTask[]): DragonDelegationPlan {
+export function createDelegationPlan(tasks: readonly LoongDelegatedTask[]): LoongDelegationPlan {
   if (tasks.length === 0) {
     throw new Error("Delegation plan requires at least one task.");
   }
@@ -165,15 +165,15 @@ export function createDelegationPlan(tasks: readonly DragonDelegatedTask[]): Dra
 }
 
 export async function runDelegationPlan<TOutput>(
-  plan: DragonDelegationPlan,
-  executor: DragonDelegatedTaskExecutor<TOutput>,
-  options: DragonDelegationRunOptions = {},
-): Promise<DragonDelegationRunResult<TOutput>> {
+  plan: LoongDelegationPlan,
+  executor: LoongDelegatedTaskExecutor<TOutput>,
+  options: LoongDelegationRunOptions = {},
+): Promise<LoongDelegationRunResult<TOutput>> {
   const normalizedPlan = createDelegationPlan(plan.tasks);
   const maxConcurrency = clampConcurrency(options.maxConcurrency);
   const pending = new Map(normalizedPlan.tasks.map(task => [task.id, task]));
   const running = new Map<string, Promise<void>>();
-  const completed = new Map<string, DragonDelegatedTaskResult<TOutput>>();
+  const completed = new Map<string, LoongDelegatedTaskResult<TOutput>>();
 
   while (pending.size > 0 || running.size > 0) {
     throwIfAborted(options.signal);
@@ -287,8 +287,8 @@ export async function runDelegationPlan<TOutput>(
 }
 
 export function createRuntimeDelegatedTaskExecutor(
-  options: DragonRuntimeDelegationExecutorOptions,
-): DragonDelegatedTaskExecutor<DragonRuntimeDelegatedTaskOutput> {
+  options: LoongRuntimeDelegationExecutorOptions,
+): LoongDelegatedTaskExecutor<LoongRuntimeDelegatedTaskOutput> {
   return async (task, context) => {
     const input = createDelegatedTurnInput(task, context.completed, options, context.signal);
     const result = await options.runtime.runTurn(input);
@@ -300,13 +300,13 @@ export function createRuntimeDelegatedTaskExecutor(
 }
 
 export function createRuntimeDelegationTool(
-  options: DragonRuntimeDelegationToolOptions,
-): ToolDefinition<DragonRuntimeDelegationToolInput, DragonRuntimeDelegationToolOutput> {
+  options: LoongRuntimeDelegationToolOptions,
+): ToolDefinition<LoongRuntimeDelegationToolInput, LoongRuntimeDelegationToolOutput> {
   const maxTasks = clampToolMaxTasks(options.maxTasks);
   const defaultConcurrency = clampConcurrency(options.maxConcurrency ?? DEFAULT_TOOL_MAX_CONCURRENCY);
   return {
     name: "delegation_run",
-    description: "Run a bounded Dragon delegated task plan through the current runtime.",
+    description: "Run a bounded Loong delegated task plan through the current runtime.",
     inputSchema: runtimeDelegationToolSchema,
     capabilities: ["execute"],
     permission: "allow",
@@ -371,11 +371,11 @@ export function createRuntimeDelegationTool(
   };
 }
 
-function normalizeTask(task: DragonDelegatedTask): DragonDelegatedTask {
+function normalizeTask(task: LoongDelegatedTask): LoongDelegatedTask {
   const id = normalizeIdentifier(task.id, "task id");
   const title = normalizeText(task.title, "task title", 200);
   const prompt = normalizeText(task.prompt, "task prompt", 16_000);
-  const normalized: DragonDelegatedTask = { id, title, prompt };
+  const normalized: LoongDelegatedTask = { id, title, prompt };
   if (task.role !== undefined) {
     normalized.role = normalizeText(task.role, "task role", 100);
   }
@@ -391,14 +391,14 @@ function normalizeTask(task: DragonDelegatedTask): DragonDelegatedTask {
   return Object.freeze(normalized);
 }
 
-function parseRuntimeDelegationToolInput(value: unknown): DragonRuntimeDelegationToolInput {
+function parseRuntimeDelegationToolInput(value: unknown): LoongRuntimeDelegationToolInput {
   if (!isRecord(value)) {
     throw new Error("delegation_run input must be an object.");
   }
   if (!Array.isArray(value.tasks)) {
     throw new Error("delegation_run tasks must be an array.");
   }
-  const input: DragonRuntimeDelegationToolInput = {
+  const input: LoongRuntimeDelegationToolInput = {
     tasks: value.tasks.map(readDelegatedTaskInput),
   };
   if (value.maxConcurrency !== undefined) {
@@ -431,11 +431,11 @@ function parseRuntimeDelegationToolInput(value: unknown): DragonRuntimeDelegatio
   return input;
 }
 
-function readDelegatedTaskInput(value: unknown): DragonDelegatedTask {
+function readDelegatedTaskInput(value: unknown): LoongDelegatedTask {
   if (!isRecord(value)) {
     throw new Error("delegation_run task entries must be objects.");
   }
-  const task: DragonDelegatedTask = {
+  const task: LoongDelegatedTask = {
     id: readString(value.id, "delegation_run task id"),
     title: readString(value.title, "delegation_run task title"),
     prompt: readString(value.prompt, "delegation_run task prompt"),
@@ -473,7 +473,7 @@ function readDelegationDepth(metadata: Record<string, unknown> | undefined): num
   return Math.floor(depth);
 }
 
-function resolveRuntime(runtime: DragonRuntimeDelegationToolOptions["runtime"]): DragonAgentRuntime | undefined {
+function resolveRuntime(runtime: LoongRuntimeDelegationToolOptions["runtime"]): LoongAgentRuntime | undefined {
   return typeof runtime === "function" ? runtime() : runtime;
 }
 
@@ -485,16 +485,16 @@ function clampToolMaxTasks(value: number | undefined): number {
 }
 
 function createDelegatedTurnInput<TOutput>(
-  task: Readonly<DragonDelegatedTask>,
-  completed: ReadonlyMap<string, DragonDelegatedTaskResult<TOutput>>,
-  options: DragonRuntimeDelegationExecutorOptions,
+  task: Readonly<LoongDelegatedTask>,
+  completed: ReadonlyMap<string, LoongDelegatedTaskResult<TOutput>>,
+  options: LoongRuntimeDelegationExecutorOptions,
   signal: AbortSignal | undefined,
-): DragonTurnInput {
+): LoongTurnInput {
   const sessionId = typeof options.sessionId === "function" ? options.sessionId(task) : options.sessionId;
   const workspace = typeof options.workspace === "function" ? options.workspace(task) : options.workspace;
   const model = typeof options.model === "function" ? options.model(task) : options.model;
   const metadata = typeof options.metadata === "function" ? options.metadata(task) : options.metadata;
-  const input: DragonTurnInput = {
+  const input: LoongTurnInput = {
     sessionId: normalizeText(sessionId, "runtime delegation sessionId", 200),
     source: options.source ?? "api",
     message: formatDelegatedTaskPrompt(task, completed, options.includeDependencyResults !== false),
@@ -515,8 +515,8 @@ function createDelegatedTurnInput<TOutput>(
 }
 
 function formatDelegatedTaskPrompt<TOutput>(
-  task: Readonly<DragonDelegatedTask>,
-  completed: ReadonlyMap<string, DragonDelegatedTaskResult<TOutput>>,
+  task: Readonly<LoongDelegatedTask>,
+  completed: ReadonlyMap<string, LoongDelegatedTaskResult<TOutput>>,
   includeDependencyResults: boolean,
 ): string {
   const sections = [
@@ -534,8 +534,8 @@ function formatDelegatedTaskPrompt<TOutput>(
 }
 
 function formatDependencyContext<TOutput>(
-  task: Readonly<DragonDelegatedTask>,
-  completed: ReadonlyMap<string, DragonDelegatedTaskResult<TOutput>>,
+  task: Readonly<LoongDelegatedTask>,
+  completed: ReadonlyMap<string, LoongDelegatedTaskResult<TOutput>>,
 ): string | undefined {
   const dependencies = task.dependsOn ?? [];
   if (dependencies.length === 0) {
@@ -558,7 +558,7 @@ function formatDependencyContext<TOutput>(
   return lines.length > 1 ? lines.join("\n") : undefined;
 }
 
-function toRuntimeDelegatedTaskOutput(result: DragonTurnResult): DragonRuntimeDelegatedTaskOutput {
+function toRuntimeDelegatedTaskOutput(result: LoongTurnResult): LoongRuntimeDelegatedTaskOutput {
   const assistantMessage = [...result.messages].reverse().find(message => message.role === "assistant")?.content;
   return {
     runId: result.runId,
@@ -592,7 +592,7 @@ function indentLines(value: string): string {
   return value.split(/\r?\n/).map(line => `  ${line}`).join("\n");
 }
 
-function assertAcyclic(tasks: readonly DragonDelegatedTask[]): void {
+function assertAcyclic(tasks: readonly LoongDelegatedTask[]): void {
   const byId = new Map(tasks.map(task => [task.id, task]));
   const visited = new Set<string>();
 
@@ -628,15 +628,15 @@ function assertAcyclic(tasks: readonly DragonDelegatedTask[]): void {
 }
 
 function dependenciesComplete<TOutput>(
-  task: DragonDelegatedTask,
-  completed: ReadonlyMap<string, DragonDelegatedTaskResult<TOutput>>,
+  task: LoongDelegatedTask,
+  completed: ReadonlyMap<string, LoongDelegatedTaskResult<TOutput>>,
 ): boolean {
   return (task.dependsOn ?? []).every(dependency => completed.get(dependency)?.status === "ok");
 }
 
 function failedDependencyIds<TOutput>(
-  task: DragonDelegatedTask,
-  completed: ReadonlyMap<string, DragonDelegatedTaskResult<TOutput>>,
+  task: LoongDelegatedTask,
+  completed: ReadonlyMap<string, LoongDelegatedTaskResult<TOutput>>,
 ): string[] {
   return (task.dependsOn ?? []).filter(dependency => {
     const result = completed.get(dependency);

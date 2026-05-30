@@ -1,8 +1,8 @@
-# @dragon/delegation 技术方案
+# @loong/delegation 技术方案
 
 ## 1. 职责边界
 
-**负责**：委托任务计划校验（DAG）、依赖感知并发执行、通过 `DragonAgentRuntime.runTurn` 执行子任务、Agent 工具 `delegation_run`。
+**负责**：委托任务计划校验（DAG）、依赖感知并发执行、通过 `LoongAgentRuntime.runTurn` 执行子任务、Agent 工具 `delegation_run`。
 
 **不负责**：子回合内的工具定义（使用父 Runtime 注入的同一 registry）。
 
@@ -35,12 +35,12 @@
 
 ### 3.4 依赖
 
-- `@dragon/core`
-- `@dragon/tools`
+- `@loong/core`
+- `@loong/tools`
 
 ## 4. 集成方式
 
-CLI `createRuntime()` 注册 `createRuntimeDelegationTool({ getRuntime: () => runtime })`；仅 `dragon agent` / Gateway agent 模式。
+CLI `createRuntime()` 注册 `createRuntimeDelegationTool({ getRuntime: () => runtime })`；仅 `loong agent` / Gateway agent 模式。
 
 ## 5. Code Review
 

@@ -1,6 +1,6 @@
 # Skills System
 
-Dragon skills are on-demand knowledge and workflow packages. The initial format
+Loong skills are on-demand knowledge and workflow packages. The initial format
 is compatible with the common `SKILL.md` pattern:
 
 ```text
@@ -14,7 +14,7 @@ skill-name/
 
 ## Progressive Disclosure
 
-Dragon should load skill information in layers:
+Loong should load skill information in layers:
 
 1. List skill summaries.
 2. Load `SKILL.md` when selected.
@@ -24,7 +24,7 @@ This keeps normal turns small while still allowing deep expert workflows.
 
 ## Current Runtime
 
-`@dragon/skills` includes a `FileSkillRuntime`:
+`@loong/skills` includes a `FileSkillRuntime`:
 
 - scans configured roots for `SKILL.md`
 - reads optional simple frontmatter fields: `name`, `description`, `category`
@@ -35,7 +35,7 @@ This keeps normal turns small while still allowing deep expert workflows.
   root when needed
 - appends improvement evidence to `references/improvements.md`
 
-Dragon exposes four skill tools in agent mode:
+Loong exposes four skill tools in agent mode:
 
 - `skill_list`: read-only skill discovery
 - `skill_load`: read-only skill loading with bounded references
@@ -44,14 +44,14 @@ Dragon exposes four skill tools in agent mode:
 
 The CLI also supports local slash commands that do not call a model provider:
 
-- `dragon agent /skills`: list skills from configured roots
-- `dragon agent /skills <query>`: list matching skills
-- `dragon agent /skills load <name>`: print one loaded skill and bounded
+- `loong agent /skills`: list skills from configured roots
+- `loong agent /skills <query>`: list matching skills
+- `loong agent /skills load <name>`: print one loaded skill and bounded
   reference summaries
 
 ## Self-Improvement
 
-Dragon should be able to:
+Loong should be able to:
 
 - create a new skill from repeated work
 - improve a skill from success or failure evidence
@@ -69,7 +69,7 @@ loading is supported. Improvement evidence is JSON-safe and size-bounded, and
 `references/improvements.md` must be a normal file inside the skill directory,
 not a symbolic link or hard link.
 
-CLI agent mode always includes `.dragon/skills` as a writable fallback root.
-Additional roots from `DRAGON_SKILL_ROOTS` or `--skill-root` may point to
-directories that do not exist yet; Dragon creates the first writable root when
+CLI agent mode always includes `.loong/skills` as a writable fallback root.
+Additional roots from `LOONG_SKILL_ROOTS` or `--skill-root` may point to
+directories that do not exist yet; Loong creates the first writable root when
 `skill_create` needs it.

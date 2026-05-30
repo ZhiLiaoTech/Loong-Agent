@@ -52,12 +52,12 @@ export function applyProductionAuthDefaults<T extends GatewayAuthInput>(config: 
 export function describeAuthStartup(config: { host: string; authMode: "none" | "shared-secret"; sharedSecret?: string }): string | undefined {
   if (config.authMode === "none") {
     if (requiresSharedSecret(config.host)) {
-      return `[dragon-gateway] WARNING: Gateway is bound to ${config.host} without authentication.`;
+      return `[loong-gateway] WARNING: Gateway is bound to ${config.host} without authentication.`;
     }
-    return `[dragon-gateway] WARNING: Gateway auth is disabled. Set sharedSecret (or authMode: "shared-secret") before exposing this server beyond localhost.`;
+    return `[loong-gateway] WARNING: Gateway auth is disabled. Set sharedSecret (or authMode: "shared-secret") before exposing this server beyond localhost.`;
   }
   if (requiresSharedSecret(config.host) && config.sharedSecret) {
-    return `[dragon-gateway] Gateway bound to ${config.host} with shared-secret auth (secret was auto-generated; check logs or config).`;
+    return `[loong-gateway] Gateway bound to ${config.host} with shared-secret auth (secret was auto-generated; check logs or config).`;
   }
   return undefined;
 }

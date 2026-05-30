@@ -3,7 +3,8 @@ import { readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { TextDecoder } from "node:util";
 import type { ToolDefinition, ToolInvocation, ToolJsonSchema, ToolResult } from "../types.js";
-import { resolveWorkspacePath, resolveWorkspaceRoot } from "./workspace.js";
+import { resolveScopedPath, resolveScopedRoot } from "./workspace.js";
+import { readWorkspaceScopeFromMetadata } from "../workspace-scope.js";
 
 export interface FilePatchInput {
   path: string;
@@ -44,8 +45,9 @@ export function createFilePatchTool(): ToolDefinition<FilePatchInput, FilePatchO
     async invoke(invocation) {
       return safelyInvoke(invocation, async () => {
         const input = parseFilePatchInput(invocation.input);
-        const absolutePath = await resolveWorkspacePath(invocation.workspace, input.path);
-        const workspaceRoot = await resolveWorkspaceRoot(invocation.workspace);
+        const scope = readWorkspaceScopeFromMetadata(invocation.metadata);
+        const absolutePath = await resolveScopedPath(invocation.workspace, input.path, scope);
+        const workspaceRoot = await resolveScopedRoot(invocation.workspace, scope);
         const relativePath = path.relative(workspaceRoot, absolutePath);
         const fileStat = await stat(absolutePath);
         if (!fileStat.isFile()) {

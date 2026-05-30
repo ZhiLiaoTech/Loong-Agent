@@ -6,8 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
-import type { ToolDefinition } from "@dragon/tools";
+import type { LoongAgentRuntime, LoongEvent, LoongTurnInput, LoongTurnResult } from "@loong/core";
+import type { ToolDefinition } from "@loong/tools";
 
 export const TEST_TIMEOUT_MS = 5000;
 type AnyBuffer = Buffer<ArrayBufferLike>;
@@ -35,9 +35,9 @@ export function createMockTool(
   };
 }
 
-export function createNoopRuntime(): DragonAgentRuntime {
+export function createNoopRuntime(): LoongAgentRuntime {
   return {
-    async runTurn(): Promise<DragonTurnResult> {
+    async runTurn(): Promise<LoongTurnResult> {
       throw new Error("Runtime should not be called in this test.");
     },
     subscribe() {
@@ -46,10 +46,10 @@ export function createNoopRuntime(): DragonAgentRuntime {
   };
 }
 
-export function createEventRuntime(): DragonAgentRuntime {
-  const listeners = new Set<(event: DragonEvent) => void>();
+export function createEventRuntime(): LoongAgentRuntime {
+  const listeners = new Set<(event: LoongEvent) => void>();
   return {
-    async runTurn(input: DragonTurnInput): Promise<DragonTurnResult> {
+    async runTurn(input: LoongTurnInput): Promise<LoongTurnResult> {
       const runId = "ws-run-1";
       for (const listener of listeners) {
         listener({
@@ -379,18 +379,18 @@ export async function runCli(args: string[], envOverrides: Record<string, string
     windowsHide: true,
     env: {
       ...process.env,
-      DRAGON_OPENAI_API_KEY: "",
+      LOONG_OPENAI_API_KEY: "",
       OPENAI_API_KEY: "",
-      DRAGON_ANTHROPIC_API_KEY: "",
+      LOONG_ANTHROPIC_API_KEY: "",
       ANTHROPIC_API_KEY: "",
-      DRAGON_OPENROUTER_API_KEY: "",
+      LOONG_OPENROUTER_API_KEY: "",
       OPENROUTER_API_KEY: "",
-      DRAGON_MODEL: "",
-      DRAGON_MODEL_CONFIG: path.join(os.tmpdir(), `dragon-test-empty-model-config-${process.pid}.json`),
-      DRAGON_TIER_CONFIG: path.join(os.tmpdir(), `dragon-test-empty-tier-config-${process.pid}.json`),
-      DRAGON_TIER: "",
-      DRAGON_PLUGIN_ROOTS: "",
-      DRAGON_SKILL_ROOTS: "",
+      LOONG_MODEL: "",
+      LOONG_MODEL_CONFIG: path.join(os.tmpdir(), `loong-test-empty-model-config-${process.pid}.json`),
+      LOONG_TIER_CONFIG: path.join(os.tmpdir(), `loong-test-empty-tier-config-${process.pid}.json`),
+      LOONG_TIER: "",
+      LOONG_PLUGIN_ROOTS: "",
+      LOONG_SKILL_ROOTS: "",
       ...envOverrides,
     },
   });

@@ -1,6 +1,6 @@
 import path from "node:path";
-import { resolveDragonDataRoot } from "../dragon-paths.js";
-import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
+import { resolveLoongDataRoot } from "../loong-paths.js";
+import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@loong/cron";
 import { parseIntervalMs } from "../parse-cli-args.js";
 import { waitForShutdown } from "../shutdown.js";
 
@@ -13,10 +13,10 @@ export interface ParsedCronArgs {
 }
 
 export function parseCronArgs(args: string[]): ParsedCronArgs {
-  const dataRoot = resolveDragonDataRoot();
-  let jobsFile = process.env.DRAGON_CRON_JOBS?.trim() || path.join(dataRoot, "cron", "jobs.json");
-  let gatewayUrl = process.env.DRAGON_GATEWAY_URL?.trim() || "http://127.0.0.1:17357";
-  let secret = process.env.DRAGON_GATEWAY_SECRET?.trim() || undefined;
+  const dataRoot = resolveLoongDataRoot();
+  let jobsFile = process.env.LOONG_CRON_JOBS?.trim() || path.join(dataRoot, "cron", "jobs.json");
+  let gatewayUrl = process.env.LOONG_GATEWAY_URL?.trim() || "http://127.0.0.1:17357";
+  let secret = process.env.LOONG_GATEWAY_SECRET?.trim() || undefined;
   let once = false;
   let intervalMs: number | undefined;
 
@@ -29,7 +29,7 @@ export function parseCronArgs(args: string[]): ParsedCronArgs {
     if (arg === "--jobs") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon cron --jobs <path>");
+        throw new Error("Usage: loong cron --jobs <path>");
       }
       jobsFile = path.resolve(value);
       index += 1;
@@ -38,7 +38,7 @@ export function parseCronArgs(args: string[]): ParsedCronArgs {
     if (arg?.startsWith("--jobs=")) {
       const value = arg.slice("--jobs=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon cron --jobs=<path>");
+        throw new Error("Usage: loong cron --jobs=<path>");
       }
       jobsFile = path.resolve(value);
       continue;
@@ -46,7 +46,7 @@ export function parseCronArgs(args: string[]): ParsedCronArgs {
     if (arg === "--gateway-url") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon cron --gateway-url <url>");
+        throw new Error("Usage: loong cron --gateway-url <url>");
       }
       gatewayUrl = value;
       index += 1;
@@ -55,7 +55,7 @@ export function parseCronArgs(args: string[]): ParsedCronArgs {
     if (arg?.startsWith("--gateway-url=")) {
       const value = arg.slice("--gateway-url=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon cron --gateway-url=<url>");
+        throw new Error("Usage: loong cron --gateway-url=<url>");
       }
       gatewayUrl = value;
       continue;
@@ -63,7 +63,7 @@ export function parseCronArgs(args: string[]): ParsedCronArgs {
     if (arg === "--secret") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon cron --secret <value>");
+        throw new Error("Usage: loong cron --secret <value>");
       }
       secret = value;
       index += 1;
@@ -72,7 +72,7 @@ export function parseCronArgs(args: string[]): ParsedCronArgs {
     if (arg?.startsWith("--secret=")) {
       const value = arg.slice("--secret=".length).trim();
       if (!value) {
-        throw new Error("Usage: dragon cron --secret=<value>");
+        throw new Error("Usage: loong cron --secret=<value>");
       }
       secret = value;
       continue;
@@ -80,7 +80,7 @@ export function parseCronArgs(args: string[]): ParsedCronArgs {
     if (arg === "--interval-ms") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error("Usage: dragon cron --interval-ms <ms>");
+        throw new Error("Usage: loong cron --interval-ms <ms>");
       }
       intervalMs = parseIntervalMs(value);
       index += 1;
@@ -119,9 +119,9 @@ export async function runCron(args: string[]): Promise<void> {
 
   const initial = await runner.tick();
   runner.start(parsed.intervalMs !== undefined ? { intervalMs: parsed.intervalMs } : {});
-  process.stderr.write(`Dragon cron runner using ${parsed.jobsFile} -> ${parsed.gatewayUrl}\n`);
+  process.stderr.write(`Loong cron runner using ${parsed.jobsFile} -> ${parsed.gatewayUrl}\n`);
   if (initial.delivered.length > 0) {
-    process.stderr.write(`Dragon cron delivered ${initial.delivered.length} due job(s) on startup.\n`);
+    process.stderr.write(`Loong cron delivered ${initial.delivered.length} due job(s) on startup.\n`);
   }
   try {
     await waitForShutdown();

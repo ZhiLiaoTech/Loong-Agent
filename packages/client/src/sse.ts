@@ -2,20 +2,20 @@ import type { GatewayClientConfig } from "./config.js";
 import { apiUrl, buildAuthHeaders } from "./request.js";
 import type { GatewayEventEnvelope, SseConnectionStatus } from "./types.js";
 
-export interface DragonEventStreamOptions {
+export interface LoongEventStreamOptions {
   onEvent: (envelope: GatewayEventEnvelope) => void;
   onStatus?: (status: SseConnectionStatus, error?: string) => void;
   reconnectMs?: number;
 }
 
-export interface DragonEventStreamHandle {
+export interface LoongEventStreamHandle {
   close: () => void;
 }
 
-export function openDragonEventStream(
+export function openLoongEventStream(
   config: GatewayClientConfig,
-  options: DragonEventStreamOptions,
-): DragonEventStreamHandle {
+  options: LoongEventStreamOptions,
+): LoongEventStreamHandle {
   const reconnectMs = options.reconnectMs ?? 2000;
   let generation = 0;
   let controller: AbortController | undefined;
@@ -121,7 +121,7 @@ function handleSseBlock(
   const lines = raw.split(/\r?\n/);
   const name = (lines.find(line => line.startsWith("event: ")) ?? "event: message").slice(7);
   const data = lines.filter(line => line.startsWith("data: ")).map(line => line.slice(6)).join("\n");
-  if (!data || name !== "dragon.event") {
+  if (!data || name !== "loong.event") {
     return;
   }
   try {

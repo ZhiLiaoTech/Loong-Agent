@@ -1,5 +1,5 @@
 /** Session-scoped storage for the gateway shared secret (not provider API keys). */
-export const GATEWAY_SECRET_STORAGE_KEY = "dragon.gateway.secret";
+export const GATEWAY_SECRET_STORAGE_KEY = "loong.gateway.secret";
 
 export function readStoredGatewaySecret(): string {
   try {

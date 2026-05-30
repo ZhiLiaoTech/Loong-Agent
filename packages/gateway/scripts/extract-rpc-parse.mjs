@@ -16,26 +16,26 @@ import type { GatewayAgentConfigSaveParams } from "./gateway-agent-types.js";
 ${typesBlock.join("\n")}
 `;
 
-const paramsOut = `import type { DragonCronJob } from "@dragon/cron";
-import type { DragonThinkingLevel } from "@dragon/core";
+const paramsOut = `import type { LoongCronJob } from "@loong/cron";
+import type { LoongThinkingLevel } from "@loong/core";
 import type {
   ApprovalStatus,
   EmployeeRegistry,
   OrgTicket,
   ToolPolicyDocument,
-} from "@dragon/org";
+} from "@loong/org";
 import type { GatewayTierName } from "./gateway-agent-types.js";
 
 ${lines.slice(207, 389).join("\n")}
 `;
 
-const imports = `import { parseCronSchedule } from "@dragon/cron";
-import type { ApprovalStatus, EmployeeRegistry, OrgTicket, ToolPolicyDocument } from "@dragon/org";
+const imports = `import { parseCronSchedule } from "@loong/cron";
+import type { ApprovalStatus, EmployeeRegistry, OrgTicket, ToolPolicyDocument } from "@loong/org";
 import { parseGatewayAgentParams } from "./agent-params.js";
 import { parseAgentConfigSaveParams } from "./gateway-agent-config.js";
 import { badRequest } from "./gateway-http.js";
 import {
-  isDragonThinking,
+  isLoongThinking,
   isRecord,
   normalizeBoundedText,
   normalizeShortText,

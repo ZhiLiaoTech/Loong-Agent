@@ -1,7 +1,7 @@
-import type { DragonAgentRuntime } from "@dragon/core";
-import { catalogEntriesFromProviders, createModelCatalog } from "@dragon/model-catalog";
-import { createProviderRegistry, type ModelProvider, type ProviderRegistry } from "@dragon/providers";
-import type { GatewayProviderSummary } from "@dragon/gateway";
+import type { LoongAgentRuntime } from "@loong/core";
+import { catalogEntriesFromProviders, createModelCatalog } from "@loong/model-catalog";
+import { createProviderRegistry, type ModelProvider, type ProviderRegistry } from "@loong/providers";
+import type { GatewayProviderSummary } from "@loong/gateway";
 import { createBuiltinProviders, summarizeProviders } from "./cli-impl.js";
 
 function assertUniqueProviderIds(providers: ModelProvider[]): void {
@@ -43,12 +43,12 @@ export async function rebuildProviderRegistryFromDisk(
 }
 
 export async function applyGatewayProviderHotReload(options: {
-  runtime: DragonAgentRuntime;
+  runtime: LoongAgentRuntime;
   pluginProviders: readonly ModelProvider[];
   replaceSummaries: (summaries: readonly GatewayProviderSummary[]) => void;
 }): Promise<void> {
   const rebuilt = await rebuildProviderRegistryFromDisk(options.pluginProviders);
-  const runtime = options.runtime as DragonAgentRuntime & {
+  const runtime = options.runtime as LoongAgentRuntime & {
     setProviderRegistry?: (registry: ProviderRegistry) => void;
   };
   if (typeof runtime.setProviderRegistry !== "function") {

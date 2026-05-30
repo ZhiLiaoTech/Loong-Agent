@@ -1,8 +1,8 @@
-import type { ModelMessage } from "@dragon/providers";
+import type { ModelMessage } from "@loong/providers";
 
 const DEFAULT_KEEP_RECENT_TURNS = 4;
 const DEFAULT_OLDER_TOOL_MAX_CHARS = 400;
-const COMPACTED_TOOL_SUFFIX = "\n\n[Dragon: older tool output compacted for context budget]";
+const COMPACTED_TOOL_SUFFIX = "\n\n[Loong: older tool output compacted for context budget]";
 
 export interface SessionMessageCompactionOptions {
   /** Full user-assistant-tool turns kept without turn-level compaction (default 4). */

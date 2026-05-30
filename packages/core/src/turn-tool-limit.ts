@@ -1,4 +1,4 @@
-import type { ModelMessage, ModelResponse, ModelToolCall } from "@dragon/providers";
+import type { ModelMessage, ModelResponse, ModelToolCall } from "@loong/providers";
 
 export const TOOL_ITERATION_LIMIT_USER_MESSAGE =
   "You have reached the maximum number of tool iterations for this turn. "

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { ModelResponse, ModelToolCall } from "@dragon/providers";
+import type { ModelResponse, ModelToolCall } from "@loong/providers";
 
 const XML_TOOL_BLOCK = /<([a-z][a-z0-9_]*)\s*>([\s\S]*?)<\/\1>/gi;
 

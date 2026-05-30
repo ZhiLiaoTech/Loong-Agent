@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { appendFile, lstat, mkdir, open, opendir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { DragonLifecycleHookRequest } from "@dragon/core";
-import type { ToolInvocation } from "@dragon/tools";
-import { isDragonSource } from "./file-session-store.js";
+import type { LoongLifecycleHookRequest } from "@loong/core";
+import type { ToolInvocation } from "@loong/tools";
+import { isLoongSource } from "./file-session-store.js";
 import { normalizeTrajectoryDate } from "./file-trajectory-store.js";
 import { withMemoryFileLock } from "./memory-file-lock.js";
 import { MemoryToolError } from "./memory-tool-error.js";
@@ -44,7 +44,7 @@ export const ABSOLUTE_MEMORY_CANDIDATE_LIST_LIMIT = 100;
 const memoryCandidateReviewLocks = new Set<string>();
 
 export function buildMemoryCandidate(
-  request: Readonly<DragonLifecycleHookRequest>,
+  request: Readonly<LoongLifecycleHookRequest>,
   maxContentChars: number,
 ): MemoryCandidateRecord | undefined {
   if (request.phase !== "end" || request.status !== "ok") {
@@ -106,7 +106,7 @@ function inferMemoryCandidateScope(value: string, workspace: string | undefined)
 }
 
 function createMemoryCandidateId(
-  request: Readonly<DragonLifecycleHookRequest>,
+  request: Readonly<LoongLifecycleHookRequest>,
   scope: MemoryRecord["scope"],
   content: string,
 ): string {
@@ -490,7 +490,7 @@ function validateMemoryCandidateRecord(value: unknown, source: string): asserts 
   if (typeof value.runId !== "string" || !value.runId.trim()) {
     throw new MemoryToolError(`Invalid memory candidate at ${source}: missing runId.`);
   }
-  if (!isDragonSource(value.source)) {
+  if (!isLoongSource(value.source)) {
     throw new MemoryToolError(`Invalid memory candidate at ${source}: invalid source.`);
   }
   if (!isMemoryScope(value.scope)) {

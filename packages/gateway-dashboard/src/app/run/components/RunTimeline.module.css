@@ -35,9 +35,15 @@
 }
 
 .type-lifecycle { border-left-color: #3b82f6; }
-.type-assistant_delta { border-left-color: var(--ok); }
+.type-assistant_delta,
+.type-assistant_replace { border-left-color: var(--ok); }
 .type-tool { border-left-color: #8b5cf6; }
 .type-permission { border-left-color: #f59e0b; }
+.type-context { border-left-color: #64748b; }
+.type-context-ai_summarization { border-left-color: #06b6d4; }
+.type-context-session_message_compaction { border-left-color: #a855f7; }
+.type-context-session_history_prep,
+.type-context-turn_prep { border-left-color: #f97316; }
 
 .label {
   display: block;

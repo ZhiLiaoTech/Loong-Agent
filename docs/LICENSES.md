@@ -1,6 +1,6 @@
 # Licenses And Attribution
 
-Dragon is MIT licensed by default.
+Loong is MIT licensed by default.
 
 ## Upstream Compatibility
 
@@ -9,7 +9,7 @@ Dragon is MIT licensed by default.
 OpenClaw is MIT licensed. Code may be copied, modified, and redistributed as
 long as the upstream copyright and MIT license notice are preserved.
 
-Dragon policy:
+Loong policy:
 
 - keep attribution in migrated files or folder-level `MIGRATION.md`
 - record upstream paths
@@ -17,11 +17,11 @@ Dragon policy:
 
 ### Hermes Agent
 
-Hermes Agent is MIT licensed. Dragon does not import Python runtime code, but
+Hermes Agent is MIT licensed. Loong does not import Python runtime code, but
 may reimplement Hermes ideas in TypeScript. If a file is copied or closely
 translated, preserve attribution.
 
-Dragon policy:
+Loong policy:
 
 - prefer TypeScript reimplementation
 - cite the design source in docs when relevant
@@ -30,9 +30,9 @@ Dragon policy:
 ### Claude Code Sourcemap
 
 The local Claude Code source map reconstruction is not a safe code reuse source
-for Dragon. Treat it as research-only material.
+for Loong. Treat it as research-only material.
 
-Dragon policy:
+Loong policy:
 
 - do not copy source
 - do not translate source

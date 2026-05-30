@@ -17,6 +17,11 @@ export interface GatewayHttpHandlerDeps {
   openEventStream(request: IncomingMessage, response: ServerResponse, url: URL): void;
   runWebhook(body: unknown): Promise<unknown>;
   handleRpc(request: GatewayRequest): Promise<GatewayResponse>;
+  dispatchChannelPluginHttp?(
+    request: IncomingMessage,
+    response: ServerResponse,
+    options: { requireGatewayAuth: boolean },
+  ): Promise<boolean>;
 }
 
 export async function handleGatewayHttpRequest(
@@ -31,7 +36,7 @@ export async function handleGatewayHttpRequest(
     return;
   }
 
-  const url = new URL(request.url ?? "/", "http://dragon.local");
+  const url = new URL(request.url ?? "/", "http://loong.local");
   if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
     writeHtml(response, 200, getDashboardHtml());
     return;
@@ -55,6 +60,13 @@ export async function handleGatewayHttpRequest(
   if (rateRoute && !deps.rateLimiter.tryConsume(rateRoute, clientRateLimitKey(request))) {
     writeJson(response, 429, { ok: false, error: "Rate limit exceeded." });
     return;
+  }
+
+  if (deps.dispatchChannelPluginHttp) {
+    const handled = await deps.dispatchChannelPluginHttp(request, response, { requireGatewayAuth: false });
+    if (handled) {
+      return;
+    }
   }
 
   if (!deps.isAuthorized(request)) {
@@ -83,6 +95,13 @@ export async function handleGatewayHttpRequest(
     const gatewayResponse = await deps.handleRpc(gatewayRequest);
     writeJson(response, gatewayResponse.ok ? 200 : 400, gatewayResponse);
     return;
+  }
+
+  if (deps.dispatchChannelPluginHttp) {
+    const handled = await deps.dispatchChannelPluginHttp(request, response, { requireGatewayAuth: true });
+    if (handled) {
+      return;
+    }
   }
 
   writeJson(response, 404, { ok: false, error: "Not found." });

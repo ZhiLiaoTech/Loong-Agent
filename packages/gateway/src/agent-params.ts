@@ -1,9 +1,9 @@
-import { mergeAgentProfileIntoTurnInput, type DragonSource, type DragonThinkingLevel, type DragonTurnInput } from "@dragon/core";
-import { assertDragonGatewayWebhookPayload } from "./channels-webhook.js";
+import { mergeAgentProfileIntoTurnInput, type LoongSource, type LoongThinkingLevel, type LoongTurnInput } from "@loong/core";
+import { assertLoongGatewayWebhookPayload } from "./channels-webhook.js";
 import { badRequest } from "./gateway-http.js";
 import {
-  isDragonSource,
-  isDragonThinking,
+  isLoongSource,
+  isLoongThinking,
   isRecord,
   normalizeBoundedText,
   normalizeShortText,
@@ -34,7 +34,7 @@ export function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
     message: value.message,
   };
   if (value.source !== undefined) {
-    if (!isDragonSource(value.source)) {
+    if (!isLoongSource(value.source)) {
       badRequest(`Invalid gateway agent source: ${String(value.source)}`);
     }
     params.source = value.source;
@@ -46,7 +46,7 @@ export function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
     params.model = value.model;
   }
   if (value.thinking !== undefined) {
-    if (!isDragonThinking(value.thinking)) {
+    if (!isLoongThinking(value.thinking)) {
       badRequest(`Invalid gateway agent thinking: ${String(value.thinking)}`);
     }
     params.thinking = value.thinking;
@@ -149,7 +149,7 @@ export function parseGatewayWebhookParams(value: unknown): GatewayWebhookParams 
     badRequest("Webhook channel request requires a JSON object.");
   }
   try {
-    assertDragonGatewayWebhookPayload(value);
+    assertLoongGatewayWebhookPayload(value);
   } catch (error) {
     badRequest(error instanceof Error ? error.message : String(error));
   }
@@ -158,7 +158,7 @@ export function parseGatewayWebhookParams(value: unknown): GatewayWebhookParams 
     : "webhook";
   const params = parseGatewayAgentParams({
     ...value,
-    source: (value.source as DragonSource | undefined) ?? "web",
+    source: (value.source as LoongSource | undefined) ?? "web",
     metadata: mergeWebhookMetadata(value.metadata, channel, value.userId, value.threadId),
   });
   return {
@@ -237,6 +237,7 @@ export async function resolveAgentParamsWithProfile(
       ...(profile.toolsEnabled !== undefined ? { toolsEnabled: profile.toolsEnabled } : {}),
       ...(profile.memoryEnabled !== undefined ? { memoryEnabled: profile.memoryEnabled } : {}),
       ...(profile.sessionCompaction !== undefined ? { sessionCompaction: profile.sessionCompaction } : {}),
+      ...(profile.aiSummarization !== undefined ? { aiSummarization: profile.aiSummarization } : {}),
     },
   );
   return {
@@ -251,8 +252,8 @@ export async function resolveAgentParamsWithProfile(
   };
 }
 
-export function toTurnInput(params: GatewayAgentParams): DragonTurnInput {
-  const input: DragonTurnInput = {
+export function toTurnInput(params: GatewayAgentParams): LoongTurnInput {
+  const input: LoongTurnInput = {
     sessionId: params.sessionId,
     source: params.source ?? "gateway",
     message: params.message,

@@ -1,5 +1,5 @@
 {
-  "name": "@dragon/gateway",
+  "name": "@loong/gateway",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,19 +11,20 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-preset-skills.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@dragon/channels": "workspace:*",
-    "@dragon/gateway-dashboard": "workspace:*",
-    "@dragon/studio": "workspace:*",
-    "@dragon/core": "workspace:*",
-    "@dragon/cron": "workspace:*",
-    "@dragon/model-catalog": "workspace:*",
-    "@dragon/org": "workspace:*",
-    "@dragon/tools": "workspace:*"
+    "@loong/channel-plugin-host": "workspace:*",
+    "@loong/channels": "workspace:*",
+    "@loong/gateway-dashboard": "workspace:*",
+    "@loong/studio": "workspace:*",
+    "@loong/core": "workspace:*",
+    "@loong/cron": "workspace:*",
+    "@loong/model-catalog": "workspace:*",
+    "@loong/org": "workspace:*",
+    "@loong/tools": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

@@ -1,14 +1,14 @@
-import type { DragonGatewayWebhookPayload } from "@dragon/channels";
+import type { LoongGatewayWebhookPayload } from "@loong/channels";
 
-export type { DragonGatewayWebhookPayload } from "@dragon/channels";
+export type { LoongGatewayWebhookPayload } from "@loong/channels";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function assertDragonGatewayWebhookPayload(
+export function assertLoongGatewayWebhookPayload(
   value: unknown,
-): asserts value is DragonGatewayWebhookPayload {
+): asserts value is LoongGatewayWebhookPayload {
   if (!isRecord(value)) {
     throw new Error("Webhook payload must be a JSON object.");
   }

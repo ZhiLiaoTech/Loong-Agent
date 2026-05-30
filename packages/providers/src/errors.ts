@@ -1,4 +1,4 @@
-import { redactSecretsInText } from "@dragon/security";
+import { redactSecretsInText } from "@loong/security";
 
 export interface ProviderErrorOptions {
   providerId: string;

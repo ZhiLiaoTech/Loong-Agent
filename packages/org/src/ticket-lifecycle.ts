@@ -1,4 +1,4 @@
-import type { DragonLifecycleHook, DragonLifecycleHookRequest } from "@dragon/core";
+import type { LoongLifecycleHook, LoongLifecycleHookRequest } from "@loong/core";
 import { readEmployeeId } from "./policy.js";
 import type { OrgTicket, TicketStore } from "./types.js";
 
@@ -6,7 +6,7 @@ export interface TicketLifecycleHookOptions {
   ticketStore: TicketStore;
 }
 
-export function createTicketLifecycleHook(options: TicketLifecycleHookOptions): DragonLifecycleHook {
+export function createTicketLifecycleHook(options: TicketLifecycleHookOptions): LoongLifecycleHook {
   return {
     name: "org-ticket-lifecycle",
     async onLifecycle(request) {
@@ -34,7 +34,7 @@ export function createTicketLifecycleHook(options: TicketLifecycleHookOptions): 
 async function appendTicket(
   store: TicketStore,
   input: {
-    request: DragonLifecycleHookRequest;
+    request: LoongLifecycleHookRequest;
     employeeId: string;
     status: OrgTicket["status"];
     title: string;

@@ -1,21 +1,22 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { parseSessionCompactionValue, type SessionMessageCompactionOptions } from "@dragon/core";
-import { dragonConfigDir } from "./dragon-paths.js";
+import { parseSessionCompactionValue, parseAiSummarizationValue, type SessionMessageCompactionOptions, type AISummarizationConfig } from "@loong/core";
+import { loongConfigDir } from "./loong-paths.js";
 
-export interface DragonContextConfigFile {
+export interface LoongContextConfigFile {
   sessionCompaction?: SessionMessageCompactionOptions | false;
+  aiSummarization?: AISummarizationConfig | false;
 }
 
 export function contextConfigPath(): string {
-  const fromEnv = process.env.DRAGON_CONTEXT_CONFIG?.trim();
+  const fromEnv = process.env.LOONG_CONTEXT_CONFIG?.trim();
   if (fromEnv) {
     return path.resolve(fromEnv);
   }
-  return path.join(dragonConfigDir(), "context.json");
+  return path.join(loongConfigDir(), "context.json");
 }
 
-export async function loadContextConfig(): Promise<DragonContextConfigFile> {
+export async function loadContextConfig(): Promise<LoongContextConfigFile> {
   const filePath = contextConfigPath();
   try {
     const raw = await readFile(filePath, "utf8");
@@ -24,10 +25,14 @@ export async function loadContextConfig(): Promise<DragonContextConfigFile> {
       return {};
     }
     const record = parsed as Record<string, unknown>;
-    const out: DragonContextConfigFile = {};
+    const out: LoongContextConfigFile = {};
     const compaction = parseSessionCompactionValue(record.sessionCompaction);
     if (compaction !== undefined) {
       out.sessionCompaction = compaction;
+    }
+    const aiSummarization = parseAiSummarizationValue(record.aiSummarization);
+    if (aiSummarization !== undefined) {
+      out.aiSummarization = aiSummarization;
     }
     return out;
   } catch (error) {

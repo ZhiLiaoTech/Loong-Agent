@@ -1,4 +1,4 @@
-import { useDragonEvents } from "../events/EventsContext.js";
+import { useLoongEvents } from "../events/EventsContext.js";
 import { EventsFeed } from "./components/EventsFeed.js";
 import { ApprovalInboxPanel } from "./components/ApprovalInboxPanel.js";
 import { KpiSnapshotPanel } from "./components/KpiSnapshotPanel.js";
@@ -11,7 +11,7 @@ import { useObservePage } from "./useObservePage.js";
 
 export function ObserveWorkspace() {
   const page = useObservePage();
-  const { events, sseStatus, reconnect } = useDragonEvents();
+  const { events, sseStatus, reconnect } = useLoongEvents();
 
   return (
     <div className={styles.workspace}>

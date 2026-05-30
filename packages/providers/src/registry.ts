@@ -1,14 +1,14 @@
-import { normalizeProviderModelEntries, type DragonModelCatalog } from "@dragon/model-catalog";
+import { normalizeProviderModelEntries, type LoongModelCatalog } from "@loong/model-catalog";
 import type { ModelProvider, ProviderRegistry, ProviderResolution } from "./types.js";
 
 export interface ProviderRegistryOptions {
   defaultProviderId?: string;
-  modelCatalog?: DragonModelCatalog;
+  modelCatalog?: LoongModelCatalog;
 }
 
 export class DefaultProviderRegistry implements ProviderRegistry {
   readonly #providers = new Map<string, ModelProvider>();
-  readonly #modelCatalog: DragonModelCatalog | undefined;
+  readonly #modelCatalog: LoongModelCatalog | undefined;
   #defaultProviderId: string | undefined;
 
   constructor(providers: ModelProvider[] = [], options: ProviderRegistryOptions = {}) {

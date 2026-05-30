@@ -4,4 +4,4 @@ export {
   QUERY_LOOP_CONTINUE_MESSAGE,
   resolveQueryLoopMaxTurns,
   shouldContinueQueryLoop,
-} from "@dragon/core";
+} from "@loong/core";

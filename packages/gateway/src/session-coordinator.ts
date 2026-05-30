@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { DragonEvent } from "@dragon/core";
+import type { LoongEvent } from "@loong/core";
 export interface SessionCoordinatorAgentParams {
   sessionId: string;
   message: string;
@@ -7,7 +7,7 @@ export interface SessionCoordinatorAgentParams {
 
 export interface AgentTurnResultPayload {
   result: unknown;
-  events: DragonEvent[];
+  events: LoongEvent[];
 }
 
 export interface AgentTurnQueuedPayload {

@@ -1,5 +1,5 @@
 import type { SessionMessageCompactionOptions } from "./session-message-compaction.js";
-import type { DragonTurnInput } from "./types.js";
+import type { LoongTurnInput } from "./types.js";
 
 /**
  * Parses `sessionCompaction` from context.json, agents.json, or turn metadata.
@@ -51,7 +51,7 @@ export function mergeSessionCompactionLayers(
 /** Per-turn override from `metadata.sessionCompaction` (e.g. agents.json profile). */
 export function resolveSessionCompactionForTurn(
   defaultCompaction: SessionMessageCompactionOptions | false,
-  input: DragonTurnInput,
+  input: LoongTurnInput,
 ): SessionMessageCompactionOptions | false {
   const parsed = parseSessionCompactionValue(input.metadata?.sessionCompaction);
   if (parsed === undefined) {

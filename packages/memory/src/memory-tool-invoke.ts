@@ -1,4 +1,4 @@
-import type { ToolInvocation, ToolResult } from "@dragon/tools";
+import type { ToolInvocation, ToolResult } from "@loong/tools";
 import { sanitizeMemoryToolError } from "./memory-tool-error.js";
 
 export async function safelyInvokeMemoryTool<TOutput>(

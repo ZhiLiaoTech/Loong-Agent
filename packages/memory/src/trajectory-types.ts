@@ -1,4 +1,4 @@
-import type { DragonTrajectoryRecord, DragonTrajectoryStore } from "@dragon/core";
+import type { LoongTrajectoryRecord, LoongTrajectoryStore } from "@loong/core";
 
 export interface FileTrajectoryStoreOptions {
   rootDir?: string;
@@ -11,7 +11,7 @@ export interface FileTrajectoryStoreOptions {
 export interface TrajectoryListFilter {
   runId?: string;
   sessionId?: string;
-  status?: DragonTrajectoryRecord["status"];
+  status?: LoongTrajectoryRecord["status"];
   dateFrom?: string;
   dateTo?: string;
   limit?: number;
@@ -20,10 +20,10 @@ export interface TrajectoryListFilter {
 export interface TrajectoryRecordSummary {
   runId: string;
   sessionId: string;
-  source: DragonTrajectoryRecord["source"];
+  source: LoongTrajectoryRecord["source"];
   createdAt: string;
   completedAt: string;
-  status: DragonTrajectoryRecord["status"];
+  status: LoongTrajectoryRecord["status"];
   userPreview: string;
   assistantPreview?: string;
   errorPreview?: string;
@@ -35,9 +35,9 @@ export interface TrajectoryListResult {
   truncated: boolean;
 }
 
-export interface TrajectoryStore extends DragonTrajectoryStore {
+export interface TrajectoryStore extends LoongTrajectoryStore {
   list(filter?: TrajectoryListFilter): Promise<TrajectoryListResult>;
-  get(runId: string, filter?: Pick<TrajectoryListFilter, "sessionId" | "dateFrom" | "dateTo">): Promise<DragonTrajectoryRecord | undefined>;
+  get(runId: string, filter?: Pick<TrajectoryListFilter, "sessionId" | "dateFrom" | "dateTo">): Promise<LoongTrajectoryRecord | undefined>;
 }
 
 export interface TrajectoryListInput extends TrajectoryListFilter {}
@@ -50,6 +50,6 @@ export interface TrajectoryGetInput {
 }
 
 export interface TrajectoryGetOutput {
-  record: DragonTrajectoryRecord;
+  record: LoongTrajectoryRecord;
   eventsTruncated: boolean;
 }

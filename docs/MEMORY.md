@@ -1,33 +1,33 @@
 # Memory System
 
-Dragon memory has two layers:
+Loong memory has two layers:
 
 ## Human-Readable Memory
 
 Markdown files:
 
-- `.dragon/memory/USER.md`: user preferences and stable facts
-- `.dragon/memory/PROJECT.md`: project-level context
-- `.dragon/memory/MEMORY.md`: curated long-term memory
-- `.dragon/memory/notes/YYYY-MM-DD.md`: daily working notes
+- `.loong/memory/USER.md`: user preferences and stable facts
+- `.loong/memory/PROJECT.md`: project-level context
+- `.loong/memory/MEMORY.md`: curated long-term memory
+- `.loong/memory/notes/YYYY-MM-DD.md`: daily working notes
 
-`dragon agent` and `dragon gateway` inject these files as read-only context
+`loong agent` and `loong gateway` inject these files as read-only context
 when they exist. Markdown files are bounded by file size and total context
 size, recent note enumeration is capped, and missing files are ignored.
 
 ## Searchable Memory
 
-The default `file` backend stores JSONL records in `.dragon/memory/records.jsonl`
+The default `file` backend stores JSONL records in `.loong/memory/records.jsonl`
 and uses bounded token scoring. For stronger local search, select the built-in
 SQLite backend explicitly:
 
 ```bash
-dragon agent --memory-backend sqlite "recall project notes"
-dragon gateway --memory-backend sqlite
+loong agent --memory-backend sqlite "recall project notes"
+loong gateway --memory-backend sqlite
 ```
 
 The SQLite backend uses Node's `node:sqlite` module and FTS5. It stores durable
-memory records in `.dragon/memory/memory.sqlite`, keeps bounded record/database
+memory records in `.loong/memory/memory.sqlite`, keeps bounded record/database
 limits, and does not add an npm-native dependency.
 
 Current SQLite-backed data:
@@ -54,21 +54,21 @@ Memory should be useful, bounded, and auditable.
 
 ## Session Compaction
 
-Dragon keeps recent session messages as normal chat history. When a session log
-contains older user/assistant messages beyond that recent window, `dragon agent`
-and `dragon gateway` can inject a deterministic, bounded compacted context
+Loong keeps recent session messages as normal chat history. When a session log
+contains older user/assistant messages beyond that recent window, `loong agent`
+and `loong gateway` can inject a deterministic, bounded compacted context
 block. This compaction is read-only and does not promote content into long-term
 memory.
 
 ## Memory Candidates
 
-Dragon does not silently turn arbitrary conversation into durable memory. When
-`dragon agent` or `dragon gateway` sees an explicit remember-style user request
+Loong does not silently turn arbitrary conversation into durable memory. When
+`loong agent` or `loong gateway` sees an explicit remember-style user request
 such as `remember`, `note that`, or `keep in mind`, it writes a pending
 candidate to:
 
 ```text
-.dragon/memory/candidates/YYYY-MM-DD.jsonl
+.loong/memory/candidates/YYYY-MM-DD.jsonl
 ```
 
 Each candidate includes the session/run id, inferred `user` or `project` scope,
@@ -86,7 +86,7 @@ Candidate review tools:
   `rejected` without storing durable memory.
 
 Promotion and rejection are explicit write operations. They are subject to the
-same permission engine as other Dragon tools. The Gateway also exposes the
+same permission engine as other Loong tools. The Gateway also exposes the
 same review loop through dedicated RPCs:
 
 - `memory.candidates.list`

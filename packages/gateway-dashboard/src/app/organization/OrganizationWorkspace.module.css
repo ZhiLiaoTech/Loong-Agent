@@ -1,0 +1,170 @@
+.sectionCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+}
+
+.sectionHint {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--line-height-normal);
+  color: var(--muted);
+}
+
+.identitySummary {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.formStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.readOnlyList {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: var(--text-sm);
+  line-height: var(--line-height-relaxed);
+  color: var(--muted);
+}
+
+.policySummary {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--soft) 70%, var(--surface));
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+  color: var(--text);
+}
+
+.skillsPlaceholder {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+  color: var(--muted);
+}
+
+.footerActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.sectionHeadRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.toolsSwitchRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--soft) 45%, var(--surface));
+}
+
+.toolsSwitchCopy {
+  min-width: 0;
+}
+
+.toolsSwitchLabel {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+}
+
+.skillList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skillListTitle {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.skillRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.skillCopy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.skillNameRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.skillName {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+}
+
+.skillPresetBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.skillCategory {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--soft) 80%, var(--surface));
+}
+
+.skillDescription {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--line-height-normal);
+  color: var(--muted);
+}

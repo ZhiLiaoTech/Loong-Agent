@@ -1,6 +1,6 @@
 import { lstat, open, opendir } from "node:fs/promises";
 import path from "node:path";
-import type { DragonContextProvider } from "@dragon/core";
+import type { LoongContextProvider } from "@loong/core";
 import { isRealCalendarDate } from "./memory-candidate-store.js";
 import { fitText } from "./memory-text.js";
 import { clampPositiveInteger, isNodeError, isPathInside, sameFileStat } from "./memory-util.js";
@@ -22,8 +22,8 @@ export interface MarkdownMemoryContextProviderOptions {
 
 export function createMarkdownMemoryContextProvider(
   options: MarkdownMemoryContextProviderOptions = {},
-): DragonContextProvider {
-  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "memory"));
+): LoongContextProvider {
+  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "memory"));
   const maxContentChars = clampPositiveInteger(
     options.maxContentChars,
     DEFAULT_MARKDOWN_MEMORY_CONTEXT_CHARS,

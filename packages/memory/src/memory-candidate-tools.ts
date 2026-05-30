@@ -1,7 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { DragonLifecycleHook } from "@dragon/core";
-import type { ToolDefinition, ToolInvocation, ToolJsonSchema } from "@dragon/tools";
+import type { LoongLifecycleHook } from "@loong/core";
+import type { ToolDefinition, ToolInvocation, ToolJsonSchema } from "@loong/tools";
 import { safelyInvokeMemoryTool } from "./memory-tool-invoke.js";
 import { assertCanAppendRegularFile } from "./memory-file-io.js";
 import { withMemoryFileLock } from "./memory-file-lock.js";
@@ -88,8 +88,8 @@ export function createMemoryCandidateTools(options: MemoryCandidateToolsOptions)
 
 export function createMemoryCandidateLifecycleHook(
   options: MemoryCandidateLifecycleHookOptions = {},
-): DragonLifecycleHook {
-  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "memory"));
+): LoongLifecycleHook {
+  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "memory"));
   const maxContentChars = clampPositiveInteger(
     options.maxContentChars,
     DEFAULT_MEMORY_CANDIDATE_CHARS,
@@ -133,7 +133,7 @@ export function createMemoryCandidateLifecycleHook(
 export function createMemoryCandidateListTool(
   options: MemoryCandidateToolsOptions,
 ): ToolDefinition<MemoryCandidateListInput, MemoryCandidateListOutput> {
-  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "memory"));
+  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "memory"));
   const maxFiles = clampPositiveInteger(options.maxFiles, DEFAULT_MEMORY_CANDIDATE_FILES, ABSOLUTE_MEMORY_CANDIDATE_FILES);
   const maxFileBytes = clampPositiveInteger(
     options.maxFileBytes,
@@ -142,7 +142,7 @@ export function createMemoryCandidateListTool(
   );
   return {
     name: "memory_candidates_list",
-    description: "List reviewable Dragon memory candidates without promoting them into durable memory.",
+    description: "List reviewable Loong memory candidates without promoting them into durable memory.",
     inputSchema: memoryCandidateListSchema,
     capabilities: ["read", "memory"],
     permission: "allow",
@@ -158,7 +158,7 @@ export function createMemoryCandidateListTool(
 export function createMemoryCandidatePromoteTool(
   options: MemoryCandidateToolsOptions,
 ): ToolDefinition<MemoryCandidatePromoteInput, MemoryCandidatePromoteOutput> {
-  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "memory"));
+  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "memory"));
   const maxFiles = clampPositiveInteger(options.maxFiles, DEFAULT_MEMORY_CANDIDATE_FILES, ABSOLUTE_MEMORY_CANDIDATE_FILES);
   const maxFileBytes = clampPositiveInteger(
     options.maxFileBytes,
@@ -269,7 +269,7 @@ export function createMemoryCandidatePromoteTool(
 export function createMemoryCandidateRejectTool(
   options: MemoryCandidateToolsOptions,
 ): ToolDefinition<MemoryCandidateRejectInput, MemoryCandidateRejectOutput> {
-  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "memory"));
+  const rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "memory"));
   const maxFiles = clampPositiveInteger(options.maxFiles, DEFAULT_MEMORY_CANDIDATE_FILES, ABSOLUTE_MEMORY_CANDIDATE_FILES);
   const maxFileBytes = clampPositiveInteger(
     options.maxFileBytes,

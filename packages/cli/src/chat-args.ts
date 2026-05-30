@@ -1,6 +1,6 @@
 ﻿import path from "node:path";
-import { resolveDragonDataRoot } from "./dragon-paths.js";
-import type { DragonTierHint } from "@dragon/core";
+import { resolveLoongDataRoot } from "./loong-paths.js";
+import type { LoongTierHint } from "@loong/core";
 import { configuredPluginRoots, configuredSkillRoots, resolveExistingPluginRoot, resolveSkillRoot, uniquePaths } from "./cli-impl.js";
 export interface ParsedChatArgs {
   message: string;
@@ -16,7 +16,7 @@ export interface ParsedChatArgs {
   skillRoots?: string[];
   pluginRoots: string[];
   attachments?: ParsedAttachmentSpec[];
-  tier?: DragonTierHint;
+  tier?: LoongTierHint;
   queryLoop?: boolean;
   queryLoopMaxTurns?: number;
   forceQueryLoop?: boolean;
@@ -29,18 +29,18 @@ interface ParsedAttachmentSpec {
 
 export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedChatArgs {
   const messageParts: string[] = [];
-  let sessionId = process.env.DRAGON_SESSION_ID?.trim() || "cli";
-  const dataRoot = resolveDragonDataRoot();
-  let sessionDir = process.env.DRAGON_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
-  let memoryDir = process.env.DRAGON_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");
-  let memoryBackendId = mode === "agent" ? process.env.DRAGON_MEMORY_BACKEND?.trim() || undefined : undefined;
-  let model = process.env.DRAGON_MODEL?.trim() || undefined;
-  const modelFallbacks = parseListEnv(process.env.DRAGON_MODEL_FALLBACKS);
-  let tier: DragonTierHint | undefined = parseTierName(process.env.DRAGON_TIER);
-  let queryLoop = mode === "agent" && process.env.DRAGON_QUERY_LOOP?.trim() === "1";
+  let sessionId = process.env.LOONG_SESSION_ID?.trim() || "cli";
+  const dataRoot = resolveLoongDataRoot();
+  let sessionDir = process.env.LOONG_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
+  let memoryDir = process.env.LOONG_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");
+  let memoryBackendId = mode === "agent" ? process.env.LOONG_MEMORY_BACKEND?.trim() || undefined : undefined;
+  let model = process.env.LOONG_MODEL?.trim() || undefined;
+  const modelFallbacks = parseListEnv(process.env.LOONG_MODEL_FALLBACKS);
+  let tier: LoongTierHint | undefined = parseTierName(process.env.LOONG_TIER);
+  let queryLoop = mode === "agent" && process.env.LOONG_QUERY_LOOP?.trim() === "1";
   let queryLoopMaxTurns: number | undefined;
-  let forceQueryLoop = mode === "agent" && process.env.DRAGON_FORCE_QUERY_LOOP?.trim() === "1";
-  let profileId = mode === "agent" ? process.env.DRAGON_AGENT_PROFILE?.trim() || undefined : undefined;
+  let forceQueryLoop = mode === "agent" && process.env.LOONG_FORCE_QUERY_LOOP?.trim() === "1";
+  let profileId = mode === "agent" ? process.env.LOONG_AGENT_PROFILE?.trim() || undefined : undefined;
   let noSession = false;
   let allowWrite = false;
   let failOnAsk = false;
@@ -75,7 +75,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (mode === "agent" && arg === "--profile") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --profile <id> <message>`);
+        throw new Error(`Usage: loong ${mode} --profile <id> <message>`);
       }
       profileId = value;
       index += 1;
@@ -84,7 +84,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (mode === "agent" && arg?.startsWith("--profile=")) {
       const value = arg.slice("--profile=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --profile=<id> <message>`);
+        throw new Error(`Usage: loong ${mode} --profile=<id> <message>`);
       }
       profileId = value;
       continue;
@@ -92,7 +92,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (mode === "agent" && arg === "--query-loop-max-turns") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --query-loop-max-turns <n> <message>`);
+        throw new Error(`Usage: loong ${mode} --query-loop-max-turns <n> <message>`);
       }
       queryLoopMaxTurns = parseQueryLoopMaxTurns(value);
       index += 1;
@@ -105,7 +105,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg === "--attach") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --attach <path> <message>`);
+        throw new Error(`Usage: loong ${mode} --attach <path> <message>`);
       }
       attachments.push({ filePath: path.resolve(value) });
       index += 1;
@@ -114,7 +114,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg?.startsWith("--attach=")) {
       const value = arg.slice("--attach=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --attach=<path> <message>`);
+        throw new Error(`Usage: loong ${mode} --attach=<path> <message>`);
       }
       attachments.push({ filePath: path.resolve(value) });
       continue;
@@ -122,7 +122,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg === "--model") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --model <provider:model> <message>`);
+        throw new Error(`Usage: loong ${mode} --model <provider:model> <message>`);
       }
       model = value;
       index += 1;
@@ -131,7 +131,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg?.startsWith("--model=")) {
       const value = arg.slice("--model=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --model=<provider:model> <message>`);
+        throw new Error(`Usage: loong ${mode} --model=<provider:model> <message>`);
       }
       model = value;
       continue;
@@ -139,7 +139,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg === "--model-fallback") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --model-fallback <provider:model> <message>`);
+        throw new Error(`Usage: loong ${mode} --model-fallback <provider:model> <message>`);
       }
       modelFallbacks.push(value);
       index += 1;
@@ -149,7 +149,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
       const value = args[index + 1]?.trim();
       const parsed = parseTierName(value);
       if (!parsed) {
-        throw new Error(`Usage: dragon ${mode} --tier <fast|standard|deep> <message>`);
+        throw new Error(`Usage: loong ${mode} --tier <fast|standard|deep> <message>`);
       }
       tier = parsed;
       index += 1;
@@ -159,7 +159,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
       const value = arg.slice("--tier=".length).trim();
       const parsed = parseTierName(value);
       if (!parsed) {
-        throw new Error(`Usage: dragon ${mode} --tier=<fast|standard|deep> <message>`);
+        throw new Error(`Usage: loong ${mode} --tier=<fast|standard|deep> <message>`);
       }
       tier = parsed;
       continue;
@@ -167,7 +167,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg?.startsWith("--model-fallback=")) {
       const value = arg.slice("--model-fallback=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --model-fallback=<provider:model> <message>`);
+        throw new Error(`Usage: loong ${mode} --model-fallback=<provider:model> <message>`);
       }
       modelFallbacks.push(value);
       continue;
@@ -175,7 +175,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg === "--session") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --session <id> <message>`);
+        throw new Error(`Usage: loong ${mode} --session <id> <message>`);
       }
       sessionId = value;
       index += 1;
@@ -184,7 +184,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg?.startsWith("--session=")) {
       const value = arg.slice("--session=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --session=<id> <message>`);
+        throw new Error(`Usage: loong ${mode} --session=<id> <message>`);
       }
       sessionId = value;
       continue;
@@ -192,7 +192,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg === "--session-dir") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --session-dir <path> <message>`);
+        throw new Error(`Usage: loong ${mode} --session-dir <path> <message>`);
       }
       sessionDir = path.resolve(value);
       index += 1;
@@ -201,18 +201,18 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg?.startsWith("--session-dir=")) {
       const value = arg.slice("--session-dir=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --session-dir=<path> <message>`);
+        throw new Error(`Usage: loong ${mode} --session-dir=<path> <message>`);
       }
       sessionDir = path.resolve(value);
       continue;
     }
     if (arg === "--memory-dir") {
       if (mode !== "agent") {
-        throw new Error("--memory-dir is only supported by dragon agent and dragon gateway.");
+        throw new Error("--memory-dir is only supported by loong agent and loong gateway.");
       }
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --memory-dir <path> <message>`);
+        throw new Error(`Usage: loong ${mode} --memory-dir <path> <message>`);
       }
       memoryDir = path.resolve(value);
       index += 1;
@@ -220,22 +220,22 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     }
     if (arg?.startsWith("--memory-dir=")) {
       if (mode !== "agent") {
-        throw new Error("--memory-dir is only supported by dragon agent and dragon gateway.");
+        throw new Error("--memory-dir is only supported by loong agent and loong gateway.");
       }
       const value = arg.slice("--memory-dir=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --memory-dir=<path> <message>`);
+        throw new Error(`Usage: loong ${mode} --memory-dir=<path> <message>`);
       }
       memoryDir = path.resolve(value);
       continue;
     }
     if (arg === "--memory-backend") {
       if (mode !== "agent") {
-        throw new Error("--memory-backend is only supported by dragon agent and dragon gateway.");
+        throw new Error("--memory-backend is only supported by loong agent and loong gateway.");
       }
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --memory-backend <id> <message>`);
+        throw new Error(`Usage: loong ${mode} --memory-backend <id> <message>`);
       }
       memoryBackendId = value;
       index += 1;
@@ -243,22 +243,22 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     }
     if (arg?.startsWith("--memory-backend=")) {
       if (mode !== "agent") {
-        throw new Error("--memory-backend is only supported by dragon agent and dragon gateway.");
+        throw new Error("--memory-backend is only supported by loong agent and loong gateway.");
       }
       const value = arg.slice("--memory-backend=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --memory-backend=<id> <message>`);
+        throw new Error(`Usage: loong ${mode} --memory-backend=<id> <message>`);
       }
       memoryBackendId = value;
       continue;
     }
     if (arg === "--skill-root") {
       if (mode !== "agent") {
-        throw new Error("--skill-root is only supported by dragon agent and dragon gateway.");
+        throw new Error("--skill-root is only supported by loong agent and loong gateway.");
       }
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --skill-root <path> <message>`);
+        throw new Error(`Usage: loong ${mode} --skill-root <path> <message>`);
       }
       skillRoots.push(resolveSkillRoot(value));
       index += 1;
@@ -266,11 +266,11 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     }
     if (arg?.startsWith("--skill-root=")) {
       if (mode !== "agent") {
-        throw new Error("--skill-root is only supported by dragon agent and dragon gateway.");
+        throw new Error("--skill-root is only supported by loong agent and loong gateway.");
       }
       const value = arg.slice("--skill-root=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --skill-root=<path> <message>`);
+        throw new Error(`Usage: loong ${mode} --skill-root=<path> <message>`);
       }
       skillRoots.push(resolveSkillRoot(value));
       continue;
@@ -278,7 +278,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg === "--plugin-root") {
       const value = args[index + 1]?.trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --plugin-root <path> <message>`);
+        throw new Error(`Usage: loong ${mode} --plugin-root <path> <message>`);
       }
       pluginRoots.push(resolveExistingPluginRoot(value));
       index += 1;
@@ -287,7 +287,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (arg?.startsWith("--plugin-root=")) {
       const value = arg.slice("--plugin-root=".length).trim();
       if (!value) {
-        throw new Error(`Usage: dragon ${mode} --plugin-root=<path> <message>`);
+        throw new Error(`Usage: loong ${mode} --plugin-root=<path> <message>`);
       }
       pluginRoots.push(resolveExistingPluginRoot(value));
       continue;
@@ -297,7 +297,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
 
   const message = messageParts.join(" ").trim();
   if (!message && attachments.length === 0) {
-    throw new Error(`Usage: dragon ${mode} [--session <id>] [--no-session] [--attach <path>] <message>`);
+    throw new Error(`Usage: loong ${mode} [--session <id>] [--no-session] [--attach <path>] <message>`);
   }
 
   return {
@@ -330,7 +330,7 @@ function parseQueryLoopMaxTurns(value: string): number {
   return Math.min(10, Math.floor(parsed));
 }
 
-function parseTierName(value: string | undefined): DragonTierHint | undefined {
+function parseTierName(value: string | undefined): LoongTierHint | undefined {
   const trimmed = value?.trim();
   if (trimmed === "fast" || trimmed === "standard" || trimmed === "deep") {
     return trimmed;

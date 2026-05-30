@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
-/// Aligns with `packages/cli/src/dragon-paths.ts`.
-pub fn resolve_dragon_data_root() -> PathBuf {
-    if let Ok(from_env) = std::env::var("DRAGON_DATA_ROOT") {
+/// Aligns with `packages/cli/src/loong-paths.ts`.
+pub fn resolve_loong_data_root() -> PathBuf {
+    if let Ok(from_env) = std::env::var("LOONG_DATA_ROOT") {
         let trimmed = from_env.trim();
         if !trimmed.is_empty() {
             return PathBuf::from(trimmed);
@@ -10,28 +10,28 @@ pub fn resolve_dragon_data_root() -> PathBuf {
     }
 
     if let Ok(cwd) = std::env::current_dir() {
-        if let Some(found) = find_dragon_dir_upward(&cwd) {
+        if let Some(found) = find_loong_dir_upward(&cwd) {
             return found;
         }
         if let Some(workspace) = find_workspace_root(&cwd) {
-            return workspace.join(".dragon");
+            return workspace.join(".loong");
         }
-        return cwd.join(".dragon");
+        return cwd.join(".loong");
     }
 
-    PathBuf::from(".dragon")
+    PathBuf::from(".loong")
 }
 
 pub fn default_gateway_port() -> u16 {
-    std::env::var("DRAGON_GATEWAY_PORT")
+    std::env::var("LOONG_GATEWAY_PORT")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(17_357)
 }
 
-/// Dev: `node packages/cli/dist/index.js`. Override with `DRAGON_CLI_ENTRY`.
+/// Dev: `node packages/cli/dist/index.js`. Override with `LOONG_CLI_ENTRY`.
 pub fn resolve_cli_entry() -> Option<PathBuf> {
-    if let Ok(entry) = std::env::var("DRAGON_CLI_ENTRY") {
+    if let Ok(entry) = std::env::var("LOONG_CLI_ENTRY") {
         let path = PathBuf::from(entry.trim());
         if path.is_file() {
             return Some(path);
@@ -47,10 +47,10 @@ pub fn resolve_cli_entry() -> Option<PathBuf> {
     None
 }
 
-fn find_dragon_dir_upward(start: &Path) -> Option<PathBuf> {
+fn find_loong_dir_upward(start: &Path) -> Option<PathBuf> {
     let mut current = start.to_path_buf();
     loop {
-        let candidate = current.join(".dragon");
+        let candidate = current.join(".loong");
         if candidate.is_dir() {
             return Some(candidate);
         }

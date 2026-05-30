@@ -1,4 +1,4 @@
-import { createLoongClient, type LoongClient } from "@dragon/client";
+import { createLoongClient, type LoongClient } from "@loong/client";
 import {
   createContext,
   useCallback,
@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useHost } from "./HostContext.js";
 
-const GATEWAY_SECRET_STORAGE_KEY = "dragon.gateway.secret";
+const GATEWAY_SECRET_STORAGE_KEY = "loong.gateway.secret";
 
 function readStoredSecret(): string {
   try {

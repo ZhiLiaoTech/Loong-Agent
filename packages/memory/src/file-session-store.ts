@@ -26,7 +26,7 @@ export class FileSessionStore implements SessionStore {
   readonly #maxHistoryMessages: number;
 
   constructor(options: FileSessionStoreOptions = {}) {
-    this.#rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".dragon", "sessions"));
+    this.#rootDir = path.resolve(options.rootDir ?? path.join(process.cwd(), ".loong", "sessions"));
     this.#maxHistoryMessages = clampPositiveInteger(
       options.maxHistoryMessages,
       DEFAULT_MAX_HISTORY_MESSAGES,
@@ -102,7 +102,7 @@ function validateTurnRecord(value: unknown, source: string): asserts value is Se
   if (typeof value.runId !== "string" || !value.runId.trim()) {
     throw new Error(`Invalid session record at ${source}: missing runId.`);
   }
-  if (!isDragonSource(value.source)) {
+  if (!isLoongSource(value.source)) {
     throw new Error(`Invalid session record at ${source}: invalid source.`);
   }
   if (typeof value.createdAt !== "string" || Number.isNaN(Date.parse(value.createdAt))) {
@@ -111,7 +111,7 @@ function validateTurnRecord(value: unknown, source: string): asserts value is Se
   if (!isTurnStatus(value.status)) {
     throw new Error(`Invalid session record at ${source}: invalid status.`);
   }
-  if (!Array.isArray(value.messages) || !value.messages.every(isDragonMessage)) {
+  if (!Array.isArray(value.messages) || !value.messages.every(isLoongMessage)) {
     throw new Error(`Invalid session record at ${source}: invalid messages.`);
   }
   if (value.workspace !== undefined && typeof value.workspace !== "string") {
@@ -128,7 +128,7 @@ function validateTurnRecord(value: unknown, source: string): asserts value is Se
   }
 }
 
-function isDragonMessage(value: unknown): value is SessionMessage {
+function isLoongMessage(value: unknown): value is SessionMessage {
   if (!isObject(value)) {
     return false;
   }
@@ -147,7 +147,7 @@ function isDragonMessage(value: unknown): value is SessionMessage {
   return value.metadata === undefined || isObject(value.metadata);
 }
 
-export function isDragonSource(value: unknown): boolean {
+export function isLoongSource(value: unknown): boolean {
   return ["cli", "gateway", "web", "ide", "cron", "api"].includes(String(value));
 }
 

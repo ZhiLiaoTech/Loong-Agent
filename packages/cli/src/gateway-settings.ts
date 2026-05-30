@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_MODEL_TIMEOUT_MS } from "@dragon/core";
-import type { GatewayConfig } from "@dragon/gateway";
-import { dragonConfigDir } from "./dragon-paths.js";
+import { DEFAULT_MODEL_TIMEOUT_MS } from "@loong/core";
+import type { GatewayConfig } from "@loong/gateway";
+import { loongConfigDir } from "./loong-paths.js";
 
 export interface GatewaySettingsFile {
   modelTimeoutMs?: number;
@@ -15,11 +15,11 @@ export interface GatewaySettingsFile {
 }
 
 export function gatewaySettingsPath(): string {
-  const fromEnv = process.env.DRAGON_GATEWAY_CONFIG?.trim();
+  const fromEnv = process.env.LOONG_GATEWAY_CONFIG?.trim();
   if (fromEnv) {
     return path.resolve(fromEnv);
   }
-  return path.join(dragonConfigDir(), "gateway.json");
+  return path.join(loongConfigDir(), "gateway.json");
 }
 
 export async function loadGatewaySettingsFile(): Promise<GatewaySettingsFile> {
@@ -95,11 +95,11 @@ export function mergeGatewayConfigFromFile(
 }
 
 export function parseModelTimeoutMsFromEnv(): number | undefined {
-  const raw = process.env.DRAGON_MODEL_TIMEOUT_MS?.trim();
+  const raw = process.env.LOONG_MODEL_TIMEOUT_MS?.trim();
   if (!raw) {
     return undefined;
   }
-  return parsePositiveMs(raw, "DRAGON_MODEL_TIMEOUT_MS");
+  return parsePositiveMs(raw, "LOONG_MODEL_TIMEOUT_MS");
 }
 
 export function parseModelTimeoutMsArg(value: string, label: string): number {

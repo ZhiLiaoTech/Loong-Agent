@@ -17,8 +17,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
-import type { ToolDefinition } from "@dragon/tools";
+import type { LoongAgentRuntime, LoongEvent, LoongTurnInput, LoongTurnResult } from "@loong/core";
+import type { ToolDefinition } from "@loong/tools";
 
 export const TEST_TIMEOUT_MS = 5000;
 type AnyBuffer = Buffer<ArrayBufferLike>;

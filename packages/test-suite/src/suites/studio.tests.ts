@@ -1,8 +1,8 @@
 import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createGatewayClient } from "@dragon/client";
-import { createHttpGateway, resetDashboardStaticCache } from "@dragon/gateway";
+import { createGatewayClient } from "@loong/client";
+import { createHttpGateway, resetDashboardStaticCache } from "@loong/gateway";
 import {
   assert,
   createEventRuntime,
@@ -12,14 +12,14 @@ import type { TestCase } from "../runner.js";
 const require = createRequire(import.meta.url);
 
 function resolveStudioDist(): string {
-  const pkgJson = require.resolve("@dragon/studio/package.json");
+  const pkgJson = require.resolve("@loong/studio/package.json");
   return join(dirname(pkgJson), "dist");
 }
 
 function readStudioBundleText(): string {
   const dist = resolveStudioDist();
   const indexPath = join(dist, "index.html");
-  assert(existsSync(indexPath), "studio dist missing; run: pnpm --filter @dragon/studio build");
+  assert(existsSync(indexPath), "studio dist missing; run: pnpm --filter @loong/studio build");
   const html = readFileSync(indexPath, "utf8");
   const scriptMatch = html.match(/src="([^"]+\.js)"/);
   if (!scriptMatch?.[1]) {
@@ -33,7 +33,7 @@ function readStudioBundleText(): string {
 async function testStudioBundleSmoke(): Promise<void> {
   const bundle = readStudioBundleText();
   assert(bundle.includes("Loong") || bundle.includes("loong"), "studio bundle should reference Loong branding");
-  assert(bundle.includes("dragon.gateway.secret"), "studio bundle should use dragon.gateway.secret storage key");
+  assert(bundle.includes("loong.gateway.secret"), "studio bundle should use loong.gateway.secret storage key");
   assert(bundle.includes("agent.config.get"), "studio bundle should call agent.config.get");
   assert(bundle.includes("model.config.save"), "studio bundle should call model.config.save");
 }

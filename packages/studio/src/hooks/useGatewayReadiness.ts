@@ -1,4 +1,4 @@
-import type { GatewayHealthResult } from "@dragon/client";
+import type { GatewayHealthResult } from "@loong/client";
 import { useCallback, useEffect, useState } from "react";
 import { useHost } from "../context/HostContext.js";
 import { useLoongClient } from "../context/LoongClientContext.js";

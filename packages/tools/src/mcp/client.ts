@@ -46,7 +46,7 @@ export class McpStdioClient {
     await this.#request("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
-      clientInfo: { name: "dragon", version: "0.0.0" },
+      clientInfo: { name: "loong", version: "0.0.0" },
     });
     await this.#notify("notifications/initialized", {});
   }

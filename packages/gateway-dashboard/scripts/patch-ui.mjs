@@ -227,7 +227,7 @@ if (js.includes(sendRunOld)) {
 }
 
 js = js.replace(
-  `        if (name === "dragon.event") {
+  `        if (name === "loong.event") {
           state.events.unshift(parsed);
           state.events = state.events.slice(0, 80);
           renderEvents();
@@ -237,7 +237,7 @@ js = js.replace(
             refreshMemoryCandidates();
           }
         }`,
-  `        if (name === "dragon.event") {
+  `        if (name === "loong.event") {
           state.events.unshift(parsed);
           state.events = state.events.slice(0, 80);
           const ev = parsed.event || {};

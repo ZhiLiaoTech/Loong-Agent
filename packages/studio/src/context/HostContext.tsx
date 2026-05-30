@@ -1,6 +1,6 @@
-import { createBrowserHost, type HostRuntime } from "@dragon/host";
+import { createBrowserHost, type HostRuntime } from "@loong/host";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { resolveGatewayUrl } from "@dragon/client";
+import { resolveGatewayUrl } from "@loong/client";
 
 const HostContext = createContext<HostRuntime | null>(null);
 

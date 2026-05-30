@@ -5,6 +5,8 @@ import type {
   GatewayCronJobRemoveParams,
   GatewayCronJobUpsertParams,
   GatewayEmployeeSaveParams,
+  GatewayEmployeeWorkspaceGetParams,
+  GatewayEmployeeWorkspaceSaveParams,
   GatewayKpiSnapshotParams,
   GatewayMemoryCandidateListParams,
   GatewayMemoryCandidatePromoteParams,
@@ -35,6 +37,10 @@ export type GatewayRequest =
   | { type: "org.get"; id: string }
   | { type: "employee.list"; id: string }
   | { type: "employee.save"; id: string; params: GatewayEmployeeSaveParams }
+  | { type: "employee.workspace.get"; id: string; params?: GatewayEmployeeWorkspaceGetParams }
+  | { type: "employee.workspace.save"; id: string; params: GatewayEmployeeWorkspaceSaveParams }
+  | { type: "skills.list"; id: string }
+  | { type: "org.bootstrap.example"; id: string }
   | { type: "policy.tool.get"; id: string }
   | { type: "policy.tool.save"; id: string; params: GatewayToolPolicySaveParams }
   | { type: "approval.list"; id: string; params?: GatewayApprovalListParams }
@@ -63,7 +69,8 @@ export type GatewayRequest =
   | { type: "cron.jobs.list"; id: string }
   | { type: "cron.job.upsert"; id: string; params: GatewayCronJobUpsertParams }
   | { type: "cron.job.remove"; id: string; params: GatewayCronJobRemoveParams }
-  | { type: "cron.tick"; id: string };
+  | { type: "cron.tick"; id: string }
+  | { type: "fs.directory.browse"; id: string; params?: { path?: string } };
 
 export type GatewayResponse =
   | { type: "response"; id: string; ok: true; payload?: unknown }

@@ -7,9 +7,9 @@ export { GatewayApiError } from "./errors.js";
 export { gatewayRpc } from "./rpc.js";
 export { fetchGatewayHealth, type GatewayHealthResult } from "./health.js";
 export {
-  openDragonEventStream,
-  type DragonEventStreamHandle,
-  type DragonEventStreamOptions,
+  openLoongEventStream,
+  type LoongEventStreamHandle,
+  type LoongEventStreamOptions,
 } from "./sse.js";
 export {
   DEFAULT_GATEWAY_HOST,
@@ -17,7 +17,7 @@ export {
   resolveGatewayUrl,
 } from "./gateway-url.js";
 export type {
-  DragonEvent,
+  LoongEvent,
   GatewayConnectPayload,
   GatewayEventEnvelope,
   GatewayHealthPayload,

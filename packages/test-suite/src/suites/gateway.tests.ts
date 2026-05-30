@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import net from "node:net";
 import os from "node:os";
@@ -13,8 +13,8 @@ import {
   parseSlackWebhook,
   parseTelegramWebhook,
   toGatewayWebhookPayload,
-} from "@dragon/channels";
-import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
+} from "@loong/channels";
+import type { LoongAgentRuntime, LoongEvent, LoongTurnInput, LoongTurnResult } from "@loong/core";
 import {
   appendCancelledToolResults,
   appendWorkspaceToolGuidance,
@@ -23,7 +23,7 @@ import {
   buildTurnPrepOptions,
   classifyTierHeuristic,
   canRunToolCallsInParallel,
-  createDragonRuntime,
+  createLoongRuntime,
   runTurnWithQueryLoop,
   isParallelSafeTool,
   decideTier,
@@ -38,23 +38,23 @@ import {
   prepareSessionHistoryForModel,
   repairModelMessagesAfterCancel,
   TOOL_CANCELLED_CODE,
-} from "@dragon/core";
-import type { ModelMessage } from "@dragon/providers";
-import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
+} from "@loong/core";
+import type { ModelMessage } from "@loong/providers";
+import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@loong/cron";
 import {
   createDelegationPlan,
   createRuntimeDelegatedTaskExecutor,
   createRuntimeDelegationTool,
   runDelegationPlan,
-  type DragonRuntimeDelegationToolInput,
-} from "@dragon/delegation";
+  type LoongRuntimeDelegationToolInput,
+} from "@loong/delegation";
 import {
   applyModelCatalogToAgentParams,
-  assertDragonGatewayWebhookPayload,
+  assertLoongGatewayWebhookPayload,
   createHttpGateway,
   createModelCatalogFromProviderSummaries,
   FilePairingStore,
-} from "@dragon/gateway";
+} from "@loong/gateway";
 import {
   createFileMemoryStore,
   createFileTrajectoryStore,
@@ -66,14 +66,14 @@ import {
   type MemoryCandidatePromoteOutput,
   type MemoryCandidateRejectInput,
   type MemoryCandidateRejectOutput,
-} from "@dragon/memory";
+} from "@loong/memory";
 import {
   applyModelCatalogToParams,
   catalogEntriesFromProviders,
   createModelCatalog,
-} from "@dragon/model-catalog";
-import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@dragon/providers";
-import { isSensitiveKey, redactSecretsInText } from "@dragon/security";
+} from "@loong/model-catalog";
+import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@loong/providers";
+import { isSensitiveKey, redactSecretsInText } from "@loong/security";
 import {
   createBrowserFormSubmitTool,
   createBrowserPlaywrightSnapshotTool,
@@ -85,7 +85,7 @@ import {
   registerMcpTools,
   validateBrowserTargetUrl,
   type ToolDefinition,
-} from "@dragon/tools";
+} from "@loong/tools";
 
 import {
   assert,
@@ -152,7 +152,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
       async load() {
         return {
           appliesOn: "next-turn",
-          configPath: "/tmp/dragon/providers.json",
+          configPath: "/tmp/loong/providers.json",
           providers: [{
             id: "openai",
             type: "openai-compatible",
@@ -169,7 +169,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
         savedModelConfig = config;
         return {
           appliesOn: "next-turn",
-          configPath: "/tmp/dragon/providers.json",
+          configPath: "/tmp/loong/providers.json",
           providers: config.providers,
         };
       },
@@ -177,7 +177,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
     agentConfigStore: {
       async load() {
         return {
-          configPath: "/tmp/dragon/agents.json",
+          configPath: "/tmp/loong/agents.json",
           defaultProfileId: "default",
           profiles: [{
             id: "default",
@@ -192,7 +192,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
       async save(config) {
         savedAgentConfig = config;
         return {
-          configPath: "/tmp/dragon/agents.json",
+          configPath: "/tmp/loong/agents.json",
           profiles: config.profiles,
           ...(config.defaultProfileId !== undefined ? { defaultProfileId: config.defaultProfileId } : {}),
         };
@@ -306,7 +306,7 @@ async function testGatewayDirectToolRpc(): Promise<void> {
 
 
 async function testGatewayPairingRpc(): Promise<void> {
-  const pairingDir = await mkdtemp(path.join(os.tmpdir(), "dragon-pairing-"));
+  const pairingDir = await mkdtemp(path.join(os.tmpdir(), "loong-pairing-"));
   const pairingStore = new FilePairingStore({ filePath: path.join(pairingDir, "devices.json") });
   const gateway = createHttpGateway({
     runtime: createNoopRuntime(),
@@ -409,7 +409,7 @@ async function testGatewayMcpCatalogAndAgent(): Promise<void> {
       return { id: "second", text: "mcp-agent-done" };
     },
   };
-  const runtime = createDragonRuntime({
+  const runtime = createLoongRuntime({
     providers: [provider],
     defaultModel: "mcp-agent-model",
     toolRegistry: registry,
@@ -516,7 +516,7 @@ async function testGatewayWebSocket(): Promise<void> {
 
   try {
     const client = await RawWebSocketClient.connect(address.port, "/ws?sessionId=s1", {
-      "Sec-WebSocket-Protocol": "dragon.gateway.v1",
+      "Sec-WebSocket-Protocol": "loong.gateway.v1",
     });
     try {
       const ready = await client.waitForJson(message => message.type === "ready", "ready");
@@ -557,9 +557,9 @@ async function testGatewayWebSocket(): Promise<void> {
 
 
 async function testGatewayWebhookChannel(): Promise<void> {
-  let capturedInput: DragonTurnInput | undefined;
-  const listeners = new Set<(event: DragonEvent) => void>();
-  const runtime: DragonAgentRuntime = {
+  let capturedInput: LoongTurnInput | undefined;
+  const listeners = new Set<(event: LoongEvent) => void>();
+  const runtime: LoongAgentRuntime = {
     async runTurn(input) {
       capturedInput = input;
       const runId = "webhook-run-1";
@@ -680,14 +680,14 @@ async function testChannelAdapters(): Promise<void> {
     message: {
       message_id: 456,
       date: 1_779_000_000,
-      text: "  hello dragon  ",
+      text: "  hello loong  ",
       chat: { id: -1001, type: "supergroup" },
       from: { id: 42, username: "alice" },
     },
   });
   assert(telegram !== undefined, "telegram adapter should parse text messages");
   assert(telegram.channel === "telegram", "telegram adapter should label channel");
-  assert(telegram.text === "hello dragon", "telegram adapter should trim message text");
+  assert(telegram.text === "hello loong", "telegram adapter should trim message text");
   assert(telegram.userId === "42", "telegram adapter should normalize numeric user ids");
   assert(telegram.threadId === "-1001", "telegram adapter should use chat id as thread");
   assert(readPath(telegram.metadata, ["telegramChatType"]) === "supergroup", "telegram adapter should preserve chat type metadata");
@@ -703,13 +703,13 @@ async function testChannelAdapters(): Promise<void> {
   assert(caption?.text === "image caption", "telegram adapter should fall back to caption text");
 
   const telegramPayload = toGatewayWebhookPayload(telegram, {
-    sessionPrefix: "dragon",
+    sessionPrefix: "loong",
     workspace: "/workspace",
     model: "mock:model",
     metadata: { source: "test" },
   });
-  assert(telegramPayload.sessionId === "dragon:telegram:-1001", "gateway payload should derive stable session ids");
-  assert(telegramPayload.message === "hello dragon", "gateway payload should carry channel text");
+  assert(telegramPayload.sessionId === "loong:telegram:-1001", "gateway payload should derive stable session ids");
+  assert(telegramPayload.message === "hello loong", "gateway payload should carry channel text");
   assert(telegramPayload.channel === "telegram", "gateway payload should carry channel name");
   assert(telegramPayload.userId === "42", "gateway payload should carry user id");
   assert(readPath(telegramPayload.metadata, ["channelMessageId"]) === "456", "gateway payload should annotate channel message id");
@@ -733,13 +733,13 @@ async function testChannelAdapters(): Promise<void> {
   assert(slack.threadId === "1710000000.000000", "slack adapter should prefer thread timestamp");
   assert(readPath(slack.metadata, ["slackTeamId"]) === "T1", "slack adapter should preserve team metadata");
   const slash = parseSlackWebhook({
-    command: "/dragon",
+    command: "/loong",
     text: "",
     user_id: "U2",
     channel_id: "C2",
     trigger_id: "trigger-1",
   });
-  assert(slash?.text === "/dragon", "slack adapter should keep slash commands without text");
+  assert(slash?.text === "/loong", "slack adapter should keep slash commands without text");
 
   const ignored = parseSlackWebhook({ type: "event_callback", event: { type: "reaction_added", user: "U1" } });
   assert(ignored === undefined, "slack adapter should ignore non-text events");
@@ -774,7 +774,7 @@ async function testChannelAdapters(): Promise<void> {
       gatewayUrl: `http://127.0.0.1:${port}/`,
       sharedSecret: "secret",
       defaults: {
-        sessionPrefix: "dragon",
+        sessionPrefix: "loong",
         model: "mock:model",
         metadata: { global: "yes" },
       },
@@ -784,9 +784,9 @@ async function testChannelAdapters(): Promise<void> {
     assert(readPath(result.payload, ["payload", "accepted"]) === true, "channel target should return success payload");
     assert(deliveries[0]?.url === "/channels/webhook", "channel target should deliver to Gateway webhook channel");
     assert(deliveries[0]?.authorization === "Bearer secret", "channel target should forward shared secret auth");
-    assert(deliveries[0]?.body.sessionId === "dragon:telegram:-1001", "channel target should derive stable session id");
+    assert(deliveries[0]?.body.sessionId === "loong:telegram:-1001", "channel target should derive stable session id");
     assert(deliveries[0]?.body.channel === "telegram", "channel target should carry channel name");
-    assert(deliveries[0]?.body.message === "hello dragon", "channel target should carry message text");
+    assert(deliveries[0]?.body.message === "hello loong", "channel target should carry message text");
     assert(deliveries[0]?.body.model === "mock:model", "channel target should apply default model");
     assert(readPath(deliveries[0]?.body, ["metadata", "global"]) === "yes", "channel target should apply default metadata");
     assert(readPath(deliveries[0]?.body, ["metadata", "source"]) === "test", "channel target should merge delivery metadata");
@@ -802,7 +802,7 @@ async function testChannelAdapters(): Promise<void> {
 
 
 async function testGatewayCronRpc(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-gateway-cron-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-gateway-cron-"));
   const store = createFileCronJobStore({ filePath: path.join(root, "jobs.json") });
   const delivered: string[] = [];
   const runner = createCronRunner({
@@ -835,7 +835,7 @@ async function testGatewayCronRpc(): Promise<void> {
       message: "run via gateway",
       schedule: "* * * * *",
       nextRunAt: "2026-05-17T10:01:00.000Z",
-      metadata: { project: "dragon" },
+      metadata: { project: "loong" },
     });
     assert(upsert.status === 200 && upsert.json.ok === true, "cron.job.upsert should succeed");
     assert(readPath(upsert.json, ["payload", "job", "id"]) === "gateway-cron-1", "cron.job.upsert should return job");
@@ -863,7 +863,7 @@ async function testGatewayCronRpc(): Promise<void> {
 
 
 async function testGatewayMemoryCandidateRpc(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-gateway-candidates-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-gateway-candidates-"));
   const provider = {
     id: "mock",
     displayName: "Mock",
@@ -875,7 +875,7 @@ async function testGatewayMemoryCandidateRpc(): Promise<void> {
   };
 
   try {
-    const runtime = createDragonRuntime({
+    const runtime = createLoongRuntime({
       providers: [provider],
       defaultModel: "mock-model",
       lifecycleHooks: [createMemoryCandidateLifecycleHook({ rootDir: root })],
@@ -976,7 +976,7 @@ async function testGatewayMemoryCandidateRpc(): Promise<void> {
 
 
 async function testTrajectoryPersistenceAndGatewayRpc(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-trajectories-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-trajectories-"));
   const trajectoryStore = createFileTrajectoryStore({ rootDir: root });
   const provider = {
     id: "mock",
@@ -989,7 +989,7 @@ async function testTrajectoryPersistenceAndGatewayRpc(): Promise<void> {
   };
 
   try {
-    const runtime = createDragonRuntime({
+    const runtime = createLoongRuntime({
       providers: [provider],
       defaultModel: "mock-model",
       trajectoryStore,
@@ -1056,7 +1056,7 @@ async function testGatewayTierRpc(): Promise<void> {
           tiers: { fast: { thinking: "none", maxContextChars: 4000 } },
           classifier: { mode: "heuristic" },
           appliesOn: "next-turn",
-          configPath: "/tmp/dragon/tiers.json",
+          configPath: "/tmp/loong/tiers.json",
         };
       },
       async save(config) {
@@ -1066,7 +1066,7 @@ async function testGatewayTierRpc(): Promise<void> {
           tiers: { ...config.tiers },
           classifier: { ...config.classifier },
           appliesOn: "next-turn",
-          configPath: "/tmp/dragon/tiers.json",
+          configPath: "/tmp/loong/tiers.json",
         };
       },
     },
@@ -1143,7 +1143,7 @@ async function testGatewayTierRpc(): Promise<void> {
 async function testGatewaySessionTurnQueue(): Promise<void> {
   let concurrent = 0;
   let maxConcurrent = 0;
-  const runtime: DragonAgentRuntime = {
+  const runtime: LoongAgentRuntime = {
     async runTurn(input) {
       concurrent += 1;
       maxConcurrent = Math.max(maxConcurrent, concurrent);
@@ -1192,7 +1192,7 @@ async function testGatewaySessionTurnQueue(): Promise<void> {
 
 async function testGatewayQueryLoop(): Promise<void> {
   let turnCount = 0;
-  const runtime: DragonAgentRuntime = {
+  const runtime: LoongAgentRuntime = {
     async runTurn(input) {
       turnCount += 1;
       const needsContinue = turnCount === 1;
@@ -1256,7 +1256,7 @@ async function testGatewayModelCatalogBridge(): Promise<void> {
   assert(shared.model === "openai:gpt-4.1", "shared model-catalog helper should canonicalize alias");
   assertThrows(
     () =>
-      assertDragonGatewayWebhookPayload({
+      assertLoongGatewayWebhookPayload({
         sessionId: "s1",
         message: "hi",
         channel: "telegram",
@@ -1264,6 +1264,240 @@ async function testGatewayModelCatalogBridge(): Promise<void> {
       }),
     "webhook validator should reject invalid thinking",
   );
+}
+
+
+async function testGatewaySkillsListRpc(): Promise<void> {
+  const mockSkillList = createMockTool("skill_list", ["read"], async () => ({
+    skills: [{ name: "custom-skill", description: "From disk", category: "custom" }],
+    total: 1,
+    truncated: false,
+  }));
+  const gateway = createHttpGateway({
+    runtime: createNoopRuntime(),
+    toolRegistry: createToolRegistry([mockSkillList]),
+  });
+  await gateway.start({ host: "127.0.0.1", port: 0 });
+  const address = gateway.address();
+  assert(address !== undefined, "skills list gateway should start");
+  try {
+    const response = await rpc(address.url, "skills.list");
+    assert(response.status === 200 && response.json.ok === true, "skills.list RPC should succeed");
+    const skills = readRecordArrayAt(response.json, ["payload", "skills"]);
+    assert(skills.some(skill => skill.name === "custom-skill"), "skills.list should include runtime skills");
+    assert(skills.some(skill => skill.name === "pptx"), "skills.list should include bundled preset skills");
+    assert(readPath(response.json, ["payload", "available"]) === true, "skills.list should report available=true");
+  } finally {
+    await gateway.stop();
+  }
+}
+
+
+async function testGatewayChannelPluginHost(): Promise<void> {
+  const pluginRoot = await mkdtemp(path.join(os.tmpdir(), "loong-channel-plugin-"));
+  await writeFile(
+    path.join(pluginRoot, "openclaw.plugin.json"),
+    JSON.stringify({
+      id: "test-channel",
+      channels: ["test-channel"],
+      entry: "index.mjs",
+    }),
+  );
+  await writeFile(
+    path.join(pluginRoot, "index.mjs"),
+    `async function readJsonBody(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(chunk);
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  return text.trim() ? JSON.parse(text) : {};
+}
+
+export default {
+  register(api) {
+    api.registerChannel({ plugin: { id: "test-channel" } });
+    api.registerHttpRoute({
+      path: "/test-channel/webhook",
+      auth: "plugin",
+      handler: async (request, response) => {
+        const body = await readJsonBody(request);
+        const delivery = await api.runtime.deliverInbound({
+          channel: "test-channel",
+          text: String(body.message ?? ""),
+          userId: typeof body.userId === "string" ? body.userId : "u1",
+          threadId: typeof body.threadId === "string" ? body.threadId : "t1",
+        });
+        response.statusCode = 200;
+        response.setHeader("content-type", "application/json; charset=utf-8");
+        response.end(JSON.stringify({ ok: true, source: "channel-plugin", delivery }));
+      },
+    });
+  },
+};
+`,
+  );
+  const gateway = createHttpGateway({
+    runtime: createEventRuntime(),
+    pluginRoots: [pluginRoot],
+  });
+  await gateway.start({ host: "127.0.0.1", port: 0 });
+  const address = gateway.address();
+  assert(address !== undefined, "channel plugin host gateway should start");
+  try {
+    const response = await rpc(address.url, "health");
+    assert(response.status === 200 && response.json.ok === true, "health RPC should succeed");
+    const hostStatus = readPath(response.json, ["payload", "channelPluginHost"]) as Record<string, unknown> | undefined;
+    assert(hostStatus?.host === "loong-channel-plugin-host", "health should report Loong Channel Plugin Host");
+    assert(hostStatus?.started === true, "channel plugin host should be started");
+    const channels = hostStatus?.registeredChannels;
+    assert(Array.isArray(channels) && channels.includes("test-channel"), "health should list registered test channel");
+    assert(hostStatus?.httpRouteCount === 1, "health should report one channel HTTP route");
+    const webhook = await fetch(`${address.url}/test-channel/webhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "hello from im", userId: "u1", threadId: "t1" }),
+    });
+    const webhookJson = await webhook.json() as Record<string, unknown>;
+    assert(webhook.status === 200 && webhookJson.ok === true && webhookJson.source === "channel-plugin", "plugin HTTP route should be reachable without gateway auth");
+    const delivery = webhookJson.delivery as Record<string, unknown> | undefined;
+    const result = delivery?.result as Record<string, unknown> | undefined;
+    const messages = result?.messages as Array<Record<string, unknown>> | undefined;
+    assert(messages?.at(-1)?.content === "ws-ok", "channel plugin inbound delivery should run an agent turn");
+  } finally {
+    await gateway.stop();
+    await rm(pluginRoot, { recursive: true, force: true });
+  }
+}
+
+
+async function testGatewayOpenClawRuntimeShim(): Promise<void> {
+  const pluginRoot = await mkdtemp(path.join(os.tmpdir(), "loong-openclaw-shim-"));
+  await writeFile(
+    path.join(pluginRoot, "openclaw.plugin.json"),
+    JSON.stringify({
+      id: "shim-channel",
+      channels: ["shim-channel"],
+      entry: "index.mjs",
+    }),
+  );
+  await writeFile(
+    path.join(pluginRoot, "index.mjs"),
+    `async function readJsonBody(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(chunk);
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  return text.trim() ? JSON.parse(text) : {};
+}
+
+export default {
+  register(api) {
+    api.registerChannel({ plugin: { id: "shim-channel" } });
+    api.registerHttpRoute({
+      path: "/shim-channel/webhook",
+      auth: "plugin",
+      handler: async (request, response) => {
+        const body = await readJsonBody(request);
+        const route = api.runtime.channel.routing.resolveAgentRoute({
+          cfg: api.config,
+          channel: "shim-channel",
+          peer: { kind: "dm", id: "user-1" },
+        });
+        const ctx = api.runtime.channel.reply.finalizeInboundContext({
+          Body: String(body.message ?? ""),
+          SessionKey: route.sessionKey,
+          SenderId: "user-1",
+          OriginatingChannel: "shim-channel",
+          Surface: "shim-channel",
+        });
+        let reply = "";
+        await api.runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+          ctx,
+          cfg: api.config,
+          dispatcherOptions: {
+            deliver: async (payload) => {
+              reply = payload.text ?? "";
+            },
+          },
+        });
+        response.statusCode = 200;
+        response.setHeader("content-type", "application/json; charset=utf-8");
+        response.end(JSON.stringify({ ok: true, reply }));
+      },
+    });
+  },
+};
+`,
+  );
+  const gateway = createHttpGateway({
+    runtime: createEventRuntime(),
+    pluginRoots: [pluginRoot],
+  });
+  await gateway.start({ host: "127.0.0.1", port: 0 });
+  const address = gateway.address();
+  assert(address !== undefined, "openclaw runtime shim gateway should start");
+  try {
+    const webhook = await fetch(`${address.url}/shim-channel/webhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "hello via shim" }),
+    });
+    const webhookJson = await webhook.json() as Record<string, unknown>;
+    assert(webhook.status === 200 && webhookJson.ok === true, "shim webhook should succeed");
+    assert(webhookJson.reply === "ws-ok", "openclaw runtime shim should deliver agent reply through buffered dispatcher");
+  } finally {
+    await gateway.stop();
+    await rm(pluginRoot, { recursive: true, force: true });
+  }
+}
+
+
+async function testGatewayOpenClawChinaWecomPlugin(): Promise<void> {
+  const wecomRoot = process.env.LOONG_OPENCLAW_CHINA_WECOM?.trim()
+    || path.join(path.dirname(WORKSPACE_ROOT), "openclaw-china", "extensions", "wecom");
+  const entryPath = path.join(wecomRoot, "dist", "index.js");
+  try {
+    await stat(entryPath);
+  } catch {
+    process.stderr.write(`skip - openclaw-china wecom plugin not built at ${entryPath}\n`);
+    return;
+  }
+  const gateway = createHttpGateway({
+    runtime: createEventRuntime(),
+    pluginRoots: [wecomRoot],
+    channelConfig: {
+      channels: {
+        wecom: {
+          enabled: true,
+          mode: "webhook",
+          webhookPath: "/wecom",
+          token: "test-token",
+          encodingAESKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+        },
+      },
+    },
+  });
+  await gateway.start({ host: "127.0.0.1", port: 0 });
+  const address = gateway.address();
+  assert(address !== undefined, "wecom plugin gateway should start");
+  try {
+    const response = await rpc(address.url, "health");
+    assert(response.status === 200 && response.json.ok === true, "health RPC should succeed");
+    const hostStatus = readPath(response.json, ["payload", "channelPluginHost"]) as Record<string, unknown> | undefined;
+    const channels = hostStatus?.registeredChannels;
+    assert(Array.isArray(channels) && channels.includes("wecom"), "health should list registered wecom channel");
+    const routeCount = hostStatus?.httpRouteCount;
+    assert(typeof routeCount === "number" && routeCount >= 2, "wecom plugin should register webhook and media routes");
+    const warnings = hostStatus?.warnings;
+    if (Array.isArray(warnings) && warnings.length > 0) {
+      const activationWarnings = warnings.filter(entry => /Failed to activate/i.test(String(entry)));
+      assert(activationWarnings.length === 0, `wecom plugin should activate without errors: ${activationWarnings.join("; ")}`);
+    }
+  } finally {
+    await gateway.stop();
+  }
 }
 
 
@@ -1282,5 +1516,9 @@ export const gatewayTestCases: TestCase[] = [
   ["gateway tier RPC", testGatewayTierRpc],
   ["gateway session turn queue", testGatewaySessionTurnQueue],
   ["gateway query loop continuation", testGatewayQueryLoop],
+  ["gateway skills.list RPC", testGatewaySkillsListRpc],
+  ["gateway channel plugin host", testGatewayChannelPluginHost],
+  ["gateway openclaw runtime shim", testGatewayOpenClawRuntimeShim],
+  ["gateway openclaw-china wecom plugin", testGatewayOpenClawChinaWecomPlugin],
   ["gateway model catalog bridge", testGatewayModelCatalogBridge],
 ];

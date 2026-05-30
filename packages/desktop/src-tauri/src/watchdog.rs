@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-use crate::config::{default_gateway_port, resolve_cli_entry, resolve_dragon_data_root};
+use crate::config::{default_gateway_port, resolve_cli_entry, resolve_loong_data_root};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -77,9 +77,9 @@ impl GatewayWatchdog {
         }
 
         let cli_entry = resolve_cli_entry()
-            .ok_or_else(|| "Dragon CLI entry not found. Build @dragon/cli or set DRAGON_CLI_ENTRY.".to_string())?;
+            .ok_or_else(|| "Loong CLI entry not found. Build @loong/cli or set LOONG_CLI_ENTRY.".to_string())?;
 
-        let data_root = resolve_dragon_data_root();
+        let data_root = resolve_loong_data_root();
         let mut command = Command::new("node");
         command
             .arg(&cli_entry)
@@ -88,13 +88,13 @@ impl GatewayWatchdog {
             .arg("127.0.0.1")
             .arg("--port")
             .arg(self.port.to_string())
-            .env("DRAGON_DATA_ROOT", &data_root)
+            .env("LOONG_DATA_ROOT", &data_root)
             .stdout(Stdio::null())
             .stderr(Stdio::null());
 
         let child = command
             .spawn()
-            .map_err(|error| format!("failed to spawn dragon gateway: {error}"))?;
+            .map_err(|error| format!("failed to spawn loong gateway: {error}"))?;
 
         {
             let mut guard = self

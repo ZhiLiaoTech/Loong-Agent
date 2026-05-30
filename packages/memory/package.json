@@ -1,5 +1,5 @@
 {
-  "name": "@dragon/memory",
+  "name": "@loong/memory",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,8 +16,8 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@dragon/core": "workspace:*",
-    "@dragon/tools": "workspace:*"
+    "@loong/core": "workspace:*",
+    "@loong/tools": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

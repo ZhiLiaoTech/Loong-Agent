@@ -1,8 +1,8 @@
-# @dragon/test-suite 技术方案
+# @loong/test-suite 技术方案
 
 ## 1. 职责边界
 
-**负责**：跨包集成回归测试（非单元测试框架）；通过子进程调用 `dragon` CLI、启动 loopback HTTP/WS mock、临时目录验证文件副作用。
+**负责**：跨包集成回归测试（非单元测试框架）；通过子进程调用 `loong` CLI、启动 loopback HTTP/WS mock、临时目录验证文件副作用。
 
 **不负责**：替代各包内部单测（当前多数包无独立单测）。
 
@@ -29,13 +29,13 @@ corepack pnpm test
 | Security | `isSensitiveKey`、redaction |
 | Model catalog | normalize、resolve |
 
-**未直接导入**：`@dragon/plugin-sdk`、`@dragon/skills`（skills 经 CLI 子进程测）。
+**未直接导入**：`@loong/plugin-sdk`、`@loong/skills`（skills 经 CLI 子进程测）。
 
 ## 4. 测试基础设施
 
 | 辅助 | 用途 |
 |------|------|
-| `runCli()` | spawn `dragon` |
+| `runCli()` | spawn `loong`（经 `packages/cli/dist/index.js`） |
 | `rpc()` / `postJson()` | Gateway HTTP |
 | Mock HTTP server | Provider/Webhook |
 | Raw WebSocket client | Gateway `/ws` |

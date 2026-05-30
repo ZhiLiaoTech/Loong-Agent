@@ -1,13 +1,15 @@
 import path from "node:path";
 import { readdir, realpath, stat } from "node:fs/promises";
 import {
-  createDragonRuntime,
+  createLoongRuntime,
+  mergeAiSummarizationLayers,
   mergeSessionCompactionLayers,
-  type DragonAgentRuntime,
-  type DragonLifecycleHook,
-  type DragonPermissionHandler,
+  evaluateStudioWorkspaceScopePermission,
+  type LoongAgentRuntime,
+  type LoongLifecycleHook,
+  type LoongPermissionHandler,
   type ModelTierConfig,
-} from "@dragon/core";
+} from "@loong/core";
 import { loadContextConfig } from "./context-config.js";
 import { bootstrapAgentToolRegistry } from "./bootstrap-agent-tool-registry.js";
 import {
@@ -23,14 +25,14 @@ import {
   type MemorySearchResult,
   type MemoryStore,
   type TrajectoryStore,
-} from "@dragon/memory";
-import { loadDragonPlugin, type DragonPluginMemoryBackend, type LoadedDragonPlugin } from "@dragon/plugin-sdk";
+} from "@loong/memory";
+import { loadLoongPlugin, type LoongPluginMemoryBackend, type LoadedLoongPlugin } from "@loong/plugin-sdk";
 import {
   catalogEntriesFromProviders,
   createModelCatalog,
-  type DragonModelCatalog,
-} from "@dragon/model-catalog";
-import { createProviderRegistry, type ModelProvider } from "@dragon/providers";
+  type LoongModelCatalog,
+} from "@loong/model-catalog";
+import { createProviderRegistry, type ModelProvider } from "@loong/providers";
 import {
   createToolPermissionEngine,
   createToolRegistry,
@@ -38,8 +40,8 @@ import {
   type ToolPermissionEngine,
   type ToolPermissionRule,
   type ToolRegistry,
-} from "@dragon/tools";
-import { evaluateOrgAwarePermission, type EmployeeStore, type ToolPolicyStore } from "@dragon/org";
+} from "@loong/tools";
+import { evaluateOrgAwarePermission, type EmployeeStore, type ToolPolicyStore } from "@loong/org";
 
 const MAX_PLUGIN_MEMORY_RESULTS = 50;
 const MAX_PLUGIN_MEMORY_CONTENT_CHARS = 16_000;
@@ -62,22 +64,22 @@ export interface RuntimeFactoryOptions {
   trajectoryStore?: TrajectoryStore;
   providers?: ModelProvider[];
   defaultProviderId?: string;
-  permissionHandler?: DragonPermissionHandler;
+  permissionHandler?: LoongPermissionHandler;
   denyAskWithoutHandler?: boolean;
   tierConfig?: ModelTierConfig;
   orgStores?: {
     employeeStore: EmployeeStore;
     toolPolicyStore: ToolPolicyStore;
   };
-  ticketLifecycleHook?: DragonLifecycleHook;
+  ticketLifecycleHook?: LoongLifecycleHook;
   modelTimeoutMs?: number;
 }
 
 export interface RuntimeFactoryResult {
-  runtime: DragonAgentRuntime;
-  plugins: LoadedDragonPlugin[];
+  runtime: LoongAgentRuntime;
+  plugins: LoadedLoongPlugin[];
   providers: ModelProvider[];
-  modelCatalog: DragonModelCatalog;
+  modelCatalog: LoongModelCatalog;
   tools: ToolDefinition[];
   toolRegistry: ToolRegistry;
   permissionEngine?: ToolPermissionEngine;
@@ -94,14 +96,17 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
   const mergedSessionCompaction = options.mode === "agent"
     ? mergeSessionCompactionLayers(contextConfig.sessionCompaction, agentConfigForCompaction?.sessionCompaction)
     : undefined;
+  const mergedAiSummarization = options.mode === "agent"
+    ? mergeAiSummarizationLayers(contextConfig.aiSummarization, agentConfigForCompaction?.aiSummarization)
+    : undefined;
   const plugins = await loadConfiguredPlugins(options.pluginRoots);
   try {
     const pluginProviders = plugins.flatMap(plugin => [...plugin.providers] as ModelProvider[]);
     const pluginTools = options.mode === "agent"
       ? plugins.flatMap(plugin => [...plugin.tools] as ToolDefinition[])
       : [];
-    const pluginLifecycleHooks = plugins.flatMap(plugin => [...plugin.lifecycleHooks] as DragonLifecycleHook[]);
-    const pluginMemoryBackends = plugins.flatMap(plugin => [...plugin.memoryBackends] as DragonPluginMemoryBackend[]);
+    const pluginLifecycleHooks = plugins.flatMap(plugin => [...plugin.lifecycleHooks] as LoongLifecycleHook[]);
+    const pluginMemoryBackends = plugins.flatMap(plugin => [...plugin.memoryBackends] as LoongPluginMemoryBackend[]);
     assertUniqueMemoryBackendIds(pluginMemoryBackends);
     const builtInProviders = options.providers ?? [];
     const providers = [
@@ -132,7 +137,7 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
       ?? (options.mode === "agent" && !options.noSession
         ? createFileTrajectoryStore({ rootDir: path.join(options.memoryDir, "trajectories") })
         : undefined);
-    let runtime: DragonAgentRuntime | undefined;
+    let runtime: LoongAgentRuntime | undefined;
     const contextProviders = options.mode === "agent" && memoryStore
       ? [
           createMarkdownMemoryContextProvider({ rootDir: options.memoryDir }),
@@ -141,7 +146,7 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
         ]
       : [];
     const loadedPluginLine = plugins.length > 0
-      ? `Loaded Dragon plugins: ${plugins.map(plugin => `${plugin.manifest.name}@${plugin.manifest.version}`).join(", ")}.`
+      ? `Loaded Loong plugins: ${plugins.map(plugin => `${plugin.manifest.name}@${plugin.manifest.version}`).join(", ")}.`
       : undefined;
     const permissionEngine = options.mode === "agent"
       ? createToolPermissionEngine({
@@ -201,14 +206,14 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
         ? {
             ...(permissionEngine ? { permissionEngine } : {}),
             systemPrompt: [
-              "You are Dragon, a TypeScript-native local-first coding agent.",
+              "You are Loong, a TypeScript-native local-first coding agent.",
               "Use tools when they help inspect the current workspace.",
-              "Use skill_list and skill_load to discover and apply configured Dragon skills when they are relevant.",
+              "Use skill_list and skill_load to discover and apply configured Loong skills when they are relevant.",
               "Human-readable Markdown memory files are injected automatically when present.",
               "Older session history may be injected as bounded compacted context when recent history is truncated.",
               "Use memory_search to recall durable local context. Use memory_remember only when the user asks to keep a stable fact or project note.",
               "Explicit remember requests may also be captured as reviewable memory candidates before promotion to durable memory.",
-              "Use trajectory_list and trajectory_get to inspect recent Dragon run records when debugging prior behavior.",
+              "Use trajectory_list and trajectory_get to inspect recent Loong run records when debugging prior behavior.",
               "Use delegation_run for bounded multi-task delegation when a task can be split into independent or dependency-ordered subtasks.",
               loadedPluginLine,
               "Only use shell_exec for conservative read-only commands.",
@@ -229,16 +234,17 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
     const defaultProvider = options.defaultProviderId !== undefined
       ? providers.find(provider => provider.id === options.defaultProviderId)
       : undefined;
-    const runtimeConfig: Parameters<typeof createDragonRuntime>[0] = {
+    const runtimeConfig: Parameters<typeof createLoongRuntime>[0] = {
       ...runtimeOptions,
       ...(defaultProvider?.defaultModel !== undefined ? { defaultModel: defaultProvider.defaultModel } : {}),
       ...(options.modelTimeoutMs !== undefined ? { modelTimeoutMs: options.modelTimeoutMs } : {}),
       ...(options.tierConfig !== undefined ? { tierConfig: options.tierConfig } : {}),
       ...(mergedSessionCompaction !== undefined ? { sessionCompaction: mergedSessionCompaction } : {}),
+      ...(mergedAiSummarization !== undefined ? { aiSummarization: mergedAiSummarization } : {}),
       ...(options.orgStores
         ? {
-            permissionEvaluator: async (tool, invocation, baseline) =>
-              evaluateOrgAwarePermission(
+            permissionEvaluator: async (tool, invocation, baseline) => {
+              const org = await evaluateOrgAwarePermission(
                 {
                   ...(permissionEngine ? { baseline: permissionEngine } : {}),
                   getEmployees: () => options.orgStores!.employeeStore.load(),
@@ -246,12 +252,17 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
                 },
                 tool,
                 invocation,
-              ),
+              );
+              return evaluateStudioWorkspaceScopePermission(tool, invocation, org);
+            },
           }
-        : {}),
+        : {
+            permissionEvaluator: async (tool, invocation, baseline) =>
+              evaluateStudioWorkspaceScopePermission(tool, invocation, baseline),
+          }),
     };
 
-    runtime = createDragonRuntime(runtimeConfig);
+    runtime = createLoongRuntime(runtimeConfig);
 
     return {
       runtime,
@@ -268,12 +279,12 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
   }
 }
 
-async function loadConfiguredPlugins(pluginRoots: string[]): Promise<LoadedDragonPlugin[]> {
+async function loadConfiguredPlugins(pluginRoots: string[]): Promise<LoadedLoongPlugin[]> {
   const roots = await discoverPluginRoots(pluginRoots);
-  const plugins: LoadedDragonPlugin[] = [];
+  const plugins: LoadedLoongPlugin[] = [];
   try {
     for (const root of roots) {
-      plugins.push(await loadDragonPlugin(root));
+      plugins.push(await loadLoongPlugin(root));
     }
     return plugins;
   } catch (error) {
@@ -327,7 +338,7 @@ async function tryRealDirectory(value: string): Promise<string | undefined> {
 
 async function hasPluginManifest(pluginRoot: string): Promise<boolean> {
   try {
-    const manifestPath = await realpath(path.join(pluginRoot, "dragon.plugin.json"));
+    const manifestPath = await realpath(path.join(pluginRoot, "loong.plugin.json"));
     const manifestStat = await stat(manifestPath);
     return manifestStat.isFile() && isPathInside(manifestPath, pluginRoot);
   } catch {
@@ -358,7 +369,7 @@ function assertUniqueProviderIds(providers: ModelProvider[]): void {
   }
 }
 
-function assertUniqueMemoryBackendIds(backends: DragonPluginMemoryBackend[]): void {
+function assertUniqueMemoryBackendIds(backends: LoongPluginMemoryBackend[]): void {
   const seen = new Set<string>();
   for (const backend of backends) {
     const id = backend.id.trim();
@@ -366,7 +377,7 @@ function assertUniqueMemoryBackendIds(backends: DragonPluginMemoryBackend[]): vo
       throw new Error("Memory backend id must not be empty.");
     }
     if (isBuiltInMemoryBackendId(id)) {
-      throw new Error(`Memory backend id "${id}" is reserved for Dragon's built-in stores.`);
+      throw new Error(`Memory backend id "${id}" is reserved for Loong's built-in stores.`);
     }
     if (seen.has(id)) {
       throw new Error(`Memory backend "${id}" is already registered.`);
@@ -377,7 +388,7 @@ function assertUniqueMemoryBackendIds(backends: DragonPluginMemoryBackend[]): vo
 
 function selectMemoryStore(
   requestedBackendId: string | undefined,
-  pluginBackends: DragonPluginMemoryBackend[],
+  pluginBackends: LoongPluginMemoryBackend[],
   memoryDir: string,
 ): MemoryStore {
   const backendId = requestedBackendId?.trim() || "file";
@@ -583,13 +594,13 @@ function pluginToolPermissionRules(tools: ToolDefinition[]): ToolPermissionRule[
   return rules;
 }
 
-export async function deactivateLoadedPlugins(plugins: LoadedDragonPlugin[]): Promise<void> {
+export async function deactivateLoadedPlugins(plugins: LoadedLoongPlugin[]): Promise<void> {
   for (const plugin of [...plugins].reverse()) {
     try {
       await plugin.deactivate();
     } catch (error) {
       process.stderr.write(
-        `Dragon plugin ${plugin.manifest.name} failed to deactivate: ${error instanceof Error ? error.message : String(error)}\n`,
+        `Loong plugin ${plugin.manifest.name} failed to deactivate: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
   }

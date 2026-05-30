@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "identifier": "com.loong.studio",
   "build": {
-    "beforeDevCommand": "corepack pnpm --filter @dragon/studio dev",
+    "beforeDevCommand": "corepack pnpm --filter @loong/studio dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "corepack pnpm --filter @dragon/studio build",
+    "beforeBuildCommand": "corepack pnpm --filter @loong/studio build",
     "frontendDist": "../../studio/dist"
   },
   "app": {

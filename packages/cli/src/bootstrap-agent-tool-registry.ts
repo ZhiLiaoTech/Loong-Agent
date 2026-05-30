@@ -1,4 +1,4 @@
-import type { DragonAgentRuntime } from "@dragon/core";
+import type { LoongAgentRuntime } from "@loong/core";
 import {
   createBrowserFormSubmitTool,
   createBrowserPlaywrightSnapshotTool,
@@ -14,23 +14,23 @@ import {
   registerMcpTools,
   type ToolDefinition,
   type ToolRegistry,
-} from "@dragon/tools";
-import { createRuntimeDelegationTool } from "@dragon/delegation";
+} from "@loong/tools";
+import { createRuntimeDelegationTool } from "@loong/delegation";
 import {
   createMemoryCandidateTools,
   createMemoryTools,
   createTrajectoryTools,
   type MemoryStore,
   type TrajectoryStore,
-} from "@dragon/memory";
-import { createFileSkillRuntime, createSkillTools } from "@dragon/skills";
+} from "@loong/memory";
+import { createFileSkillRuntime, createSkillTools } from "@loong/skills";
 
 export interface BootstrapAgentToolRegistryOptions {
   skillRoots: readonly string[];
   memoryStore: MemoryStore;
   memoryDir: string;
   trajectoryStore?: TrajectoryStore;
-  runtime?: (() => DragonAgentRuntime | undefined);
+  runtime?: (() => LoongAgentRuntime | undefined);
   /** When true (default), register MCP tools from config. */
   registerMcp?: boolean;
   mcpConfigPath?: string;

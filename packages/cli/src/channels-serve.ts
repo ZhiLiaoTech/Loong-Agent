@@ -1,8 +1,8 @@
 import {
   startGatewayBridgeServer,
-  type DragonChannelGatewayOptions,
+  type LoongChannelGatewayOptions,
   type GatewayBridgeServerOptions,
-} from "@dragon/channels";
+} from "@loong/channels";
 
 export type ChannelsServeOptions = GatewayBridgeServerOptions;
 
@@ -10,18 +10,18 @@ export async function runChannelsServe(options: ChannelsServeOptions) {
   return startGatewayBridgeServer(options);
 }
 
-export { createGatewayBridgeHandler } from "@dragon/channels";
+export { createGatewayBridgeHandler } from "@loong/channels";
 
 export async function parseChannelsServeArgs(args: string[]): Promise<ChannelsServeOptions> {
-  let host = process.env.DRAGON_CHANNELS_HOST?.trim() || "127.0.0.1";
-  let port = parseOptionalPort(process.env.DRAGON_CHANNELS_PORT) ?? 17_358;
-  let gatewayUrl = process.env.DRAGON_GATEWAY_URL?.trim()
-    || process.env.DRAGON_CHANNELS_GATEWAY_URL?.trim()
+  let host = process.env.LOONG_CHANNELS_HOST?.trim() || "127.0.0.1";
+  let port = parseOptionalPort(process.env.LOONG_CHANNELS_PORT) ?? 17_358;
+  let gatewayUrl = process.env.LOONG_GATEWAY_URL?.trim()
+    || process.env.LOONG_CHANNELS_GATEWAY_URL?.trim()
     || "http://127.0.0.1:17357";
-  let sharedSecret = process.env.DRAGON_GATEWAY_SECRET?.trim()
-    || process.env.DRAGON_CHANNELS_GATEWAY_SECRET?.trim();
-  let profileId = process.env.DRAGON_AGENT_PROFILE?.trim();
-  let workspace = process.env.DRAGON_WORKSPACE?.trim();
+  let sharedSecret = process.env.LOONG_GATEWAY_SECRET?.trim()
+    || process.env.LOONG_CHANNELS_GATEWAY_SECRET?.trim();
+  let profileId = process.env.LOONG_AGENT_PROFILE?.trim();
+  let workspace = process.env.LOONG_WORKSPACE?.trim();
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -82,7 +82,7 @@ export async function parseChannelsServeArgs(args: string[]): Promise<ChannelsSe
     throw new Error(`Unknown channels option: ${arg}`);
   }
 
-  const defaults: DragonChannelGatewayOptions = {};
+  const defaults: LoongChannelGatewayOptions = {};
   if (profileId) {
     defaults.profileId = profileId;
   }
@@ -101,7 +101,7 @@ export async function parseChannelsServeArgs(args: string[]): Promise<ChannelsSe
 
 function parsePortArg(value: string | undefined, label: string): number {
   if (!value?.trim()) {
-    throw new Error(`Usage: dragon channels serve ${label} <port>`);
+    throw new Error(`Usage: loong channels serve ${label} <port>`);
   }
   return parsePort(value.trim());
 }

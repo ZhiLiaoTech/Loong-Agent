@@ -12,8 +12,8 @@ const parseGatewayStart = lines.findIndex(l => l === "interface ParsedGatewayArg
 const parseGatewayEnd = lines.findIndex((l, i) => i > parseGatewayStart && l === "}");
 
 const header = `import path from "node:path";
-import { normalizeTierConfig, type DragonAgentRuntime, type ModelTierConfig } from "@dragon/core";
-import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@dragon/cron";
+import { normalizeTierConfig, type LoongAgentRuntime, type ModelTierConfig } from "@loong/core";
+import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@loong/cron";
 import {
   createFileApprovalStore,
   createFileEmployeeStore,
@@ -29,12 +29,12 @@ import {
   defaultOrgConfigPath,
   defaultTicketConfigPath,
   defaultToolPolicyConfigPath,
-} from "@dragon/org";
+} from "@loong/org";
 import {
   createHttpGateway,
   type GatewayConfig,
-} from "@dragon/gateway";
-import { createFileTrajectoryStore } from "@dragon/memory";
+} from "@loong/gateway";
+import { createFileTrajectoryStore } from "@loong/memory";
 import {
   loadGatewaySettingsFile,
   mergeGatewayConfigFromFile,

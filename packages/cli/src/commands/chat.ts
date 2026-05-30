@@ -3,10 +3,10 @@ import {
   findAgentProfile,
   mergeAgentProfileIntoTurnInput,
   runTurnWithQueryLoop,
-  type DragonAgentProfile,
-  type DragonTurnInput,
-} from "@dragon/core";
-import type { GatewayAgentProfileConfig } from "@dragon/gateway";
+  type LoongAgentProfile,
+  type LoongTurnInput,
+} from "@loong/core";
+import type { GatewayAgentProfileConfig } from "@loong/gateway";
 import {
   loadGatewaySettingsFile,
   parseModelTimeoutMsFromEnv,
@@ -26,7 +26,7 @@ import {
 } from "../cli-impl.js";
 import { createRuntime, deactivateLoadedPlugins } from "../runtime-factory.js";
 import { createCliPermissionHandler, formatMetadata, renderEvent } from "../cli-ui.js";
-import { applyModelCatalogToParams } from "@dragon/model-catalog";
+import { applyModelCatalogToParams } from "@loong/model-catalog";
 
 export async function runChat(mode: "chat" | "agent", args: string[]): Promise<void> {
   const parsed = parseChatArgs(mode, args);
@@ -79,7 +79,7 @@ export async function runChat(mode: "chat" | "agent", args: string[]): Promise<v
       { ...(parsed.model !== undefined ? { model: parsed.model } : {}) },
       runtimeBundle.modelCatalog,
     );
-    let turnInput: DragonTurnInput = {
+    let turnInput: LoongTurnInput = {
       sessionId: parsed.sessionId,
       source: "cli",
       message: parsed.message,
@@ -96,11 +96,11 @@ export async function runChat(mode: "chat" | "agent", args: string[]): Promise<v
     if (mode === "agent") {
       const agentConfig = await loadPersistedAgentConfig(configuredAgentConfigPath());
       const profile = findAgentProfile(
-        { profiles: agentConfig.profiles.map(toDragonAgentProfile), ...(agentConfig.defaultProfileId ? { defaultProfileId: agentConfig.defaultProfileId } : {}) },
+        { profiles: agentConfig.profiles.map(toLoongAgentProfile), ...(agentConfig.defaultProfileId ? { defaultProfileId: agentConfig.defaultProfileId } : {}) },
         parsed.profileId,
       );
       if (parsed.profileId && !profile) {
-        throw new Error(`Unknown agent profile "${parsed.profileId}". Check .dragon/config/agents.json.`);
+        throw new Error(`Unknown agent profile "${parsed.profileId}". Check .loong/config/agents.json.`);
       }
       turnInput = mergeAgentProfileIntoTurnInput(turnInput, profile);
     }
@@ -120,7 +120,7 @@ export async function runChat(mode: "chat" | "agent", args: string[]): Promise<v
       if (lastErrorMetadata) {
         console.error(formatMetadata(lastErrorMetadata));
       }
-      throw new Error(result.error ?? `Dragon turn failed with status ${result.status}.`);
+      throw new Error(result.error ?? `Loong turn failed with status ${result.status}.`);
     }
 
     const assistant = result.messages.find(item => item.role === "assistant");
@@ -132,7 +132,7 @@ export async function runChat(mode: "chat" | "agent", args: string[]): Promise<v
   }
 }
 
-function toDragonAgentProfile(profile: GatewayAgentProfileConfig): DragonAgentProfile {
+function toLoongAgentProfile(profile: GatewayAgentProfileConfig): LoongAgentProfile {
   return {
     id: profile.id,
     name: profile.name,
@@ -144,5 +144,6 @@ function toDragonAgentProfile(profile: GatewayAgentProfileConfig): DragonAgentPr
     ...(profile.toolsEnabled !== undefined ? { toolsEnabled: profile.toolsEnabled } : {}),
     ...(profile.memoryEnabled !== undefined ? { memoryEnabled: profile.memoryEnabled } : {}),
     ...(profile.sessionCompaction !== undefined ? { sessionCompaction: profile.sessionCompaction } : {}),
+    ...(profile.aiSummarization !== undefined ? { aiSummarization: profile.aiSummarization } : {}),
   };
 }

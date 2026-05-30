@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolInvocation } from "@dragon/tools";
+import type { ToolDefinition, ToolInvocation } from "@loong/tools";
 import type {
   DigitalEmployee,
   OrgToolDecision,

@@ -1,6 +1,6 @@
-# Dragon 整体技术方案
+# Loong 整体技术方案
 
-本文档描述 Dragon（潜龙）框架的**整体技术架构**、**运行时数据流**、**包依赖关系**与**跨模块 Code Review 结论**。分模块技术方案与逐包 Review 见 [modules/README.md](./modules/README.md)。
+本文档描述 Loong框架的**整体技术架构**、**运行时数据流**、**包依赖关系**与**跨模块 Code Review 结论**。分模块技术方案与逐包 Review 见 [modules/README.md](./modules/README.md)。
 
 > 产品定位与包职责概览仍见 [ARCHITECTURE.md](./ARCHITECTURE.md)；本文侧重实现级技术方案与工程质量评估。
 
@@ -8,7 +8,7 @@
 
 ## 1. 系统定位
 
-Dragon 是 **TypeScript 原生、本地优先（local-first）** 的智能体框架，目标融合：
+Loong 是 **TypeScript 原生、本地优先（local-first）** 的智能体框架，目标融合：
 
 | 来源 | 借鉴能力 |
 |------|----------|
@@ -25,27 +25,27 @@ Dragon 是 **TypeScript 原生、本地优先（local-first）** 的智能体框
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
 │  接入层 (Interfaces)                                             │
-│  CLI (dragon chat|agent|gateway|cron)  │  Dashboard  │  Webhook  │
+│  CLI (loong chat|agent|gateway|cron)  │  Dashboard  │  Webhook  │
 └────────────────────────────┬────────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
-│  控制面 (@dragon/gateway)                                        │
+│  控制面 (@loong/gateway)                                        │
 │  HTTP / SSE / WebSocket │ JSON-RPC │ Session Lane │ Run Registry │
 └────────────────────────────┬────────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
-│  编排层 (@dragon/cli) — Composition Root                         │
+│  编排层 (@loong/cli) — Composition Root                         │
 │  插件加载 │ Provider/Model 配置 │ 工具注册 │ 记忆/技能/委托装配      │
 └────────────────────────────┬────────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
-│  运行时内核 (@dragon/core)                                       │
+│  运行时内核 (@loong/core)                                       │
 │  runTurn: 上下文 → 模型 → 工具循环 → 事件 → 持久化                 │
 └──────┬──────────────────┬──────────────────┬────────────────────┘
        │                  │                  │
        ▼                  ▼                  ▼
 ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────────┐
-│ @dragon/     │  │ @dragon/     │  │ @dragon/memory + skills +    │
+│ @loong/     │  │ @loong/     │  │ @loong/memory + skills +    │
 │ providers    │  │ tools        │  │ delegation + cron + channels │
 │ model-catalog│  │ security     │  │ (能力扩展，经 CLI 注入)        │
 └──────────────┘  └──────────────┘  └──────────────────────────────┘
@@ -55,11 +55,11 @@ Dragon 是 **TypeScript 原生、本地优先（local-first）** 的智能体框
 
 | 原则 | 落地方式 |
 |------|----------|
-| 协议优先 | `DragonTurnInput`、`GatewayRequest`、`ToolDefinition` 等 Typed 契约 |
-| 可插拔 | `DragonSessionStore`、`DragonContextProvider`、`ModelProvider`、插件 SDK |
-| 权限中介 | `ToolPermissionEngine` + 可选 `DragonPermissionHandler` |
+| 协议优先 | `LoongTurnInput`、`GatewayRequest`、`ToolDefinition` 等 Typed 契约 |
+| 可插拔 | `LoongSessionStore`、`LoongContextProvider`、`ModelProvider`、插件 SDK |
+| 权限中介 | `ToolPermissionEngine` + 可选 `LoongPermissionHandler` |
 | 可审计记忆 | Markdown 文件 + JSONL + 候选记忆审核流 |
-| 密钥安全 | `@dragon/security` 统一脱敏；Gateway 配置 API 不回传 raw API Key |
+| 密钥安全 | `@loong/security` 统一脱敏；Gateway 配置 API 不回传 raw API Key |
 | 本地优先 | 默认 `127.0.0.1`、工作区路径约束、无云依赖 |
 
 ---
@@ -79,7 +79,7 @@ sequenceDiagram
 
   U->>GW: message + sessionId
   GW->>GW: runInLane(sessionId)
-  GW->>RT: runTurn(DragonTurnInput)
+  GW->>RT: runTurn(LoongTurnInput)
   RT->>RT: lifecycle:start + hooks
   RT->>RT: loadSession + contextProviders
   RT->>PR: complete(messages, tools)
@@ -90,11 +90,11 @@ sequenceDiagram
     RT->>PR: complete(with tool results)
   end
   RT->>RT: persist session/trajectory
-  RT-->>GW: DragonTurnResult + events
+  RT-->>GW: LoongTurnResult + events
   GW-->>U: RPC/SSE/WS + dashboard
 ```
 
-关键实现：`packages/core/src/runtime.ts` 中 `DefaultDragonAgentRuntime.runTurn`。
+关键实现：`packages/core/src/runtime.ts` 中 `DefaultLoongAgentRuntime.runTurn`。
 
 ### 3.2 Gateway 请求路径
 
@@ -113,13 +113,13 @@ Session 级串行：`#runInLane` 对同一 `sessionId` 的 Agent 请求排队执
 
 | 路径 | 内容 |
 |------|------|
-| `.dragon/config/providers.json` | 模型 Provider（含 API Key，Gateway 读取时脱敏） |
-| `.dragon/config/agents.json` | Agent Profile |
-| `.dragon/cron/jobs.json` | 定时任务 |
-| `.dragon/memory/` | 记忆记录、候选审核 JSONL |
-| `.dragon/sessions/` | 会话 transcript |
-| `.dragon/trajectories/` | 轨迹 JSONL |
-| `.dragon/plugins/` | 插件目录 |
+| `.loong/config/providers.json` | 模型 Provider（含 API Key，Gateway 读取时脱敏） |
+| `.loong/config/agents.json` | Agent Profile |
+| `.loong/cron/jobs.json` | 定时任务 |
+| `.loong/memory/` | 记忆记录、候选审核 JSONL |
+| `.loong/sessions/` | 会话 transcript |
+| `.loong/trajectories/` | 轨迹 JSONL |
+| `.loong/plugins/` | 插件目录 |
 
 ---
 
@@ -147,7 +147,7 @@ security          model-catalog
                         channels (独立，仅 test-suite 引用)
 ```
 
-**组合根**：仅 `@dragon/cli` 装配完整产品栈；`core` 与 `gateway` 保持可独立复用。
+**组合根**：仅 `@loong/cli` 装配完整产品栈；`core` 与 `gateway` 保持可独立复用。
 
 ---
 
@@ -159,7 +159,7 @@ security          model-catalog
 | 运行时 | Node.js（ESM，`type: "module"`） |
 | 包管理 | pnpm 10 workspace |
 | 构建 | 各包 `tsc` → `dist/` |
-| 测试 | `@dragon/test-suite`（tsx 顺序集成测试，非 Jest/Vitest） |
+| 测试 | `@loong/test-suite`（tsx 顺序集成测试，非 Jest/Vitest） |
 | HTTP | `node:http` 原生（Gateway 无 Express/Fastify） |
 | 数据库 | 可选 `node:sqlite`（memory 包 FTS 后端） |
 
@@ -180,11 +180,11 @@ corepack pnpm smoke:gateway
 |--------|-----------|----------|
 | 模型 Provider | `ModelProvider` | CLI 内置 + 插件 `registerProvider` |
 | 工具 | `ToolDefinition` | CLI 内置 + 插件 `registerTool` |
-| 记忆后端 | `DragonPluginMemoryBackend` | 插件 + `--memory-backend` |
-| 上下文 | `DragonContextProvider` | CLI 装配（Markdown 记忆、会话压缩等） |
-| 生命周期 | `DragonLifecycleHook` | 插件 + 记忆候选 Hook |
-| 通道 | Webhook JSON | Gateway `/channels/webhook`；`@dragon/channels` 为外部适配器 |
-| 定时任务 | `DragonCronJobStore` + Runner | CLI/Gateway 注入 |
+| 记忆后端 | `LoongPluginMemoryBackend` | 插件 + `--memory-backend` |
+| 上下文 | `LoongContextProvider` | CLI 装配（Markdown 记忆、会话压缩等） |
+| 生命周期 | `LoongLifecycleHook` | 插件 + 记忆候选 Hook |
+| 通道 | Webhook JSON | Gateway `/channels/webhook`；`@loong/channels` 为外部适配器 |
+| 定时任务 | `LoongCronJobStore` + Runner | CLI/Gateway 注入 |
 
 详见 [PLUGINS.md](./PLUGINS.md)、[PERMISSIONS.md](./PERMISSIONS.md)、[SKILLS.md](./SKILLS.md)、[MEMORY.md](./MEMORY.md)。
 
@@ -196,7 +196,7 @@ corepack pnpm smoke:gateway
 
 1. **边界清晰**：`core` 不依赖 `memory`/`gateway`，内核可嵌入其他宿主。
 2. **安全默认值**：工具工作区约束、shell 白名单、sandbox 配置档、Gateway 直连工具双重白名单。
-3. **可观测性**：统一 `DragonEvent`（lifecycle、assistant_delta、tool、permission）。
+3. **可观测性**：统一 `LoongEvent`（lifecycle、assistant_delta、tool、permission）。
 4. **失败隔离**：Context Provider、Lifecycle Hook、订阅者错误均 fail-soft，不拖垮主回合。
 5. **模型容错**：Provider 可重试错误 + fallback 链，流式失败不提前暴露错误输出。
 6. **回归覆盖广**：test-suite 覆盖 Gateway WS、Webhook、Cron、Delegation、Provider 流式等高风险路径。
@@ -208,15 +208,15 @@ corepack pnpm smoke:gateway
 | P0 | Gateway 默认 `authMode: none` | 本机任意进程可 RPC、跑 Agent、调 Git 工具 | 生产/共享环境强制 `shared-secret`；文档与 CLI 启动时警告 |
 | P0 | `ask` 权限无 Handler 时工具静默跳过 | CI/管道中写操作、patch 不执行且无明确失败 | 非 TTY 时默认 deny 并返回结构化错误，或 `--fail-on-ask` |
 | P1 | `thinking`、Profile 的 `toolsEnabled`/`memoryEnabled` 未贯通 | Dashboard/配置项部分无效 | 在 `runTurn` 与 Gateway `toTurnInput` 中落实 |
-| P1 | `@dragon/model-catalog` 全局 Catalog 未接入 CLI/Gateway | 模型元数据重复、裸 ref 解析歧义 | CLI 启动时 `createModelCatalog` 统一 resolve |
+| P1 | `@loong/model-catalog` 全局 Catalog 未接入 CLI/Gateway | 模型元数据重复、裸 ref 解析歧义 | CLI 启动时 `createModelCatalog` 统一 resolve |
 | P1 | `memory/src/index.ts` 单文件 ~3k 行 | 维护与测试成本高 | 按 store/context/tools 拆分子模块 |
 | P1 | `cli/src/index.ts` 单文件 ~2k 行 | 同上 | 拆分为 gateway/agent/plugins 等子命令模块 |
 | P2 | Browser 工具无 SSRF 防护 | 内网/metadata 探测风险 | 阻断 localhost、RFC1918、link-local |
-| P2 | `@dragon/channels` 未编入 Gateway | Webhook schema 易漂移 | 共享 payload 类型 + 可选内置 adapter |
-| P2 | Cron/Channels Webhook 客户端重复 | 重复 bug 修复 | 提取 `@dragon/webhook-client` 或并入 channels |
+| P2 | `@loong/channels` 未编入 Gateway | Webhook schema 易漂移 | 共享 payload 类型 + 可选内置 adapter |
+| P2 | Cron/Channels Webhook 客户端重复 | 重复 bug 修复 | 提取 `@loong/webhook-client` 或并入 channels |
 | P2 | 插件仅支持编译后 `.js` 入口 | 开发体验差 | 可选 `tsx` 开发加载或文档化 build 流程 |
 | P3 | 同轮多 tool call 串行执行 | 延迟偏高 | 只读工具可 `Promise.all` 并行 |
-| P3 | `DragonTurnResult.status: timeout` 未实现 | 类型与行为不一致 | 实现 turn 超时或从类型中移除 |
+| P3 | `LoongTurnResult.status: timeout` 未实现 | 类型与行为不一致 | 实现 turn 超时或从类型中移除 |
 | P3 | test-suite 单体顺序执行 | CI 变慢 | 引入 Vitest 分片或按域拆分 |
 
 ### 7.3 成熟度评估（2026-05）

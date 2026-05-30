@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolJsonSchema } from "@dragon/tools";
+import type { ToolDefinition, ToolJsonSchema } from "@loong/tools";
 import {
   parseMemoryRememberInput,
   parseMemorySearchInput,
@@ -44,7 +44,7 @@ export function createMemoryTools(store: MemoryStore): ToolDefinition[] {
 export function createMemorySearchTool(store: MemoryStore): ToolDefinition<MemorySearchInput, MemorySearchOutput> {
   return {
     name: "memory_search",
-    description: "Search Dragon's durable local memory for relevant prior facts or project context.",
+    description: "Search Loong's durable local memory for relevant prior facts or project context.",
     inputSchema: memorySearchSchema,
     capabilities: ["read", "memory"],
     permission: "allow",
@@ -64,7 +64,7 @@ export function createMemorySearchTool(store: MemoryStore): ToolDefinition<Memor
 export function createMemoryRememberTool(store: MemoryStore): ToolDefinition<MemoryRememberInput, MemoryRememberOutput> {
   return {
     name: "memory_remember",
-    description: "Store a durable Dragon memory record when the user asks to remember a stable fact or project note.",
+    description: "Store a durable Loong memory record when the user asks to remember a stable fact or project note.",
     inputSchema: memoryRememberSchema,
     capabilities: ["write", "memory"],
     permission: "ask",

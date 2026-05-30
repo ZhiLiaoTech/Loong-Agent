@@ -1,0 +1,7 @@
+{
+  "name": "loong.openai-compatible",
+  "version": "0.0.0",
+  "entry": "dist/index.js",
+  "description": "Registers an OpenAI-compatible model provider from environment variables.",
+  "loongVersion": "0.x"
+}

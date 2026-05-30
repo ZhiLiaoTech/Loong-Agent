@@ -1,5 +1,5 @@
 {
-  "name": "@dragon/plugin-openai-compatible",
+  "name": "@loong/plugin-openai-compatible",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,8 +16,8 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@dragon/plugin-sdk": "workspace:*",
-    "@dragon/providers": "workspace:*"
+    "@loong/plugin-sdk": "workspace:*",
+    "@loong/providers": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

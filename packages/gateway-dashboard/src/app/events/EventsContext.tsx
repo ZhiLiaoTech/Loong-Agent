@@ -51,10 +51,10 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   return <EventsContext.Provider value={value}>{children}</EventsContext.Provider>;
 }
 
-export function useDragonEvents(): EventsContextValue {
+export function useLoongEvents(): EventsContextValue {
   const context = useContext(EventsContext);
   if (!context) {
-    throw new Error("useDragonEvents must be used within EventsProvider.");
+    throw new Error("useLoongEvents must be used within EventsProvider.");
   }
   return context;
 }

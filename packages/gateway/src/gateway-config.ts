@@ -29,7 +29,7 @@ export function normalizeConfig(config: GatewayConfig): NormalizedGatewayConfig 
   if (config.requireExplicitSecret === true && requiresSharedSecret(host) && !config.sharedSecret?.trim()) {
     throw new Error(
       "Gateway requireExplicitSecret is enabled but sharedSecret is missing. "
-      + "Set sharedSecret in gateway.json, --secret, or DRAGON_GATEWAY_SECRET before binding beyond loopback.",
+      + "Set sharedSecret in gateway.json, --secret, or LOONG_GATEWAY_SECRET before binding beyond loopback.",
     );
   }
   const withAuth = applyProductionAuthDefaults({

@@ -1,13 +1,13 @@
-# Dragon Architecture
+# Loong Architecture
 
-Dragon is a TypeScript-native, local-first agent framework. The design goal is
+Loong is a TypeScript-native, local-first agent framework. The design goal is
 to combine a strong coding-agent runtime, a long-lived local gateway, and a
 self-improving skills and memory system without adding a second language
 runtime.
 
 ## Product Positioning
 
-Dragon is not only a terminal coding assistant and not only a chat bot gateway.
+Loong is not only a terminal coding assistant and not only a chat bot gateway.
 It is an agent framework with a stable runtime core:
 
 ```text
@@ -20,19 +20,19 @@ Channels        Pairing      Observability           Trajectory
 
 ## Architectural Principles
 
-- TypeScript only. No Python runtime is required by core Dragon.
+- TypeScript only. No Python runtime is required by core Loong.
 - Local-first. The default deployment is a local workspace and local gateway.
 - Protocol-first. Gateway, tools, plugins, and providers use typed contracts.
 - Auditable memory. Durable knowledge is visible as files or queryable records.
 - Permission by design. Tool execution is mediated by a dedicated policy layer.
 - Secret-safe diagnostics. Logs, provider errors, and permission summaries
   share a common redaction policy.
-- Incremental reuse. OpenClaw modules are migrated into Dragon boundaries one at
+- Incremental reuse. OpenClaw modules are migrated into Loong boundaries one at
   a time, with attribution preserved.
 
 ## Package Responsibilities
 
-### `@dragon/core`
+### `@loong/core`
 
 Owns the agent turn lifecycle:
 
@@ -46,7 +46,7 @@ Owns the agent turn lifecycle:
 - persistence hooks
 - final turn result
 
-### `@dragon/gateway`
+### `@loong/gateway`
 
 Owns the long-lived control plane:
 
@@ -60,7 +60,7 @@ Owns the long-lived control plane:
 - event fanout
 - future node and channel integration
 
-### `@dragon/channels`
+### `@loong/channels`
 
 Owns chat-channel adapter primitives:
 
@@ -70,7 +70,7 @@ Owns chat-channel adapter primitives:
 - Gateway webhook delivery target for channel bridge workers
 - channel metadata projection without coupling platform details into Gateway
 
-### `@dragon/tools`
+### `@loong/tools`
 
 Owns tool definitions and execution contracts:
 
@@ -85,7 +85,7 @@ Owns tool definitions and execution contracts:
   search reads, and combined repository reads; future built-ins include richer
   browser automation, web, and MCP
 
-### `@dragon/security`
+### `@loong/security`
 
 Owns shared security utilities:
 
@@ -95,7 +95,7 @@ Owns shared security utilities:
   tokens, and JSON-like diagnostics
 - small reusable helpers for CLI, provider, and runtime permission summaries
 
-### `@dragon/providers`
+### `@loong/providers`
 
 Owns model provider contracts:
 
@@ -113,7 +113,7 @@ is registered, `openai:gpt-4o`, `openai/gpt-4o`, or
 collides with a provider id, callers should use an explicit provider prefix for
 the intended target.
 
-### `@dragon/model-catalog`
+### `@loong/model-catalog`
 
 Owns provider-scoped model metadata:
 
@@ -125,7 +125,7 @@ Owns provider-scoped model metadata:
 - model reference lookup for `provider:model`, `provider/model`, and unique
   aliases
 
-### `@dragon/memory`
+### `@loong/memory`
 
 Owns memory abstractions:
 
@@ -133,11 +133,12 @@ Owns memory abstractions:
 - optional SQLite/FTS search layer via the built-in `sqlite` memory backend
 - session recall
 - deterministic older-session compaction for bounded context
+- optional AI summarization of older session turns before hard truncation (default off)
 - reviewable pending memory candidates for explicit remember-style requests
 - explicit memory candidate list/promote/reject tools; compaction and candidate
   capture do not automatically write durable memory records
 
-### `@dragon/skills`
+### `@loong/skills`
 
 Owns `SKILL.md` runtime:
 
@@ -147,7 +148,7 @@ Owns `SKILL.md` runtime:
 - skill creation
 - skill improvement from evidence
 
-### `@dragon/cron`
+### `@loong/cron`
 
 Owns cron scheduling and delivery primitives:
 
@@ -158,7 +159,7 @@ Owns cron scheduling and delivery primitives:
 - Gateway webhook delivery target
 - cron metadata projection into channel messages
 
-### `@dragon/delegation`
+### `@loong/delegation`
 
 Owns multi-agent orchestration primitives:
 
@@ -166,10 +167,10 @@ Owns multi-agent orchestration primitives:
 - dependency graph cycle detection
 - bounded concurrent execution
 - failure-aware dependent task skipping
-- runtime-backed worker execution through a provided `DragonAgentRuntime`
+- runtime-backed worker execution through a provided `LoongAgentRuntime`
 - agent-facing `delegation_run` tool for bounded runtime delegation
 
-### `@dragon/plugin-sdk`
+### `@loong/plugin-sdk`
 
 Owns public extension contracts:
 
@@ -181,18 +182,18 @@ Owns public extension contracts:
 - lifecycle hook registration for read-only turn observability
 - future hooks, channels, and memory backends
 
-### `@dragon/cli`
+### `@loong/cli`
 
 Owns the command-line entrypoint:
 
-- `dragon chat`
-- `dragon agent`
-- `dragon gateway`
-- `dragon cron`
-- Gateway-hosted cron runner backed by `.dragon/cron/jobs.json`
-- local plugin discovery from `.dragon/plugins`, `DRAGON_PLUGIN_ROOTS`, and
+- `loong chat`
+- `loong agent`
+- `loong gateway`
+- `loong cron`
+- Gateway-hosted cron runner backed by `.loong/cron/jobs.json`
+- local plugin discovery from `.loong/plugins`, `LOONG_PLUGIN_ROOTS`, and
   `--plugin-root`
-- plugin tools join agent/gateway tool registries and keep Dragon's permission
+- plugin tools join agent/gateway tool registries and keep Loong's permission
   contract: explicit `allow` can run unattended, explicit `deny` is refused,
   and omitted permission asks; ask is skipped when no handler is available
 - reference read-only Git tool plugin for status, diff, and log inspection
@@ -204,7 +205,7 @@ Owns the command-line entrypoint:
   context when present
 - older session messages beyond the recent history window are injected as
   bounded deterministic compaction context when session storage is enabled
-- memory backend plugins are selected explicitly with `DRAGON_MEMORY_BACKEND`
+- memory backend plugins are selected explicitly with `LOONG_MEMORY_BACKEND`
   or `--memory-backend`; the built-in `file` backend remains the default, and
   the built-in `sqlite` backend can be selected for local FTS search
 - future interactive TUI
@@ -229,9 +230,27 @@ Owns the command-line entrypoint:
 15. Return final result
 ```
 
+### Session history prep (context budget)
+
+Before each model call, persisted session history passes through three layers in
+`prepareSessionHistoryForModel()`:
+
+```text
+L1 summarizeOldTurnsWithAI()      optional; default off
+L2 compactSessionMessagesByTurn() turn-level tool truncation for older turns
+L3 applyTurnPrep()                per-message and total char budget caps
+```
+
+L1 uses a lightweight model call to collapse older turns into one summary user
+message while keeping the most recent turns intact. On timeout, provider
+failure, or missing provider resolution, the runtime falls back to L2 + L3
+without failing the turn. Configure via `context.json`, `agents.json`, or
+per-profile `aiSummarization` (`enabled`, `model`, `keepRecentTurns`,
+`maxSummaryChars`, `summaryPrompt`, `timeoutMs`).
+
 ## Event Model
 
-Dragon events should stay stable even as internals change:
+Loong events should stay stable even as internals change:
 
 - `lifecycle`: run start, end, error, cancelled
 - `assistant_delta`: streamed assistant text
@@ -299,9 +318,9 @@ For implementation-level technical design and per-package code review, see
 The first useful milestone is:
 
 ```bash
-dragon chat "hello"
-dragon agent "summarize this repository"
-dragon agent "edit README and show the diff"
+loong chat "hello"
+loong agent "summarize this repository"
+loong agent "edit README and show the diff"
 ```
 
 To reach that milestone, implement only:

@@ -2,7 +2,7 @@ import { lstat, mkdir, open, opendir, realpath, rm, stat, writeFile } from "node
 import type { Dirent, Stats } from "node:fs";
 import path from "node:path";
 import { TextDecoder } from "node:util";
-import type { ToolDefinition, ToolInvocation, ToolJsonSchema, ToolResult } from "@dragon/tools";
+import type { ToolDefinition, ToolInvocation, ToolJsonSchema, ToolResult } from "@loong/tools";
 
 export interface SkillSummary {
   name: string;
@@ -193,7 +193,7 @@ export function createSkillTools(runtime: SkillRuntime): ToolDefinition[] {
 export function createSkillListTool(runtime: SkillRuntime): ToolDefinition<SkillListInput, SkillListOutput> {
   return {
     name: "skill_list",
-    description: "List available Dragon skills from configured SKILL.md roots. Use this before loading a skill.",
+    description: "List available Loong skills from configured SKILL.md roots. Use this before loading a skill.",
     inputSchema: skillListSchema,
     capabilities: ["read"],
     permission: "allow",
@@ -223,7 +223,7 @@ export function createSkillListTool(runtime: SkillRuntime): ToolDefinition<Skill
 export function createSkillLoadTool(runtime: SkillRuntime): ToolDefinition<SkillLoadInput, SkillLoadOutput> {
   return {
     name: "skill_load",
-    description: "Load one Dragon skill by name, including its SKILL.md content and bounded references.",
+    description: "Load one Loong skill by name, including its SKILL.md content and bounded references.",
     inputSchema: skillLoadSchema,
     capabilities: ["read"],
     permission: "allow",
@@ -243,7 +243,7 @@ export function createSkillLoadTool(runtime: SkillRuntime): ToolDefinition<Skill
 export function createSkillCreateTool(runtime: SkillRuntime): ToolDefinition<SkillCreateInput, SkillCreateOutput> {
   return {
     name: "skill_create",
-    description: "Create a new Dragon skill as inspectable SKILL.md files when repeated work should be captured.",
+    description: "Create a new Loong skill as inspectable SKILL.md files when repeated work should be captured.",
     inputSchema: skillCreateSchema,
     capabilities: ["write"],
     permission: "ask",
@@ -266,7 +266,7 @@ export function createSkillCreateTool(runtime: SkillRuntime): ToolDefinition<Ski
 export function createSkillImproveTool(runtime: SkillRuntime): ToolDefinition<SkillImproveInput, SkillImproveOutput> {
   return {
     name: "skill_improve",
-    description: "Append reviewable improvement evidence to an existing Dragon skill.",
+    description: "Append reviewable improvement evidence to an existing Loong skill.",
     inputSchema: skillImproveSchema,
     capabilities: ["write"],
     permission: "ask",
@@ -614,7 +614,7 @@ export class FileSkillRuntime implements SkillRuntime {
       if (!this.#warnedDuplicates.has(key)) {
         this.#warnedDuplicates.add(key);
         console.warn(
-          `[dragon-skills] duplicate skill "${entry.summary.name}" — keeping ${path.relative(process.cwd(), existing.skillFile)}, ignoring ${path.relative(process.cwd(), entry.skillFile)}`,
+          `[loong-skills] duplicate skill "${entry.summary.name}" — keeping ${path.relative(process.cwd(), existing.skillFile)}, ignoring ${path.relative(process.cwd(), entry.skillFile)}`,
         );
       }
     }

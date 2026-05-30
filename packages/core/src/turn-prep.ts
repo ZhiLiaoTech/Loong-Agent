@@ -1,10 +1,10 @@
-import type { ModelContentPart, ModelMessage } from "@dragon/providers";
+import type { ModelContentPart, ModelMessage } from "@loong/providers";
 
 const DEFAULT_TOOL_RESULT_MAX_CHARS = 8_000;
 const DEFAULT_ASSISTANT_CONTENT_MAX_CHARS = 16_000;
 const TOTAL_BUDGET_MULTIPLIER = 8;
-const TRUNCATED_TOOL_SUFFIX = "\n\n[Dragon: tool output truncated for context budget]";
-const TRUNCATED_ASSISTANT_SUFFIX = "\n\n[Dragon: assistant text truncated for context budget]";
+const TRUNCATED_TOOL_SUFFIX = "\n\n[Loong: tool output truncated for context budget]";
+const TRUNCATED_ASSISTANT_SUFFIX = "\n\n[Loong: assistant text truncated for context budget]";
 
 export interface TurnPrepOptions {
   /** Per `tool` message content cap. */
@@ -135,7 +135,7 @@ function shrinkMessagesToTotalBudget(
   totalCap: number,
   toolFloor: number,
 ): void {
-  const placeholder = "[Dragon: tool output omitted to fit context budget]";
+  const placeholder = "[Loong: tool output omitted to fit context budget]";
   let guard = 0;
   while (estimateModelMessagesChars(messages) > totalCap && guard < messages.length * 4) {
     guard += 1;

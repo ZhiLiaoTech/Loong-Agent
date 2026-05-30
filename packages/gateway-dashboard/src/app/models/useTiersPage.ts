@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { GatewayApiError } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
+import { useWorkbenchT } from "../i18n/WorkbenchI18nContext.js";
 import {
   EMPTY_TIER_CONFIG,
   type TierClassifyResult,
@@ -9,6 +10,7 @@ import {
 
 export function useTiersPage() {
   const client = useGatewayClient();
+  const t = useWorkbenchT();
   const [config, setConfig] = useState<TierConfigState>(EMPTY_TIER_CONFIG);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,20 +43,28 @@ export function useTiersPage() {
     void load();
   }, [load]);
 
+  const persistConfig = useCallback(
+    async (configToSave: TierConfigState) => {
+      setSaving(true);
+      setStatus(null);
+      setError(null);
+      try {
+        const payload = await client.rpc<TierConfigState>("tier.config.save", buildSaveParams(configToSave));
+        setConfig(normalizeIncoming(payload));
+        setStatus(t("models.tier.statusSaved"));
+      } catch (caught) {
+        setError(caught instanceof GatewayApiError ? caught.message : String(caught));
+        throw caught;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [client, t],
+  );
+
   const save = useCallback(async () => {
-    setSaving(true);
-    setStatus(null);
-    setError(null);
-    try {
-      const payload = await client.rpc<TierConfigState>("tier.config.save", buildSaveParams(config));
-      setConfig(normalizeIncoming(payload));
-      setStatus("分层配置已保存，将在下一轮对话生效。");
-    } catch (caught) {
-      setError(caught instanceof GatewayApiError ? caught.message : String(caught));
-    } finally {
-      setSaving(false);
-    }
-  }, [client, config]);
+    await persistConfig(config);
+  }, [config, persistConfig]);
 
   const classify = useCallback(async () => {
     if (!classifyMessage.trim()) {
@@ -82,6 +92,7 @@ export function useTiersPage() {
     supported,
     load,
     save,
+    persistConfig,
     classifyMessage,
     setClassifyMessage,
     classifyResult,

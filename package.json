@@ -1,19 +1,19 @@
 {
-  "name": "dragon-agent-framework",
+  "name": "loong-agent-framework",
   "version": "0.0.0",
   "private": true,
-  "description": "Dragon (Qianlong) is a TypeScript-native, local-first agent framework.",
+  "description": "Loong is a TypeScript-native, local-first agent framework.",
   "type": "module",
   "packageManager": "pnpm@10.11.0",
   "scripts": {
-    "studio:dev": "corepack pnpm --filter @dragon/studio dev",
-    "studio:build": "corepack pnpm --filter @dragon/studio build",
+    "studio:dev": "corepack pnpm --filter @loong/studio dev",
+    "studio:build": "corepack pnpm --filter @loong/studio build",
     "build": "corepack pnpm -r build",
     "check": "corepack pnpm -r check",
     "clean": "corepack pnpm -r clean",
     "smoke:gateway": "tsx scripts/smoke-gateway.ts",
     "sync:readme-i18n": "node scripts/sync-readme-i18n.mjs",
-    "test": "corepack pnpm -r build && corepack pnpm studio:build && corepack pnpm --filter @dragon/test-suite test"
+    "test": "corepack pnpm -r build && corepack pnpm studio:build && corepack pnpm --filter @loong/test-suite test"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

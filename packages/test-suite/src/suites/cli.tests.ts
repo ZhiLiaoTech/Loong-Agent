@@ -13,8 +13,8 @@ import {
   parseSlackWebhook,
   parseTelegramWebhook,
   toGatewayWebhookPayload,
-} from "@dragon/channels";
-import type { DragonAgentRuntime, DragonEvent, DragonTurnInput, DragonTurnResult } from "@dragon/core";
+} from "@loong/channels";
+import type { LoongAgentRuntime, LoongEvent, LoongTurnInput, LoongTurnResult } from "@loong/core";
 import {
   appendCancelledToolResults,
   appendWorkspaceToolGuidance,
@@ -23,7 +23,7 @@ import {
   buildTurnPrepOptions,
   classifyTierHeuristic,
   canRunToolCallsInParallel,
-  createDragonRuntime,
+  createLoongRuntime,
   runTurnWithQueryLoop,
   isParallelSafeTool,
   decideTier,
@@ -38,23 +38,23 @@ import {
   prepareSessionHistoryForModel,
   repairModelMessagesAfterCancel,
   TOOL_CANCELLED_CODE,
-} from "@dragon/core";
-import type { ModelMessage } from "@dragon/providers";
-import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@dragon/cron";
+} from "@loong/core";
+import type { ModelMessage } from "@loong/providers";
+import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@loong/cron";
 import {
   createDelegationPlan,
   createRuntimeDelegatedTaskExecutor,
   createRuntimeDelegationTool,
   runDelegationPlan,
-  type DragonRuntimeDelegationToolInput,
-} from "@dragon/delegation";
+  type LoongRuntimeDelegationToolInput,
+} from "@loong/delegation";
 import {
   applyModelCatalogToAgentParams,
-  assertDragonGatewayWebhookPayload,
+  assertLoongGatewayWebhookPayload,
   createHttpGateway,
   createModelCatalogFromProviderSummaries,
   FilePairingStore,
-} from "@dragon/gateway";
+} from "@loong/gateway";
 import {
   createFileMemoryStore,
   createFileTrajectoryStore,
@@ -66,14 +66,14 @@ import {
   type MemoryCandidatePromoteOutput,
   type MemoryCandidateRejectInput,
   type MemoryCandidateRejectOutput,
-} from "@dragon/memory";
+} from "@loong/memory";
 import {
   applyModelCatalogToParams,
   catalogEntriesFromProviders,
   createModelCatalog,
-} from "@dragon/model-catalog";
-import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@dragon/providers";
-import { isSensitiveKey, redactSecretsInText } from "@dragon/security";
+} from "@loong/model-catalog";
+import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@loong/providers";
+import { isSensitiveKey, redactSecretsInText } from "@loong/security";
 import {
   createBrowserFormSubmitTool,
   createBrowserPlaywrightSnapshotTool,
@@ -85,7 +85,7 @@ import {
   registerMcpTools,
   validateBrowserTargetUrl,
   type ToolDefinition,
-} from "@dragon/tools";
+} from "@loong/tools";
 
 import {
   assert,
@@ -114,17 +114,17 @@ import {
 import type { TestCase } from "../runner.js";
 
 async function testCliSkillsSlashCommand(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-cli-skills-"));
-  const skillDir = path.join(root, "dragon-review");
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cli-skills-"));
+  const skillDir = path.join(root, "loong-review");
   await mkdir(path.join(skillDir, "references"), { recursive: true });
   await writeFile(path.join(skillDir, "SKILL.md"), [
     "---",
-    "name: dragon-review",
-    "description: Review Dragon changes before continuing.",
+    "name: loong-review",
+    "description: Review Loong changes before continuing.",
     "category: workflow",
     "---",
     "",
-    "# Dragon Review",
+    "# Loong Review",
     "",
     "Check implementation, review the code, then fix issues before the next task.",
     "",
@@ -133,20 +133,20 @@ async function testCliSkillsSlashCommand(): Promise<void> {
 
   try {
     const listed = await runCli(["agent", "--skill-root", root, "/skills"]);
-    assert(listed.stdout.includes("Dragon skills:"), "skills list should print a header");
-    assert(listed.stdout.includes("dragon-review"), "skills list should include the test skill");
-    assert(listed.stdout.includes("Review Dragon changes"), "skills list should include the description");
+    assert(listed.stdout.includes("Loong skills:"), "skills list should print a header");
+    assert(listed.stdout.includes("loong-review"), "skills list should include the test skill");
+    assert(listed.stdout.includes("Review Loong changes"), "skills list should include the description");
     assert(!listed.stderr.includes("No model provider"), "skills slash command should not require a model provider");
 
-    const loaded = await runCli(["agent", "--skill-root", root, "/skills", "load", "dragon-review"]);
-    assert(loaded.stdout.includes("# dragon-review"), "skills load should print the normalized skill name");
+    const loaded = await runCli(["agent", "--skill-root", root, "/skills", "load", "loong-review"]);
+    assert(loaded.stdout.includes("# loong-review"), "skills load should print the normalized skill name");
     assert(loaded.stdout.includes("Check implementation"), "skills load should include SKILL.md content");
     assert(loaded.stdout.includes("references/notes.md") || loaded.stdout.includes("notes.md"), "skills load should include reference summaries");
 
     const help = await runCli(["gateway", "--help"]);
     assert(help.stdout.includes("--cron-jobs <path>"), "gateway help should document cron jobs configuration");
     assert(help.stdout.includes("--model-fallback <ref>"), "CLI help should document model fallback configuration");
-    assert(help.stdout.includes("DRAGON_MODEL_FALLBACKS"), "CLI help should document model fallback environment variable");
+    assert(help.stdout.includes("LOONG_MODEL_FALLBACKS"), "CLI help should document model fallback environment variable");
 
     const agentHelp = await runCli(["agent", "--help"]);
     assert(agentHelp.stdout.includes("--query-loop"), "agent help should document --query-loop");
@@ -160,7 +160,7 @@ async function testCliSkillsSlashCommand(): Promise<void> {
 
 
 async function testCliCronOnce(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-cli-cron-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cli-cron-"));
   const jobsFile = path.join(root, "jobs.json");
   const store = createFileCronJobStore({ filePath: jobsFile });
   let captured: {
@@ -194,7 +194,7 @@ async function testCliCronOnce(): Promise<void> {
       createdAt: "2026-05-17T10:00:00.000Z",
       updatedAt: "2026-05-17T10:00:00.000Z",
       nextRunAt: "2000-01-01T00:00:00.000Z",
-      metadata: { project: "dragon" },
+      metadata: { project: "loong" },
     });
     const result = await runCli(["cron", "--once", "--jobs", jobsFile, "--gateway-url", `http://127.0.0.1:${port}`, "--secret", "secret"]);
     const stdout = JSON.parse(result.stdout) as Record<string, unknown>;
@@ -203,7 +203,7 @@ async function testCliCronOnce(): Promise<void> {
     assert(captured.body?.sessionId === "cli-cron-session", "cron CLI should deliver job session");
     assert(captured.body?.message === "scheduled cli task", "cron CLI should deliver job message");
     assert(readPath(captured.body, ["metadata", "cronJobId"]) === "cli-cron-1", "cron CLI should include cron metadata");
-    assert(readPath(captured.body, ["metadata", "project"]) === "dragon", "cron CLI should preserve job metadata");
+    assert(readPath(captured.body, ["metadata", "project"]) === "loong", "cron CLI should preserve job metadata");
 
     const updated = await store.get("cli-cron-1");
     assert(updated?.lastStatus === "ok", "cron CLI should persist successful status");
@@ -216,22 +216,22 @@ async function testCliCronOnce(): Promise<void> {
 
 
 async function testCliModelProviderPlugin(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-cli-provider-plugin-"));
-  await writeFile(path.join(root, "dragon.plugin.json"), JSON.stringify({
-    name: "dragon.mock-provider",
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cli-provider-plugin-"));
+  await writeFile(path.join(root, "loong.plugin.json"), JSON.stringify({
+    name: "loong.mock-provider",
     version: "0.0.0",
     entry: "index.js",
     description: "Test provider plugin.",
-    dragonVersion: "0.x",
+    loongVersion: "0.x",
   }), "utf8");
   await writeFile(path.join(root, "index.js"), [
     "export default {",
     "  manifest: {",
-    "    name: 'dragon.mock-provider',",
+    "    name: 'loong.mock-provider',",
     "    version: '0.0.0',",
     "    entry: 'index.js',",
     "    description: 'Test provider plugin.',",
-    "    dragonVersion: '0.x',",
+    "    loongVersion: '0.x',",
     "  },",
     "  activate(context) {",
     "    context.registerProvider({",
@@ -262,7 +262,7 @@ async function testCliModelProviderPlugin(): Promise<void> {
 
 
 async function testCliModelProviderConfig(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "dragon-cli-model-config-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cli-model-config-"));
   let captured: {
     authorization: string | undefined;
     body: Record<string, unknown> | undefined;
@@ -312,7 +312,7 @@ async function testCliModelProviderConfig(): Promise<void> {
     }), "utf8");
     const result = await runCli(
       ["chat", "--no-session", "--model", "configured:configured-model", "hello"],
-      { DRAGON_MODEL_CONFIG: configFile },
+      { LOONG_MODEL_CONFIG: configFile },
     );
     assert(result.stdout.trim() === "configured-ok", "configured model provider should answer CLI chat");
     assert(captured.authorization === "Bearer config-key", "configured provider should use the persisted API key");
@@ -324,9 +324,31 @@ async function testCliModelProviderConfig(): Promise<void> {
 }
 
 
+async function testCliPluginsInstallLink(): Promise<void> {
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "loong-plugins-data-"));
+  const pluginRoot = await mkdtemp(path.join(os.tmpdir(), "loong-plugin-src-"));
+  await writeFile(
+    path.join(pluginRoot, "openclaw.plugin.json"),
+    JSON.stringify({ id: "cli-test-channel", channels: ["cli-test-channel"], entry: "index.mjs" }),
+  );
+  await writeFile(path.join(pluginRoot, "index.mjs"), "export default { register() {} };");
+  try {
+    const install = await runCli(["plugins", "install", "-l", pluginRoot], { LOONG_DATA_ROOT: dataRoot });
+    assert(install.stdout.includes("cli-test-channel"), "plugins install should report installed plugin id");
+    const list = await runCli(["plugins", "list"], { LOONG_DATA_ROOT: dataRoot });
+    assert(list.stdout.includes("cli-test-channel"), "plugins list should include installed plugin");
+    assert(list.stdout.includes("openclaw-channel"), "plugins list should identify openclaw channel plugin kind");
+  } finally {
+    await rm(dataRoot, { recursive: true, force: true });
+    await rm(pluginRoot, { recursive: true, force: true });
+  }
+}
+
+
 export const cliTestCases: TestCase[] = [
   ["cli skills slash command", testCliSkillsSlashCommand],
   ["cli cron once", testCliCronOnce],
   ["cli model provider plugin", testCliModelProviderPlugin],
   ["cli model provider config", testCliModelProviderConfig],
+  ["cli plugins install link", testCliPluginsInstallLink],
 ];

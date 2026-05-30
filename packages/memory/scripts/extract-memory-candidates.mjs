@@ -34,9 +34,9 @@ const storeBody = [
 const storeHeader = `import { createHash, randomUUID } from "node:crypto";
 import { appendFile, lstat, mkdir, open, opendir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { DragonLifecycleHookRequest } from "@dragon/core";
-import type { ToolInvocation } from "@dragon/tools";
-import { isDragonSource } from "./file-session-store.js";
+import type { LoongLifecycleHookRequest } from "@loong/core";
+import type { ToolInvocation } from "@loong/tools";
+import { isLoongSource } from "./file-session-store.js";
 import { normalizeTrajectoryDate } from "./file-trajectory-store.js";
 import { withMemoryFileLock } from "./memory-file-lock.js";
 import { MemoryToolError } from "./memory-tool-error.js";
@@ -78,8 +78,8 @@ const memoryCandidateReviewLocks = new Set<string>();
 
 const toolsHeader = `import { randomUUID } from "node:crypto";
 import path from "node:path";
-import type { DragonLifecycleHook } from "@dragon/core";
-import type { ToolDefinition, ToolJsonSchema } from "@dragon/tools";
+import type { LoongLifecycleHook } from "@loong/core";
+import type { ToolDefinition, ToolJsonSchema } from "@loong/tools";
 import { safelyInvokeMemoryTool } from "./memory-tool-invoke.js";
 import type { MemoryStore } from "./memory-record-types.js";
 import {
@@ -158,7 +158,7 @@ for (const { start, end } of removals) {
   lines.splice(start, end - start);
 }
 
-const insertAt = lines.findIndex(line => line.includes('from "@dragon/tools"'));
+const insertAt = lines.findIndex(line => line.includes('from "@loong/tools"'));
 const block = `
 export type {
   FileMemoryStoreOptions,

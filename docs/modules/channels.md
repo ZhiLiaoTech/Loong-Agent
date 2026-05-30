@@ -1,8 +1,8 @@
-# @dragon/channels 技术方案
+# @loong/channels 技术方案
 
 ## 1. 职责边界
 
-**负责**：将 Telegram / Slack Webhook 载荷解析为统一 `DragonChannelMessage`，并构造 Gateway `POST /channels/webhook` 请求（Bearer 认证）。
+**负责**：将 Telegram / Slack Webhook 载荷解析为统一 `LoongChannelMessage`，并构造 Gateway `POST /channels/webhook` 请求（Bearer 认证）。
 
 **不负责**：在 Gateway 进程内监听平台 Webhook（需**外部 bridge 进程**调用本包）。
 
@@ -53,12 +53,12 @@ Telegram/Slack → (bridge) → parse* → toGatewayWebhookPayload
 | 严重度 | 问题 |
 |--------|------|
 | P1 | Gateway 与 channels 包 schema 易漂移（双份解析逻辑） |
-| P2 | 与 `@dragon/cron` 重复的 Webhook HTTP 客户端 |
+| P2 | 与 `@loong/cron` 重复的 Webhook HTTP 客户端 |
 | P2 | 仅 Telegram + Slack |
 | P3 | Slack URL verification challenge 未在本包处理 |
 
 ### 5.3 改进建议
 
-1. 将 `DragonGatewayWebhookPayload` 类型抽到 `@dragon/gateway` 或共享 `contracts` 包。
+1. 将 `LoongGatewayWebhookPayload` 类型抽到 `@loong/gateway` 或共享 `contracts` 包。
 2. Gateway 可选 `--enable-telegram-bridge` 内置 adapter（长期）。
 3. 合并 Webhook client 模块；补充 Discord 适配器模板。

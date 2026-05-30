@@ -1,6 +1,6 @@
-# Dragon Deployment
+# Loong Deployment
 
-Dragon currently supports local deployment testing through the CLI Gateway and
+Loong currently supports local deployment testing through the CLI Gateway and
 Docker Compose.
 
 ## Local Smoke Test
@@ -15,14 +15,14 @@ corepack pnpm smoke:gateway
 To test an already running Gateway:
 
 ```bash
-DRAGON_SMOKE_GATEWAY_URL=http://127.0.0.1:8787 DRAGON_GATEWAY_SECRET=test corepack pnpm smoke:gateway
+LOONG_SMOKE_GATEWAY_URL=http://127.0.0.1:8787 LOONG_GATEWAY_SECRET=test corepack pnpm smoke:gateway
 ```
 
 PowerShell:
 
 ```powershell
-$env:DRAGON_SMOKE_GATEWAY_URL = "http://127.0.0.1:8787"
-$env:DRAGON_GATEWAY_SECRET = "test"
+$env:LOONG_SMOKE_GATEWAY_URL = "http://127.0.0.1:8787"
+$env:LOONG_GATEWAY_SECRET = "test"
 corepack pnpm smoke:gateway
 ```
 
@@ -41,19 +41,19 @@ http://127.0.0.1:8787
 ```
 
 Runtime endpoints such as `/health`, `/rpc`, `/events`, and `/ws` require the
-shared secret when `DRAGON_GATEWAY_SECRET` is configured.
+shared secret when `LOONG_GATEWAY_SECRET` is configured.
 
 The dashboard Models tab writes provider config to
-`DRAGON_MODEL_CONFIG` when set. In the Docker Compose profile this defaults to
+`LOONG_MODEL_CONFIG` when set. In the Docker Compose profile this defaults to
 `/data/config/providers.json`, so model provider settings survive container
-restarts through the `dragon-data` volume. Saved provider changes apply after
+restarts through the `loong-data` volume. Saved provider changes apply after
 the Gateway process restarts.
-The dashboard Agents tab writes profile config to `DRAGON_AGENT_CONFIG`; Docker
+The dashboard Agents tab writes profile config to `LOONG_AGENT_CONFIG`; Docker
 Compose defaults it to `/data/config/agents.json`.
 
 ## Gateway config file
 
-Optional `.dragon/config/gateway.json` (override path with `DRAGON_GATEWAY_CONFIG`):
+Optional `.loong/config/gateway.json` (override path with `LOONG_GATEWAY_CONFIG`):
 
 ```json
 {
@@ -70,7 +70,7 @@ Optional `.dragon/config/gateway.json` (override path with `DRAGON_GATEWAY_CONFI
 - `requireExplicitSecret`: when `true`, binding beyond loopback without `sharedSecret` fails at startup (no auto-generated secret).
 - `toolInvokeAllowlist`: tools allowed for direct `tool.invoke` RPC (agent turns use the full runtime registry, including MCP).
 
-## Context compaction (`.dragon/config/context.json`)
+## Context compaction (`.loong/config/context.json`)
 
 Optional file to tune long-session context (L2 compaction before model calls):
 
@@ -83,9 +83,9 @@ Optional file to tune long-session context (L2 compaction before model calls):
 }
 ```
 
-Set `"sessionCompaction": false` to disable. Override path with `DRAGON_CONTEXT_CONFIG`.
+Set `"sessionCompaction": false` to disable. Override path with `LOONG_CONTEXT_CONFIG`.
 
-The same `sessionCompaction` object can live in `.dragon/config/agents.json` (global or per profile). Precedence: `context.json` → agents.json root → profile on each turn (profile wins for fields it sets).
+The same `sessionCompaction` object can live in `.loong/config/agents.json` (global or per profile). Precedence: `context.json` → agents.json root → profile on each turn (profile wins for fields it sets).
 
 ```json
 {
@@ -103,21 +103,21 @@ The same `sessionCompaction` object can live in `.dragon/config/agents.json` (gl
 
 ## Channels bridge
 
-See [CHANNELS.md](./CHANNELS.md) for `dragon channels serve` (Telegram/Slack → Gateway).
+See [CHANNELS.md](./CHANNELS.md) for `loong channels serve` (Telegram/Slack → Gateway).
 
 ## Agent profile (CLI)
 
 ```bash
-dragon agent --profile my-coder "review the API layer"
+loong agent --profile my-coder "review the API layer"
 ```
 
-Uses `.dragon/config/agents.json` (same as Dashboard Agents tab). `DRAGON_AGENT_PROFILE` env overrides default when `--profile` is omitted.
+Uses `.loong/config/agents.json` (same as Dashboard Agents tab). `LOONG_AGENT_PROFILE` env overrides default when `--profile` is omitted.
 
 ## Agent query loop (CLI)
 
 ```bash
-dragon agent --query-loop "summarize this repo"
-dragon agent --finish-task --query-loop-max-turns 5 "complete the migration checklist"
+loong agent --query-loop "summarize this repo"
+loong agent --finish-task --query-loop-max-turns 5 "complete the migration checklist"
 ```
 
 - `--query-loop`: auto-continue when the model hits the tool-iteration cap.
@@ -137,7 +137,7 @@ If Playwright is missing, `browser_playwright_snapshot` returns a clear error; a
 
 ## Device pairing
 
-See [PAIRING.md](./PAIRING.md) for `pairing.token.create` / `pairing.device.register` RPC (file-backed under `.dragon/pairing/`).
+See [PAIRING.md](./PAIRING.md) for `pairing.token.create` / `pairing.device.register` RPC (file-backed under `.loong/pairing/`).
 
 ## Test suite sharding
 
@@ -145,10 +145,10 @@ For faster CI, shard the integration suite:
 
 ```bash
 # Shard 0 of 4
-DRAGON_TEST_SHARD=0 DRAGON_TEST_SHARDS=4 corepack pnpm test
+LOONG_TEST_SHARD=0 LOONG_TEST_SHARDS=4 corepack pnpm test
 
 # Run only tests whose name includes "gateway"
-DRAGON_TEST_ONLY=gateway corepack pnpm test
+LOONG_TEST_ONLY=gateway corepack pnpm test
 ```
 
 ## Production Notes

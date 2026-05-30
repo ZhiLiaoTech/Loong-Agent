@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
-import type { DragonEvent } from "@dragon/core";
+import type { LoongEvent } from "@loong/core";
 import { readSingleHeader, writeSse } from "./gateway-http.js";
 import {
   matchesEventFilters,
@@ -37,7 +37,7 @@ export interface GatewayConnectionHubDeps {
   isAuthorized(request: IncomingMessage): boolean;
   tryConsumeWebSocket(request: IncomingMessage): boolean;
   handleRpc(request: GatewayRequest): Promise<GatewayResponse>;
-  resolveSessionId(event: DragonEvent): string | undefined;
+  resolveSessionId(event: LoongEvent): string | undefined;
 }
 
 export class GatewayConnectionHub {
@@ -51,7 +51,7 @@ export class GatewayConnectionHub {
   }
 
   handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    const url = new URL(request.url ?? "/", "http://dragon.local");
+    const url = new URL(request.url ?? "/", "http://loong.local");
     if (url.pathname !== "/ws") {
       rejectWebSocketUpgrade(socket, 404, "Not Found");
       return;
@@ -229,7 +229,7 @@ export class GatewayConnectionHub {
     });
   }
 
-  broadcastRuntimeEvent(event: DragonEvent): void {
+  broadcastRuntimeEvent(event: LoongEvent): void {
     if (this.#eventClients.size === 0 && this.#webSocketClients.size === 0) {
       return;
     }
@@ -249,7 +249,7 @@ export class GatewayConnectionHub {
         continue;
       }
       try {
-        writeSse(client.response, "dragon.event", envelope);
+        writeSse(client.response, "loong.event", envelope);
       } catch {
         this.removeEventStreamClient(client.id);
       }

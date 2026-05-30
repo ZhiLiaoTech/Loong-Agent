@@ -1,4 +1,4 @@
-import { normalizeProviderModelEntries, type DragonProviderModelCatalogEntry } from "@dragon/model-catalog";
+import { normalizeProviderModelEntries, type LoongProviderModelCatalogEntry } from "@loong/model-catalog";
 import { ProviderError, sanitizeProviderBody } from "./errors.js";
 import { readServerSentEvents } from "./sse.js";
 import type { ModelMessage, ModelProvider, ModelRequest, ModelResponse, ModelToolCall } from "./types.js";
@@ -9,7 +9,7 @@ export interface AnthropicProviderOptions {
   apiKey: string;
   baseUrl?: string;
   defaultModel?: string;
-  models?: readonly DragonProviderModelCatalogEntry[];
+  models?: readonly LoongProviderModelCatalogEntry[];
   maxTokens?: number;
   apiVersion?: string;
   supportsToolCalling?: boolean;
@@ -318,27 +318,27 @@ function parseStreamEvent(data: string, providerId: string): AnthropicStreamEven
 export function createAnthropicProviderFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): ModelProvider | undefined {
-  const apiKey = firstNonEmpty(env.DRAGON_ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEY);
+  const apiKey = firstNonEmpty(env.LOONG_ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEY);
   if (!apiKey) {
     return undefined;
   }
 
   const options: AnthropicProviderOptions = {
-    id: firstNonEmpty(env.DRAGON_ANTHROPIC_PROVIDER_ID) ?? "anthropic",
-    displayName: firstNonEmpty(env.DRAGON_ANTHROPIC_DISPLAY_NAME) ?? "Anthropic Compatible",
+    id: firstNonEmpty(env.LOONG_ANTHROPIC_PROVIDER_ID) ?? "anthropic",
+    displayName: firstNonEmpty(env.LOONG_ANTHROPIC_DISPLAY_NAME) ?? "Anthropic Compatible",
     apiKey,
-    defaultModel: firstNonEmpty(env.DRAGON_ANTHROPIC_MODEL, env.ANTHROPIC_MODEL) ?? DEFAULT_MODEL,
+    defaultModel: firstNonEmpty(env.LOONG_ANTHROPIC_MODEL, env.ANTHROPIC_MODEL) ?? DEFAULT_MODEL,
   };
 
-  const baseUrl = firstNonEmpty(env.DRAGON_ANTHROPIC_BASE_URL, env.ANTHROPIC_BASE_URL);
+  const baseUrl = firstNonEmpty(env.LOONG_ANTHROPIC_BASE_URL, env.ANTHROPIC_BASE_URL);
   if (baseUrl !== undefined) {
     options.baseUrl = baseUrl;
   }
-  const maxTokens = parseOptionalInteger(firstNonEmpty(env.DRAGON_ANTHROPIC_MAX_TOKENS, env.ANTHROPIC_MAX_TOKENS), "DRAGON_ANTHROPIC_MAX_TOKENS");
+  const maxTokens = parseOptionalInteger(firstNonEmpty(env.LOONG_ANTHROPIC_MAX_TOKENS, env.ANTHROPIC_MAX_TOKENS), "LOONG_ANTHROPIC_MAX_TOKENS");
   if (maxTokens !== undefined) {
     options.maxTokens = maxTokens;
   }
-  const apiVersion = firstNonEmpty(env.DRAGON_ANTHROPIC_API_VERSION, env.ANTHROPIC_API_VERSION);
+  const apiVersion = firstNonEmpty(env.LOONG_ANTHROPIC_API_VERSION, env.ANTHROPIC_API_VERSION);
   if (apiVersion !== undefined) {
     options.apiVersion = apiVersion;
   }

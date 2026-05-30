@@ -1,6 +1,6 @@
 # Device pairing (Gateway)
 
-Dragon Gateway supports **local device pairing** for future multi-node workers. Pairing is file-backed under `.dragon/pairing/devices.json`.
+Loong Gateway supports **local device pairing** for future multi-node workers. Pairing is file-backed under `.loong/pairing/devices.json`.
 
 ## RPC (requires Gateway authentication when `shared-secret` is enabled)
 
@@ -32,7 +32,7 @@ sequenceDiagram
 ```bash
 # With gateway running and secret configured
 curl -s http://127.0.0.1:17357/rpc \
-  -H "Authorization: Bearer $DRAGON_GATEWAY_SECRET" \
+  -H "Authorization: Bearer $LOONG_GATEWAY_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"type":"pairing.token.create","id":"1","params":{"label":"office-node"}}'
 ```

@@ -1,4 +1,4 @@
-import type { DragonEvent } from "@dragon/core";
+import type { LoongEvent } from "@loong/core";
 
 export interface EventStreamFilters {
   sessionId?: string;
@@ -10,7 +10,7 @@ export interface GatewayEventEnvelope {
   sequence: number;
   timestamp: string;
   sessionId?: string;
-  event: DragonEvent;
+  event: LoongEvent;
 }
 
 export function parseEventStreamFilters(url: URL): EventStreamFilters {
@@ -36,7 +36,7 @@ export function matchesEventFilters(envelope: GatewayEventEnvelope, filters: Eve
   return true;
 }
 
-export function readEventSessionId(event: DragonEvent): string | undefined {
+export function readEventSessionId(event: LoongEvent): string | undefined {
   if (event.type === "permission") {
     return event.payload.sessionId;
   }

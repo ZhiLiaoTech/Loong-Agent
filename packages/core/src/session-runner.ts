@@ -5,7 +5,7 @@ import {
   shouldContinueQueryLoop,
   type ShouldContinueQueryLoopOptions,
 } from "./query-loop.js";
-import type { DragonAgentRuntime, DragonTurnInput, DragonTurnResult } from "./types.js";
+import type { LoongAgentRuntime, LoongTurnInput, LoongTurnResult } from "./types.js";
 
 export interface RunTurnWithQueryLoopOptions {
   queryLoop?: boolean;
@@ -14,20 +14,20 @@ export interface RunTurnWithQueryLoopOptions {
 }
 
 export interface RunTurnWithQueryLoopResult {
-  result: DragonTurnResult;
+  result: LoongTurnResult;
   turnCount: number;
 }
 
 export interface QueryLoopContinuationContext {
   turnIndex: number;
-  previousResult: DragonTurnResult;
+  previousResult: LoongTurnResult;
   reason: string;
 }
 
 export function buildQueryLoopContinuationInput(
-  baseInput: DragonTurnInput,
+  baseInput: LoongTurnInput,
   context: QueryLoopContinuationContext,
-): DragonTurnInput {
+): LoongTurnInput {
   return {
     ...baseInput,
     message: QUERY_LOOP_CONTINUE_MESSAGE,
@@ -40,7 +40,7 @@ export function buildQueryLoopContinuationInput(
 }
 
 function resolveQueryLoopReason(
-  previousResult: DragonTurnResult,
+  previousResult: LoongTurnResult,
   forceQueryLoop: boolean,
 ): string {
   const assistant = [...previousResult.messages].reverse().find(message => message.role === "assistant");
@@ -54,8 +54,8 @@ function resolveQueryLoopReason(
 }
 
 export async function runTurnWithQueryLoop(
-  runtime: DragonAgentRuntime,
-  baseInput: DragonTurnInput,
+  runtime: LoongAgentRuntime,
+  baseInput: LoongTurnInput,
   options: RunTurnWithQueryLoopOptions = {},
 ): Promise<RunTurnWithQueryLoopResult> {
   const queryLoopEnabled = options.queryLoop === true || baseInput.queryLoop === true;
@@ -64,7 +64,7 @@ export async function runTurnWithQueryLoop(
   const continueOptions: ShouldContinueQueryLoopOptions = { forceQueryLoop };
 
   let activeInput = baseInput;
-  let lastResult: DragonTurnResult | undefined;
+  let lastResult: LoongTurnResult | undefined;
   let turnCount = 0;
 
   for (let turnIndex = 0; turnIndex < maxTurns; turnIndex += 1) {

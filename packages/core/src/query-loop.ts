@@ -1,7 +1,7 @@
-import type { DragonTurnResult } from "./types.js";
+import type { LoongTurnResult } from "./types.js";
 
 export const QUERY_LOOP_CONTINUE_MESSAGE =
-  "[dragon-query-loop] Continue from where you left off. Finish the user request. "
+  "[loong-query-loop] Continue from where you left off. Finish the user request. "
   + "Avoid further tool calls unless strictly necessary.";
 
 export const DEFAULT_QUERY_LOOP_MAX_TURNS = 3;
@@ -26,7 +26,7 @@ export function resolveQueryLoopMaxTurns(
 }
 
 export function shouldContinueQueryLoop(
-  result: DragonTurnResult,
+  result: LoongTurnResult,
   turnIndex: number,
   maxTurns: number,
   options: ShouldContinueQueryLoopOptions = {},

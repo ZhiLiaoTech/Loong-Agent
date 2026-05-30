@@ -1,6 +1,6 @@
 # Permission Model
 
-Dragon should treat every tool call as a policy decision.
+Loong should treat every tool call as a policy decision.
 
 ## Default Policy
 
@@ -15,7 +15,7 @@ Dragon should treat every tool call as a policy decision.
 
 ## Current CLI Policy
 
-`dragon agent` enables read-only workspace tools by default. The `file_patch`
+`loong agent` enables read-only workspace tools by default. The `file_patch`
 write tool and memory candidate promotion/rejection tools are registered with
 an `ask` policy. In an interactive terminal, the CLI prompts the user before
 execution; in non-interactive mode, unresolved `ask` decisions are skipped and
@@ -24,8 +24,8 @@ reported back to the model. Passing `--allow-write` explicitly allows
 without prompting.
 
 `delegation_run` is registered as an allowlisted orchestration tool in
-`dragon agent`. It only creates bounded child turns through the current
-`DragonAgentRuntime`; those delegated turns still use the same tool registry,
+`loong agent`. It only creates bounded child turns through the current
+`LoongAgentRuntime`; those delegated turns still use the same tool registry,
 permission engine, workspace policy, and write approvals as ordinary agent
 turns.
 
