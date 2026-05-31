@@ -814,9 +814,13 @@ export const zhCN: MessageTree = {
 
   status: {
 
-    sseLive: " · SSE 已连接",
+    gatewayOnline: "网关在线",
 
-    sseConnecting: " · SSE 连接中",
+    gatewayConnecting: "网关连接中",
+
+    gatewayOffline: "网关异常",
+
+    gatewayAuthRequired: "网关需认证",
 
   },
 

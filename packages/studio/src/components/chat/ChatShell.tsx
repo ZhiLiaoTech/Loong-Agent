@@ -312,6 +312,8 @@ export function ChatShell() {
 
         : t("chat.disconnected");
 
+  const showConnectionPill = connectionState !== "online";
+
 
 
   return (
@@ -360,13 +362,12 @@ export function ChatShell() {
 
         <div className={styles.topBarRight}>
 
-          <div className={styles.statusPill} title={statusLabel}>
-
-            <span className={statusDotClass} aria-hidden />
-
-            <span className={styles.statusText}>{statusText}</span>
-
-          </div>
+          {showConnectionPill ? (
+            <div className={styles.statusPill} title={statusLabel}>
+              <span className={statusDotClass} aria-hidden />
+              <span className={styles.statusText}>{statusText}</span>
+            </div>
+          ) : null}
 
           <button
 

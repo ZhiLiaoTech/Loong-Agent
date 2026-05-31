@@ -818,9 +818,13 @@ export const en: MessageTree = {
 
   status: {
 
-    sseLive: " · SSE live",
+    gatewayOnline: "Gateway online",
 
-    sseConnecting: " · SSE connecting",
+    gatewayConnecting: "Gateway connecting",
+
+    gatewayOffline: "Gateway error",
+
+    gatewayAuthRequired: "Gateway auth required",
 
   },
 

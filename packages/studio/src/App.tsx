@@ -1,7 +1,5 @@
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
-import { resolveGatewayUrl } from "@loong/client";
-
 import { Sidebar, type SidebarStatusTone } from "@loong/ui";
 
 import { useLoongEvents } from "@dashboard/app/events/EventsContext.js";
@@ -80,7 +78,7 @@ function AppRoutes() {
 
   const navigate = useNavigate();
 
-  const { client, connectionState, statusLabel, authRequired, refresh } = useGatewayReadiness();
+  const { connectionState, authRequired, refresh } = useGatewayReadiness();
 
   const { sseStatus } = useLoongEvents();
 
@@ -120,19 +118,13 @@ function AppRoutes() {
 
 
 
-  const sidebarStatusLabel = `${statusLabel}${
-
-    sseStatus === "live"
-
-      ? t("status.sseLive")
-
-      : sseStatus === "connecting"
-
-        ? t("status.sseConnecting")
-
-        : ""
-
-  }`;
+  const sidebarStatusLabel = authRequired
+    ? t("status.gatewayAuthRequired")
+    : connectionState === "online" && sseStatus === "live"
+      ? t("status.gatewayOnline")
+      : connectionState === "checking" || sseStatus === "connecting"
+        ? t("status.gatewayConnecting")
+        : t("status.gatewayOffline");
 
 
 
@@ -161,8 +153,6 @@ function AppRoutes() {
             label: sidebarStatusLabel,
 
             tone: resolveSidebarTone(connectionState, sseStatus),
-
-            gatewayUrl: resolveGatewayUrl(client.gatewayConfig.baseUrl),
 
           }}
 
