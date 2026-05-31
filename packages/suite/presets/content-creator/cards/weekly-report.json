@@ -1,0 +1,39 @@
+{
+  "$schema": "https://nexodesk.com/schemas/card.v1.json",
+  "card_type": "weekly-report",
+  "title": "📅 周报 · {{week_range}}",
+  "description": "本周数据总结与下周规划建议",
+
+  "sections": [
+    {
+      "type": "metrics",
+      "title": "📊 本周总览",
+      "fields": [
+        { "label": "发布内容", "value": "{{weekly_published}} 篇" },
+        { "label": "总阅读", "value": "{{weekly_reads}}", "change": "{{reads_wow}}", "change_type": "{{reads_trend}}" },
+        { "label": "总互动", "value": "{{weekly_interactions}}", "change": "{{interactions_wow}}", "change_type": "{{interactions_trend}}" },
+        { "label": "净增粉丝", "value": "{{weekly_new_followers}}", "change_type": "{{followers_trend}}" }
+      ]
+    },
+    {
+      "type": "list",
+      "title": "🏆 本周 Top 3 内容",
+      "items": "{{top_contents}}",
+      "item_template": {
+        "title": "{{title}}",
+        "subtitle": "👁{{reads}} 👍{{likes}} · {{platform}} · {{published_date}}"
+      },
+      "max_items": 3
+    },
+    {
+      "type": "text",
+      "title": "📝 下周建议",
+      "content": "{{weekly_suggestion}}"
+    }
+  ],
+
+  "actions": [
+    { "label": "查看详细报告", "type": "primary", "action": "open_desktop", "page": "dashboard" },
+    { "label": "开始下周选题", "type": "default", "action": "trigger_skill", "skill": "clawworks-content-creator-topic-radar-v1.0.0" }
+  ]
+}

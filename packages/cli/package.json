@@ -36,7 +36,8 @@
     "mammoth": "^1.8.0",
     "pdfjs-dist": "^4.7.76",
     "xlsx": "^0.18.5",
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "@loong/suite": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

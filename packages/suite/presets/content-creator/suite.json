@@ -1,0 +1,83 @@
+{
+  "id": "content-creator",
+  "name": "自媒体创作助手",
+  "icon": "pen-tool",
+  "color": "#7C6CF0",
+  "description": "自动生成爆款文案、监控热点选题、采集账号数据、半自动发布内容",
+  "version": "1.2.0",
+  "author": "ClawWorks",
+  "license": "proprietary",
+  "min_openclaw_version": "0.5.0",
+  "skills": [
+    "clawworks-content-creator-copywriter-v1.1.0",
+    "clawworks-content-creator-topic-radar-v1.1.0",
+    "clawworks-content-creator-data-report-v1.0.0",
+    "clawworks-content-creator-visual-v1.0.0",
+    "clawworks-content-creator-scheduler-v1.1.0",
+    "clawworks-content-creator-account-profiler-v1.1.0",
+    "clawworks-content-creator-learning-memory-v1.2.0"
+  ],
+  "permissions": {
+    "browser_readonly": true,
+    "browser_interact": [
+      "creator.xiaohongshu.com",
+      "mp.weixin.qq.com",
+      "creator.douyin.com",
+      "member.bilibili.com"
+    ],
+    "browser_publish": [
+      "creator.xiaohongshu.com",
+      "mp.weixin.qq.com",
+      "creator.douyin.com"
+    ],
+    "filesystem": [
+      "~/.openclaw/suites/content-creator/"
+    ],
+    "shell": false,
+    "mcp_servers": [
+      "playwright-browser"
+    ]
+  },
+  "supported_platforms": [
+    {
+      "id": "xiaohongshu",
+      "name": "小红书",
+      "creator_url": "https://creator.xiaohongshu.com",
+      "content_types": [
+        "note",
+        "video"
+      ]
+    },
+    {
+      "id": "douyin",
+      "name": "抖音",
+      "creator_url": "https://creator.douyin.com",
+      "content_types": [
+        "video",
+        "note"
+      ]
+    },
+    {
+      "id": "bilibili",
+      "name": "B站",
+      "creator_url": "https://member.bilibili.com",
+      "content_types": [
+        "video",
+        "article"
+      ]
+    },
+    {
+      "id": "wechat_mp",
+      "name": "公众号",
+      "creator_url": "https://mp.weixin.qq.com",
+      "content_types": [
+        "article"
+      ]
+    }
+  ],
+  "onboarding": {
+    "enabled": true,
+    "template": "soul/USER.md.template",
+    "first_task_after_onboarding": true
+  }
+}

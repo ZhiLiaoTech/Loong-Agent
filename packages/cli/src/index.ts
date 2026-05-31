@@ -3,6 +3,7 @@
 import { parseChannelsServeArgs, runChannelsServe } from "./channels-serve.js";
 import { runCron } from "./commands/cron.js";
 import { runPlugins } from "./commands/plugins.js";
+import { runSuite } from "./commands/suite.js";
 import { runGateway } from "./commands/gateway.js";
 import { isHelpArgs } from "./cli-impl.js";
 import { runChat } from "./commands/chat.js";
@@ -48,6 +49,13 @@ try {
       printHelp();
     } else {
       await runPlugins(args);
+    }
+    process.exitCode = 0;
+  } else if (command === "suite") {
+    if (isHelpArgs(args)) {
+      printHelp();
+    } else {
+      await runSuite(args);
     }
     process.exitCode = 0;
   } else if (command === "channels") {

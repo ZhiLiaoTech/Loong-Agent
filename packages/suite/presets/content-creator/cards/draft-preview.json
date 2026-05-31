@@ -1,0 +1,34 @@
+{
+  "$schema": "https://nexodesk.com/schemas/card.v1.json",
+  "card_type": "draft-preview",
+  "title": "📝 草稿预览",
+  "description": "AI 生成的内容草稿，请审阅",
+
+  "sections": [
+    {
+      "type": "content",
+      "fields": [
+        { "label": "平台", "value": "{{platform}}" },
+        { "label": "标题", "value": "{{title}}", "style": "bold" },
+        { "label": "正文预览", "value": "{{body_preview}}", "max_length": 200 },
+        { "label": "标签", "value": "{{tags}}" },
+        { "label": "评分", "value": "{{score}}/100", "color": "{{score_color}}" }
+      ]
+    },
+    {
+      "type": "suggestions",
+      "title": "💡 优化建议",
+      "items": "{{optimization_tips}}",
+      "max_items": 3
+    }
+  ],
+
+  "actions": [
+    { "label": "✅ 采用", "type": "primary", "action": "adopt_draft", "draft_id": "{{draft_id}}" },
+    { "label": "🔄 重写", "type": "default", "action": "trigger_skill", "skill": "clawworks-content-creator-copywriter-v1.0.0", "params": { "rewrite": true, "draft_id": "{{draft_id}}" } },
+    { "label": "✏️ 去编辑", "type": "default", "action": "open_desktop", "page": "editor", "draft_id": "{{draft_id}}" },
+    { "label": "📋 复制", "type": "default", "action": "copy_to_clipboard", "content": "{{full_content}}" }
+  ],
+
+  "footer": "本月剩余 {{remaining_quota}} 次创作"
+}

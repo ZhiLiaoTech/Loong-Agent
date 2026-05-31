@@ -1,0 +1,324 @@
+{
+  "navigation": [
+    {
+      "id": "dashboard",
+      "icon": "📈",
+      "label": "工作台"
+    },
+    {
+      "id": "chat",
+      "icon": "💬",
+      "label": "对话"
+    },
+    {
+      "id": "topics",
+      "icon": "🔥",
+      "label": "选题中心"
+    },
+    {
+      "id": "editor",
+      "icon": "✍️",
+      "label": "内容编辑"
+    },
+    {
+      "id": "analytics",
+      "icon": "📊",
+      "label": "数据分析"
+    },
+    {
+      "id": "settings",
+      "icon": "⚙️",
+      "label": "设置"
+    }
+  ],
+  "dashboard": {
+    "layout": "grid-2x2",
+    "widgets": [
+      {
+        "type": "metric-card",
+        "title": "账号数据",
+        "source": "skill:clawworks-content-creator-data-report-v1.0.0/output/summary.json",
+        "refresh_interval": 300,
+        "fields": [
+          {
+            "label": "粉丝数",
+            "key": "followers",
+            "format": "number"
+          },
+          {
+            "label": "昨日新增",
+            "key": "new_followers",
+            "format": "+number"
+          },
+          {
+            "label": "昨日互动",
+            "key": "interactions",
+            "format": "number"
+          },
+          {
+            "label": "平均阅读",
+            "key": "avg_reads",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "type": "profile-card",
+        "title": "账号画像",
+        "source": "skill:clawworks-content-creator-account-profiler-v1.1.0/output/profile.json",
+        "empty_text": "尚未生成账号画像，可先点击“识别定位”",
+        "fields": [
+          {
+            "label": "内容方向",
+            "key": "niche"
+          },
+          {
+            "label": "目标人群",
+            "key": "target_audience"
+          },
+          {
+            "label": "风格偏好",
+            "key": "style_preference"
+          },
+          {
+            "label": "置信度",
+            "key": "confidence",
+            "format": "percent"
+          }
+        ]
+      },
+      {
+        "type": "list",
+        "title": "今日草稿",
+        "source": "fs:data/drafts/",
+        "empty_text": "暂无草稿，等待晨报生成或手动创建",
+        "item_template": {
+          "title": "{{title}}",
+          "subtitle": "{{platform}} · 评分 {{score}}/100",
+          "tags": "{{tags}}"
+        },
+        "actions": [
+          {
+            "label": "编辑",
+            "action": "open_editor",
+            "icon": "edit"
+          },
+          {
+            "label": "复制",
+            "action": "copy_to_clipboard",
+            "icon": "copy"
+          },
+          {
+            "label": "发布",
+            "action": "trigger_publish",
+            "icon": "send",
+            "confirm": true
+          },
+          {
+            "label": "删除",
+            "action": "delete",
+            "icon": "trash",
+            "confirm": true
+          }
+        ]
+      },
+      {
+        "type": "ranked-list",
+        "title": "热点选题",
+        "source": "skill:clawworks-content-creator-topic-radar-v1.1.0/output/topics.json",
+        "max_items": 5,
+        "item_template": {
+          "title": "{{topic}}",
+          "score": "{{heat_score}}",
+          "badge": "{{platform}}",
+          "tags": "{{tags}}"
+        },
+        "actions": [
+          {
+            "label": "写文案",
+            "trigger": "skill:clawworks-content-creator-copywriter-v1.1.0",
+            "params": {
+              "topic": "{{topic}}",
+              "platform": "{{platform}}"
+            }
+          },
+          {
+            "label": "换一批",
+            "trigger": "skill:clawworks-content-creator-topic-radar-v1.1.0",
+            "params": {
+              "refresh": true
+            }
+          }
+        ]
+      },
+      {
+        "type": "timeline",
+        "title": "竞品动态",
+        "source": "skill:clawworks-content-creator-topic-radar-v1.1.0/output/competitors.json",
+        "max_items": 10,
+        "item_template": {
+          "title": "{{account_name}}",
+          "content": "{{title}}",
+          "time": "{{published_at}}",
+          "metrics": "👍{{likes}} 💬{{comments}} ⭐{{collects}}"
+        }
+      }
+    ]
+  },
+  "secondary_widgets": [
+    {
+      "type": "chart",
+      "title": "粉丝增长趋势",
+      "source": "skill:clawworks-content-creator-data-report-v1.0.0/output/trend.json",
+      "chart_type": "line",
+      "x_key": "date",
+      "y_keys": [
+        "followers"
+      ],
+      "period": "30d"
+    },
+    {
+      "type": "kanban",
+      "title": "内容排期",
+      "source": "fs:data/schedule/",
+      "columns": [
+        {
+          "id": "idea",
+          "title": "选题池"
+        },
+        {
+          "id": "draft",
+          "title": "草稿中"
+        },
+        {
+          "id": "review",
+          "title": "待审核"
+        },
+        {
+          "id": "scheduled",
+          "title": "已排期"
+        },
+        {
+          "id": "published",
+          "title": "已发布"
+        }
+      ]
+    }
+  ],
+  "quick_actions": [
+    {
+      "label": "写文案",
+      "icon": "edit",
+      "trigger": "skill:clawworks-content-creator-copywriter-v1.1.0"
+    },
+    {
+      "label": "识别定位",
+      "icon": "user-search",
+      "trigger": "skill:clawworks-content-creator-account-profiler-v1.1.0"
+    },
+    {
+      "label": "看选题",
+      "icon": "trending-up",
+      "trigger": "skill:clawworks-content-creator-topic-radar-v1.1.0"
+    },
+    {
+      "label": "看数据",
+      "icon": "bar-chart-2",
+      "trigger": "skill:clawworks-content-creator-data-report-v1.0.0"
+    },
+    {
+      "label": "生成封面",
+      "icon": "image",
+      "trigger": "skill:clawworks-content-creator-visual-v1.0.0"
+    },
+    {
+      "label": "沉淀记忆",
+      "icon": "brain",
+      "trigger": "skill:clawworks-content-creator-learning-memory-v1.2.0"
+    }
+  ],
+  "editor": {
+    "enabled": true,
+    "ai_sidebar": {
+      "skill": "clawworks-content-creator-copywriter-v1.1.0",
+      "actions": [
+        {
+          "label": "AI 优化标题",
+          "action": "optimize_title",
+          "icon": "sparkles"
+        },
+        {
+          "label": "AI 重写正文",
+          "action": "rewrite_body",
+          "icon": "refresh-cw"
+        },
+        {
+          "label": "AI 补充内容",
+          "action": "expand_body",
+          "icon": "plus-circle"
+        },
+        {
+          "label": "推荐发布时间",
+          "action": "suggest_time",
+          "icon": "clock"
+        },
+        {
+          "label": "生成封面建议",
+          "action": "suggest_cover",
+          "icon": "image"
+        },
+        {
+          "label": "违规检查",
+          "action": "compliance_check",
+          "icon": "shield"
+        }
+      ]
+    },
+    "platforms_selector": true,
+    "tag_suggestions": true,
+    "word_count": true,
+    "preview_mode": true
+  },
+  "im_quick_commands": [
+    {
+      "label": "📝 写文案",
+      "command": "帮我写一篇文案"
+    },
+    {
+      "label": "🔥 看选题",
+      "command": "今日有什么热点选题"
+    },
+    {
+      "label": "🧭 识别定位",
+      "command": "读取我账号最近的作品，识别我的内容定位和目标人群"
+    },
+    {
+      "label": "📊 看数据",
+      "command": "给我看看昨天的数据"
+    },
+    {
+      "label": "📋 看草稿",
+      "command": "我有哪些待发布的草稿"
+    },
+    {
+      "label": "🔄 改标题",
+      "command": "帮我优化这个标题"
+    },
+    {
+      "label": "📈 竞品",
+      "command": "竞品最近发了什么"
+    },
+    {
+      "label": "💰 额度",
+      "command": "我的额度"
+    },
+    {
+      "label": "⚙️ 设置",
+      "command": "打开设置"
+    },
+    {
+      "label": "🧠 沉淀记忆",
+      "command": "总结最近的沟通内容，把稳定偏好写入 soul，把短期约束写入 memory"
+    }
+  ]
+}

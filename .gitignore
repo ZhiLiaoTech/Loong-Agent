@@ -8,3 +8,6 @@ coverage/
 .env
 .env.*
 !.env.example
+.dragon/
+.DS_Store
+*.tsbuildinfo
