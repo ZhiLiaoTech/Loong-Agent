@@ -31,10 +31,16 @@ export function readSingleHeader(request: IncomingMessage, name: string): string
   return value;
 }
 
-function isLoopbackHttpOrigin(origin: string): boolean {
+function isTrustedGatewayOrigin(origin: string): boolean {
   try {
     const url = new URL(origin);
-    return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost");
+    const hostname = url.hostname.toLowerCase();
+    const protocol = url.protocol.toLowerCase();
+    const localhostHost =
+      hostname === "127.0.0.1"
+      || hostname === "localhost"
+      || hostname === "tauri.localhost";
+    return localhostHost && (protocol === "http:" || protocol === "https:" || protocol === "tauri:");
   } catch {
     return false;
   }
@@ -43,7 +49,7 @@ function isLoopbackHttpOrigin(origin: string): boolean {
 export function applyCors(request: IncomingMessage, response: ServerResponse): void {
   const originHeader = request.headers.origin;
   const origin = typeof originHeader === "string" ? originHeader : originHeader?.[0];
-  if (origin && isLoopbackHttpOrigin(origin)) {
+  if (origin && isTrustedGatewayOrigin(origin)) {
     response.setHeader("access-control-allow-origin", origin);
   } else {
     const host = request.headers.host?.split(":")[0]?.toLowerCase();
@@ -52,6 +58,10 @@ export function applyCors(request: IncomingMessage, response: ServerResponse): v
   }
   response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
   response.setHeader("access-control-allow-headers", "content-type,authorization,x-loong-secret");
+  const privateNetworkRequest = request.headers["access-control-request-private-network"];
+  if (privateNetworkRequest === "true") {
+    response.setHeader("access-control-allow-private-network", "true");
+  }
   response.setHeader("vary", "Origin");
 }
 

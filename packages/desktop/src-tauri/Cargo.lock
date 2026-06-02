@@ -1701,13 +1701,14 @@ checksum = "616ec5685824bcc94416c6d4a7a446eea774a31efd7062c8480ba6fd06d7a6e5"
 
 [[package]]
 name = "loong-desktop"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "ureq",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

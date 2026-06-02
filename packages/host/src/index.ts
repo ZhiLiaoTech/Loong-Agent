@@ -5,3 +5,4 @@ export type {
   HostSurface,
 } from "./types.js";
 export { createBrowserHost, probeGatewayHealth } from "./browser.js";
+export { createTauriHost, isTauriDesktopEnvironment } from "./tauri.js";

@@ -1,11 +1,14 @@
 {
   "name": "@loong/desktop",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Loong desktop surface (Tauri 2 + @loong/studio)",
   "scripts": {
+    "inspect": "node ../../scripts/package-desktop-release.mjs inspect",
+    "prepare:runtime": "node ../../scripts/package-desktop-release.mjs prepare-runtime",
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "node ../../scripts/package-desktop-release.mjs build --profile build",
+    "release": "node ../../scripts/package-desktop-release.mjs build --profile release",
     "check": "node -e \"console.log('Install Rust + Tauri CLI: cargo install tauri-cli --version \\\"^2\\\"\")\""
   },
   "devDependencies": {

@@ -4,7 +4,12 @@ dist/
 coverage/
 .turbo/
 .cache/
+.tmp/
+release/
+.dragon/
 *.log
 .env
 .env.*
 !.env.example
+target/
+packages/desktop/src-tauri/resources/runtime/
