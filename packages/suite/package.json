@@ -1,0 +1,33 @@
+{
+  "name": "@loong/suite",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Suite (digital-employee package) parsing, install and loading for Loong. Consumer side; ClawWorks-compatible. ui.json is downloaded/kept but never parsed or rendered.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "loong-suite": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@loong/org": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

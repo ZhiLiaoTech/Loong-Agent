@@ -79,6 +79,9 @@ importers:
       '@loong/skills':
         specifier: workspace:*
         version: link:../skills
+      '@loong/suite':
+        specifier: workspace:*
+        version: link:../suite
       '@loong/tools':
         specifier: workspace:*
         version: link:../tools
@@ -428,6 +431,19 @@ importers:
       vite:
         specifier: ^6.3.5
         version: 6.4.2(@types/node@24.12.4)(tsx@4.22.0)
+
+  packages/suite:
+    dependencies:
+      '@loong/org':
+        specifier: workspace:*
+        version: link:../org
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.12.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   packages/test-suite:
     dependencies:

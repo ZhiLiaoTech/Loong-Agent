@@ -1,0 +1,31 @@
+{
+  "$schema": "https://nexodesk.com/schemas/card.v1.json",
+  "card_type": "topic-recommend",
+  "title": "🔥 选题推荐",
+  "description": "基于热点趋势和你的定位，推荐以下选题",
+
+  "sections": [
+    {
+      "type": "ranked-list",
+      "items": "{{topics}}",
+      "item_template": {
+        "rank": "{{index}}",
+        "title": "{{topic}}",
+        "subtitle": "热度 {{heat_score}} · {{platform}} · 匹配度 {{match_score}}%",
+        "tags": "{{tags}}",
+        "action": {
+          "label": "写这个",
+          "action": "trigger_skill",
+          "skill": "clawworks-content-creator-copywriter-v1.0.0",
+          "params": { "topic": "{{topic}}", "platform": "{{platform}}" }
+        }
+      },
+      "max_items": 5
+    }
+  ],
+
+  "actions": [
+    { "label": "换一批", "type": "default", "action": "trigger_skill", "skill": "clawworks-content-creator-topic-radar-v1.0.0", "params": { "refresh": true } },
+    { "label": "去桌面端", "type": "default", "action": "open_desktop", "page": "dashboard" }
+  ]
+}

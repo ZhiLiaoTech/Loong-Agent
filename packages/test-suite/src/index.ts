@@ -468,7 +468,7 @@ async function testSandboxExecTool(): Promise<void> {
   });
   assert(sshPlan.executable === "ssh", "ssh sandbox should use ssh executable");
   assert(sshPlan.profile === "search-read", "ssh sandbox should preserve selected profile");
-  assert(sshPlan.args.includes("dragon@example.test"), "ssh sandbox should include user and host");
+  assert(sshPlan.args.includes("loong@example.test"), "ssh sandbox should include user and host");
   assert(sshPlan.args.includes("2222"), "ssh sandbox should include port");
   assert(sshPlan.args.at(-1) === "cd '/srv/loong' && exec 'rg' 'hello' 'src'", "ssh sandbox should quote the remote command");
 

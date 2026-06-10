@@ -74,7 +74,7 @@ import {
   catalogEntriesFromProviders,
   createModelCatalog,
 } from "@loong/model-catalog";
-import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@loong/providers";
+import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelRequest } from "@loong/providers";
 import { isSensitiveKey, redactSecretsInText } from "@loong/security";
 import {
   createBrowserFormSubmitTool,

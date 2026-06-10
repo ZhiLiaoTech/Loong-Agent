@@ -13,3 +13,5 @@ release/
 !.env.example
 target/
 packages/desktop/src-tauri/resources/runtime/
+.DS_Store
+*.tsbuildinfo
