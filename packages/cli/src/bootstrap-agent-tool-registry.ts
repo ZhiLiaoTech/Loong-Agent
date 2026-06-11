@@ -10,6 +10,7 @@ import {
   createSandboxExecTool,
   createShellExecTool,
   createShellRunTool,
+  createTodoTools,
   createToolRegistry,
   createWebSearchTool,
   defaultMcpConfigPath,
@@ -64,6 +65,8 @@ export function createAgentToolDefinitions(options: BootstrapAgentToolRegistryOp
     createFilePatchTool(),
     createFileWriteTool(),
     createWebSearchTool(),
+    // Session task checklist (Claude-Code-style plan/track-progress primitive).
+    ...createTodoTools(options.memoryDir),
     // Read-only git inspection is always available by default (permission
     // "allow"); these are the same hardened tools the git-tools plugin ships,
     // surfaced without requiring a separate plugin install.

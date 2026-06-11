@@ -79,6 +79,13 @@ export {
   type ShellRunOutput,
 } from "./builtin/shell-run.js";
 export {
+  createTodoTools,
+  type TodoItem,
+  type TodoListOutput,
+  type TodoStatus,
+  type TodoWriteInput,
+} from "./builtin/todo.js";
+export {
   createWebSearchTool,
   type WebSearchConfig,
   type WebSearchConfigResolver,

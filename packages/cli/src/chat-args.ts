@@ -22,6 +22,7 @@ export interface ParsedChatArgs {
   queryLoopMaxTurns?: number;
   forceQueryLoop?: boolean;
   profileId?: string;
+  plan?: boolean;
 }
 
 interface ParsedAttachmentSpec {
@@ -42,6 +43,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
   let queryLoopMaxTurns: number | undefined;
   let forceQueryLoop = mode === "agent" && process.env.LOONG_FORCE_QUERY_LOOP?.trim() === "1";
   let profileId = mode === "agent" ? process.env.LOONG_AGENT_PROFILE?.trim() || undefined : undefined;
+  let plan = mode === "agent" && process.env.LOONG_PLAN_MODE?.trim() === "1";
   let noSession = false;
   let allowWrite = false;
   let allowExec = mode === "agent" && process.env.LOONG_ALLOW_EXEC?.trim() === "1";
@@ -76,6 +78,10 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     if (mode === "agent" && arg === "--finish-task") {
       queryLoop = true;
       forceQueryLoop = true;
+      continue;
+    }
+    if (mode === "agent" && arg === "--plan") {
+      plan = true;
       continue;
     }
     if (mode === "agent" && arg === "--profile") {
@@ -326,6 +332,7 @@ export function parseChatArgs(mode: "chat" | "agent", args: string[]): ParsedCha
     ...(queryLoopMaxTurns !== undefined ? { queryLoopMaxTurns } : {}),
     ...(forceQueryLoop ? { forceQueryLoop: true } : {}),
     ...(profileId !== undefined ? { profileId } : {}),
+    ...(plan ? { plan: true } : {}),
   };
 }
 

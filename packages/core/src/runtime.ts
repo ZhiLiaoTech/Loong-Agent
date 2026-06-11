@@ -156,6 +156,9 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
   /** Per-turn model-facing tool filter from the active tier spec, keyed by
    * runId so concurrent turns on the same runtime don't clobber each other. */
   readonly #turnToolFilters = new Map<string, { allow?: ReadonlySet<string>; deny?: ReadonlySet<string> }>();
+  /** Standing session-scoped "allow always" grants: sessionId -> set of tool
+   * names the user approved with allow-always, so they are not re-prompted. */
+  readonly #sessionToolAllows = new Map<string, Set<string>>();
 
   constructor(options: LoongRuntimeOptions = {}) {
     this.#providerRegistry = options.providerRegistry ?? createProviderRegistry(options.providers ?? []);
@@ -267,6 +270,28 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
           });
         }
       }
+    }
+    // Plan mode (Claude-Code style): the agent investigates and proposes a plan
+    // for approval before any mutation. Deny all write/execute-capable tools for
+    // this turn (read-only tools stay available) and steer the model to present
+    // a plan rather than act.
+    if (input.metadata?.planMode === true) {
+      const denyNames = new Set(
+        this.#toolRegistry.list()
+          .filter(tool => (tool.capabilities ?? []).some(cap => cap === "write" || cap === "execute"))
+          .map(tool => tool.name),
+      );
+      const existing = this.#turnToolFilters.get(runId);
+      this.#turnToolFilters.set(runId, {
+        ...(existing?.allow !== undefined ? { allow: existing.allow } : {}),
+        deny: existing?.deny !== undefined ? new Set([...existing.deny, ...denyNames]) : denyNames,
+      });
+      const planAddendum = "PLAN MODE: Do not modify files, run commands, or take any mutating action. "
+        + "Investigate using read-only tools, then present a concise step-by-step plan and ask the user to approve it before execution.";
+      input = {
+        ...input,
+        systemPrompt: input.systemPrompt ? `${input.systemPrompt}\n\n${planAddendum}` : planAddendum,
+      };
     }
     const turnMaxContextChars = tierAdjustedMaxContextChars ?? this.#maxContextChars;
     const turnAbort = createModelTurnAbort(input.signal, this.#modelTimeoutMs);
@@ -1160,6 +1185,12 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
       return permission;
     }
 
+    // Standing session-scoped "allow always" grant from a prior turn — skip the
+    // prompt entirely for this tool in this session.
+    if (this.#sessionToolAllows.get(invocation.sessionId)?.has(tool.name)) {
+      return { decision: "allow", reason: `Session allow-always for ${tool.name}.` };
+    }
+
     if (signal?.aborted) {
       throw new LoongCancelledError("Turn was cancelled while waiting for permission.");
     }
@@ -1190,8 +1221,19 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
 
     try {
       const response = normalizePermissionResponse(await this.#permissionHandler(request), permission.reason);
+      if (response.decision === "allow-always") {
+        // Record a standing grant so future calls to this tool in this session
+        // are auto-allowed without prompting.
+        let grants = this.#sessionToolAllows.get(invocation.sessionId);
+        if (grants === undefined) {
+          grants = new Set();
+          this.#sessionToolAllows.set(invocation.sessionId, grants);
+        }
+        grants.add(tool.name);
+      }
       const resolved: ToolPermissionResult = {
-        decision: response.decision,
+        // "allow-always" is a session-scoped allow for the engine's purposes.
+        decision: response.decision === "deny" ? "deny" : "allow",
         reason: response.reason ?? `Permission ${response.decision} from permission handler.`,
       };
       this.#emit({
@@ -1420,16 +1462,16 @@ function toPermissionRequest(
 }
 
 function normalizePermissionResponse(
-  response: LoongPermissionResponse | "allow" | "deny",
+  response: LoongPermissionResponse | "allow" | "deny" | "allow-always",
   previousReason: string,
 ): LoongPermissionResponse {
-  if (response === "allow" || response === "deny") {
+  if (response === "allow" || response === "deny" || response === "allow-always") {
     return {
       decision: response,
       reason: `Permission ${response} from permission handler. Previous policy reason: ${previousReason}`,
     };
   }
-  if (response.decision !== "allow" && response.decision !== "deny") {
+  if (response.decision !== "allow" && response.decision !== "deny" && response.decision !== "allow-always") {
     throw new Error(`Invalid permission handler decision: ${String(response.decision)}`);
   }
   return response.reason === undefined

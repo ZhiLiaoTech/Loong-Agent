@@ -186,14 +186,19 @@ export interface LoongPermissionRequest {
 }
 
 export interface LoongPermissionResponse {
-  decision: "allow" | "deny";
+  /**
+   * "allow-always" allows this call AND records a standing session-scoped allow
+   * for the tool, so subsequent calls to the same tool in the session are not
+   * re-prompted (Claude-Code-style "allow always for this tool").
+   */
+  decision: "allow" | "deny" | "allow-always";
   reason?: string;
   metadata?: Record<string, unknown>;
 }
 
 export type LoongPermissionHandler = (
   request: LoongPermissionRequest,
-) => Promise<LoongPermissionResponse | "allow" | "deny">;
+) => Promise<LoongPermissionResponse | "allow" | "deny" | "allow-always">;
 
 export interface LoongPermissionEventPayload {
   toolCallId: string;

@@ -14,8 +14,16 @@ export function createCliPermissionHandler(): LoongPermissionHandler | undefined
       output: process.stderr,
     });
     try {
-      const answer = await rl.question("Allow this tool call? [y/N] ");
-      const approved = /^(y|yes)$/i.test(answer.trim());
+      // y = allow once · a = allow always for this tool this session · n = deny
+      const answer = (await rl.question("Allow this tool call? [y]es / [a]lways / [N]o ")).trim();
+      if (/^(a|always)$/i.test(answer)) {
+        return {
+          decision: "allow-always",
+          reason: `User approved "${request.toolName}" with allow-always in CLI prompt.`,
+          metadata: { surface: "cli" },
+        };
+      }
+      const approved = /^(y|yes)$/i.test(answer);
       return {
         decision: approved ? "allow" : "deny",
         reason: approved ? "User approved in CLI prompt." : "User denied in CLI prompt.",

@@ -95,6 +95,7 @@ export async function runChat(mode: "chat" | "agent", args: string[]): Promise<v
         mode,
         agentAlias: mode === "agent",
         ...(parsed.forceQueryLoop ? { forceQueryLoop: true } : {}),
+        ...(parsed.plan ? { planMode: true } : {}),
       },
     };
     if (mode === "agent") {

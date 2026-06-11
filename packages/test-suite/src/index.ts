@@ -83,6 +83,7 @@ import {
   createToolRegistry,
   createSandboxExecTool,
   createToolPermissionEngine,
+  createTodoTools,
   planSandboxExecCommand,
   registerMcpTools,
   validateBrowserTargetUrl,
@@ -126,6 +127,7 @@ async function main(): Promise<void> {
     ["cron schedule and gateway delivery", testCronScheduleAndGatewayDelivery],
     ["cron file store and runner", testCronFileStoreAndRunner],
     ["cron retry backoff and dead-letter", testCronRetryBackoffAndDeadLetter],
+    ["todo checklist tool", testTodoChecklistTool],
     ["browser snapshot and form submit tools", testBrowserSnapshotTool],
     ["delegation planner and runner", testDelegationPlannerAndRunner],
     ["browser playwright snapshot tool", testBrowserPlaywrightSnapshotTool],
@@ -735,6 +737,46 @@ async function testCronRetryBackoffAndDeadLetter(): Promise<void> {
     assert((rec?.attempt ?? 0) === 0, "success should reset the attempt counter");
     assert(rec?.lastScheduledAt === "2026-05-17T10:02:00.000Z", "success should report the original occurrence time");
     assert(rec?.nextRunAt === "2026-05-17T10:03:00.000Z", "success should advance to the next cron occurrence");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function testTodoChecklistTool(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-todo-"));
+  try {
+    const tools = createTodoTools(root);
+    const writeTool = tools.find(t => t.name === "todo_write");
+    const readTool = tools.find(t => t.name === "todo_read");
+    assert(writeTool !== undefined && readTool !== undefined, "createTodoTools should provide todo_write and todo_read");
+    assert(writeTool?.permission === "allow", "todo_write should be permission allow");
+
+    const written = await writeTool!.invoke({
+      id: "w1", name: "todo_write", sessionId: "sess-1",
+      input: { todos: [
+        { content: "design", status: "completed" },
+        { content: "build", status: "in_progress" },
+        { content: "test", status: "pending" },
+      ] },
+    });
+    assert(written.ok === true, "todo_write should succeed");
+    const wOut = written.output as { summary: { total: number; completed: number; inProgress: number; pending: number } };
+    assert(wOut.summary.total === 3 && wOut.summary.completed === 1 && wOut.summary.inProgress === 1 && wOut.summary.pending === 1,
+      "todo_write should summarize statuses");
+
+    const read = await readTool!.invoke({ id: "r1", name: "todo_read", sessionId: "sess-1", input: {} });
+    const rOut = read.output as { todos: Array<{ content: string; status: string }> };
+    assert(read.ok === true && rOut.todos.length === 3 && rOut.todos[1]?.content === "build", "todo_read should return the persisted list");
+
+    const other = await readTool!.invoke({ id: "r2", name: "todo_read", sessionId: "sess-2", input: {} });
+    const oOut = other.output as { todos: unknown[] };
+    assert(other.ok === true && oOut.todos.length === 0, "todos should be isolated per session");
+
+    const bad = await writeTool!.invoke({ id: "w2", name: "todo_write", sessionId: "sess-1", input: { todos: [{ content: "  ", status: "pending" }] } });
+    assert(bad.ok === false, "todo_write should reject empty content");
+
+    const badStatus = await writeTool!.invoke({ id: "w3", name: "todo_write", sessionId: "sess-1", input: { todos: [{ content: "x", status: "bogus" }] } });
+    assert(badStatus.ok === false, "todo_write should reject an invalid status");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
