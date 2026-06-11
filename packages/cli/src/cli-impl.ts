@@ -7,6 +7,7 @@ import {
   parseAiSummarizationValue,
   parseSessionCompactionValue,
   normalizeTierConfig,
+  TIER_DEFAULTS,
   type LoongAgentRuntime,
   type LoongLifecycleHook,
   type LoongPermissionHandler,
@@ -467,7 +468,9 @@ export async function loadPersistedTierConfig(filePath: string): Promise<ModelTi
     text = await readFile(filePath, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return normalizeTierConfig(undefined);
+      // No tiers.json on disk → ship the adaptive default (enabled) rather than
+      // the inert empty config, so installs get token-saving routing for free.
+      return { ...TIER_DEFAULTS, tiers: { ...TIER_DEFAULTS.tiers }, classifier: { ...TIER_DEFAULTS.classifier } };
     }
     throw error;
   }
@@ -724,12 +727,30 @@ export function configuredAgentConfigPath(): string {
 }
 
 export function createAgentConfigStore(filePath: string): GatewayAgentConfigStore {
+  // Gateway #resolveAgentParams loads the agent config more than once per turn;
+  // cache the parsed+normalized result keyed by file mtime so repeated loads in
+  // the same turn don't re-read and re-normalize agents.json. A save() bumps the
+  // mtime, so the next load() misses the cache and reloads.
+  let cached: { mtimeMs: number; value: GatewayAgentConfig } | undefined;
   return {
     async load() {
-      return toSafeAgentConfig(await loadPersistedAgentConfig(filePath), filePath);
+      let mtimeMs = -1;
+      try {
+        mtimeMs = (await stat(filePath)).mtimeMs;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      if (cached !== undefined && cached.mtimeMs === mtimeMs) {
+        return cached.value;
+      }
+      const value = toSafeAgentConfig(await loadPersistedAgentConfig(filePath), filePath);
+      cached = { mtimeMs, value };
+      return value;
     },
     async save(config: GatewayAgentConfigSaveParams) {
-      return await savePersistedAgentConfig(filePath, config);
+      const saved = await savePersistedAgentConfig(filePath, config);
+      cached = undefined;
+      return saved;
     },
   };
 }

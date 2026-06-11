@@ -256,18 +256,26 @@ export function applyTierToInput(
   return result;
 }
 
+/**
+ * Shipped product default — adaptive routing is ON out of the box so the
+ * heuristic classifier (no LLM cost) trims context + thinking on trivial turns
+ * without any operator configuration. The default specs are deliberately
+ * **capability-preserving**: the fast tier only lowers thinking and the injected
+ * context budget; it does NOT disable tools or memory, so a short agent
+ * instruction (which classifies "fast") can still use the full tool set. An
+ * operator who wants aggressive fast-tier gating can add
+ * `toolsEnabled:false` / `memoryEnabled:false` to fast in their own tiers.json.
+ */
 export const TIER_DEFAULTS: ModelTierConfig = {
-  enabled: false,
+  enabled: true,
   tiers: {
     fast: {
       thinking: "none",
-      maxContextChars: 4000,
-      toolsEnabled: false,
-      memoryEnabled: false,
+      maxContextChars: 6000,
     },
     standard: {
       thinking: "low",
-      maxContextChars: 16000,
+      maxContextChars: 24000,
     },
     deep: {
       thinking: "high",

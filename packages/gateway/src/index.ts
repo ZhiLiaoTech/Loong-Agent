@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { describeAuthStartup, requiresSharedSecret } from "./auth-policy.js";
 import {
@@ -170,6 +170,21 @@ export interface GatewayAddress {
   host: string;
   port: number;
   url: string;
+}
+
+/**
+ * Constant-time shared-secret comparison. A plain `===` short-circuits on the
+ * first mismatching byte, leaking secret length/prefix via timing once the
+ * gateway is exposed on a non-loopback bind. We length-check first (a cheap,
+ * non-secret-dependent gate) then compare equal-length buffers with
+ * timingSafeEqual.
+ */
+function secretsMatch(candidate: string | undefined, expected: string | undefined): boolean {
+  if (typeof candidate !== "string" || typeof expected !== "string") return false;
+  const a = Buffer.from(candidate, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 export type {
@@ -635,8 +650,9 @@ export class HttpLoongGateway implements LoongGateway {
 
     const authorization = request.headers.authorization;
     const bearer = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : undefined;
-    const headerSecret = request.headers["x-loong-secret"];
-    return bearer === config.sharedSecret || headerSecret === config.sharedSecret;
+    const rawHeaderSecret = request.headers["x-loong-secret"];
+    const headerSecret = Array.isArray(rawHeaderSecret) ? rawHeaderSecret[0] : rawHeaderSecret;
+    return secretsMatch(bearer, config.sharedSecret) || secretsMatch(headerSecret, config.sharedSecret);
   }
 
   #rpcCapabilities(): readonly string[] {

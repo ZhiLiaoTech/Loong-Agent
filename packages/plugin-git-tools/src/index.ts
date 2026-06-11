@@ -81,7 +81,7 @@ const plugin: LoongPlugin = {
 
 export default plugin;
 
-function createGitStatusTool(): ToolDefinition<GitStatusInput, GitCommandOutput> {
+export function createGitStatusTool(): ToolDefinition<GitStatusInput, GitCommandOutput> {
   return {
     name: "git_status",
     description: "Inspect the current workspace Git status without modifying the repository.",
@@ -100,7 +100,7 @@ function createGitStatusTool(): ToolDefinition<GitStatusInput, GitCommandOutput>
   };
 }
 
-function createGitDiffTool(): ToolDefinition<GitDiffInput, GitCommandOutput> {
+export function createGitDiffTool(): ToolDefinition<GitDiffInput, GitCommandOutput> {
   return {
     name: "git_diff",
     description: "Inspect unstaged or staged Git diffs without modifying the repository.",
@@ -132,7 +132,7 @@ function createGitDiffTool(): ToolDefinition<GitDiffInput, GitCommandOutput> {
   };
 }
 
-function createGitLogTool(): ToolDefinition<GitLogInput, GitCommandOutput> {
+export function createGitLogTool(): ToolDefinition<GitLogInput, GitCommandOutput> {
   return {
     name: "git_log",
     description: "Inspect recent Git commits without modifying the repository.",

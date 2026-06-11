@@ -187,7 +187,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
   }
 
   /**
-   * Hot-swap the tier scheduling config. Takes effect on the NEXT turn ù?runs
+   * Hot-swap the tier scheduling config. Takes effect on the NEXT turn ÔøΩ?runs
    * already in flight see the previous decision. Pass `undefined` to disable
    * tier scheduling for subsequent turns.
    */
@@ -196,7 +196,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
   }
 
   /**
-   * Hot-swap the provider registry. Takes effect on the NEXT turn ù?runs already
+   * Hot-swap the provider registry. Takes effect on the NEXT turn ÔøΩ?runs already
    * in flight keep the previous registry.
    */
   setProviderRegistry(registry: ProviderRegistry): void {
@@ -338,7 +338,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
         this.#emit({
           type: "assistant_replace",
           runId,
-          text: cleaned.length > 0 ? `${cleaned}\n\n[????????ù]\n` : "[????????ù]\n",
+          text: cleaned.length > 0 ? `${cleaned}\n\n[????????ÔøΩ]\n` : "[????????ÔøΩ]\n",
         });
       }
 
@@ -356,7 +356,15 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
         };
         // Echo reasoning_content back on the next turn so DeepSeek V4 Pro
         // (thinking mode) doesn't reject the follow-up with HTTP 400. Other
-        // providers ignore the field.
+        // providers ignore the field. Only the MOST RECENT assistant message
+        // needs the reasoning echoed; older reasoning blobs from earlier loop
+        // iterations are re-billed as input on every subsequent call for zero
+        // value, so strip them before appending the new turn.
+        for (const prior of modelMessages) {
+          if (prior.role === "assistant" && prior.reasoningContent !== undefined) {
+            delete prior.reasoningContent;
+          }
+        }
         if (providerResponse.reasoningContent !== undefined && providerResponse.reasoningContent.length > 0) {
           assistantTurn.reasoningContent = providerResponse.reasoningContent;
         }
@@ -1095,7 +1103,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
     const preview = resultContent === undefined
       ? undefined
       : resultContent.length > 400
-        ? `${resultContent.slice(0, 400)}ù`
+        ? `${resultContent.slice(0, 400)}ÔøΩ`
         : resultContent;
     this.#emit({
       type: "tool",
@@ -1803,7 +1811,7 @@ async function resolveAttachments(attachments: readonly LoongAttachment[] | unde
         throw new Error(`Attachment ${index + 1} (${mime}) extraction failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (!extracted.trim()) {
-        extracted = `[empty document: ${safeName} (${mime}, ${buffer.byteLength} bytes) ù?no extractable text]`;
+        extracted = `[empty document: ${safeName} (${mime}, ${buffer.byteLength} bytes) ÔøΩ?no extractable text]`;
       }
       if (Buffer.byteLength(extracted, "utf8") > MAX_INLINED_TEXT_BYTES) {
         extracted = extracted.slice(0, MAX_INLINED_TEXT_BYTES) + `\n[document truncated: extracted text exceeds ${MAX_INLINED_TEXT_BYTES} bytes]`;
@@ -1852,7 +1860,7 @@ function buildUserMessageContent(
   }
   const combinedText = textPieces.join("\n\n");
   if (!hasImage) {
-    // No images ù?plain string is enough for any provider.
+    // No images ÔøΩ?plain string is enough for any provider.
     return combinedText;
   }
   // Multimodal: emit a text part (text + inlined file contents) followed by
@@ -1886,7 +1894,7 @@ function summarizeAttachments(attachments: ResolvedAttachment[]): Array<Record<s
 }
 
 // ---------------------------------------------------------------------------
-// Document text extractors (lazy-loaded). Each is best-effort ù?failures
+// Document text extractors (lazy-loaded). Each is best-effort ÔøΩ?failures
 // surface a clear error to the caller via resolveAttachments.
 // ---------------------------------------------------------------------------
 
@@ -1955,7 +1963,7 @@ async function extractPptxText(buffer: Buffer, _name: string): Promise<string> {
 }
 
 async function extractRtfText(buffer: Buffer, _name: string): Promise<string> {
-  // Minimal RTF stripper ù?good enough for most plain RTF files.
+  // Minimal RTF stripper ÔøΩ?good enough for most plain RTF files.
   const raw = buffer.toString("latin1");
   // Strip groups, control words, and binary content
   let out = raw

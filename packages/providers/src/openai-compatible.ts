@@ -88,6 +88,11 @@ export function createOpenAICompatibleProvider(
       const body = toChatCompletionBody(request);
       if (request.onTextDelta !== undefined) {
         body.stream = true;
+        // Without this, OpenAI-compatible servers omit the usage object on
+        // streamed completions, leaving per-turn token accounting blind on the
+        // default (always-streamed) runtime path. The final usage chunk is
+        // parsed by parseProviderStream.
+        body.stream_options = { include_usage: true };
       }
       const requestInit: RequestInit = {
         method: "POST",

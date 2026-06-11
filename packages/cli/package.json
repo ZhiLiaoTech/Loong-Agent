@@ -28,6 +28,7 @@
     "@loong/memory": "workspace:*",
     "@loong/org": "workspace:*",
     "@loong/model-catalog": "workspace:*",
+    "@loong/plugin-git-tools": "workspace:*",
     "@loong/plugin-sdk": "workspace:*",
     "@loong/providers": "workspace:*",
     "@loong/security": "workspace:*",

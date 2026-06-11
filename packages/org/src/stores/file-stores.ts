@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   DigitalEmployee,
@@ -33,21 +33,48 @@ const EMPTY_POLICIES: ToolPolicyDocument = {
   policies: [],
 };
 
+/**
+ * Wraps a load function with an mtime-keyed cache. The org permission evaluator
+ * calls load() once per tool invocation; without this an agent turn that fires
+ * N tools re-reads + re-parses + re-normalizes the same JSON N times. We stat
+ * the file (cheap, non-blocking) and reuse the prior normalized result while the
+ * mtime is unchanged. A save() bumps the file mtime, so the next load() misses
+ * the cache and reloads — no manual invalidation needed. Missing file is cached
+ * under a sentinel so the fallback path is also memoized.
+ */
+function createMtimeCachedLoader<T>(filePath: string, load: () => Promise<T>): () => Promise<T> {
+  let cached: { mtimeMs: number; value: T } | undefined;
+  return async () => {
+    let mtimeMs = -1;
+    try {
+      mtimeMs = (await stat(filePath)).mtimeMs;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (cached !== undefined && cached.mtimeMs === mtimeMs) {
+      return cached.value;
+    }
+    const value = await load();
+    cached = { mtimeMs, value };
+    return value;
+  };
+}
+
 export function createFileOrgStore(filePath: string): OrgStore {
   return {
-    async load() {
+    load: createMtimeCachedLoader(filePath, async () => {
       const document = await readJsonFile(filePath, EMPTY_ORG);
       return normalizeOrgDocument(document, filePath);
-    },
+    }),
   };
 }
 
 export function createFileEmployeeStore(filePath: string): EmployeeStore {
   return {
-    async load() {
+    load: createMtimeCachedLoader(filePath, async () => {
       const document = await readJsonFile(filePath, EMPTY_EMPLOYEES);
       return normalizeEmployeeRegistry(document, filePath);
-    },
+    }),
     async save(registry) {
       const normalized = normalizeEmployeeRegistry(registry, filePath);
       await writeJsonAtomic(filePath, {
@@ -61,10 +88,10 @@ export function createFileEmployeeStore(filePath: string): EmployeeStore {
 
 export function createFileToolPolicyStore(filePath: string): ToolPolicyStore {
   return {
-    async load() {
+    load: createMtimeCachedLoader(filePath, async () => {
       const document = await readJsonFile(filePath, EMPTY_POLICIES);
       return normalizeToolPolicyDocument(document, filePath);
-    },
+    }),
     async save(document) {
       const normalized = normalizeToolPolicyDocument(document, filePath);
       await writeJsonAtomic(filePath, { policies: normalized.policies });

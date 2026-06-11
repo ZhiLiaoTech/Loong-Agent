@@ -39,6 +39,9 @@ export async function runChat(mode: "chat" | "agent", args: string[]): Promise<v
   const builtinProviders = await createBuiltinProviders();
   const permissionHandler = mode === "agent" ? createCliPermissionHandler() : undefined;
   const tierConfig = await loadPersistedTierConfig(configuredTierConfigPath());
+  if (mode === "agent" && tierConfig.enabled) {
+    process.stderr.write(`Loong tier scheduling: on (classifier=${tierConfig.classifier.mode}). Disable via .loong/config/tiers.json {"enabled":false}.\n`);
+  }
   const fileSettings = await loadGatewaySettingsFile();
   const envModelTimeoutMs = parseModelTimeoutMsFromEnv();
   const modelTimeoutMs = resolveModelTimeoutMs({

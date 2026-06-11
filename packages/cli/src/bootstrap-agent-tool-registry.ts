@@ -20,6 +20,11 @@ import {
 } from "@loong/tools";
 import { createRuntimeDelegationTool } from "@loong/delegation";
 import {
+  createGitDiffTool,
+  createGitLogTool,
+  createGitStatusTool,
+} from "@loong/plugin-git-tools";
+import {
   createMemoryCandidateTools,
   createMemoryTools,
   createTrajectoryTools,
@@ -59,6 +64,12 @@ export function createAgentToolDefinitions(options: BootstrapAgentToolRegistryOp
     createFilePatchTool(),
     createFileWriteTool(),
     createWebSearchTool(),
+    // Read-only git inspection is always available by default (permission
+    // "allow"); these are the same hardened tools the git-tools plugin ships,
+    // surfaced without requiring a separate plugin install.
+    createGitStatusTool(),
+    createGitDiffTool(),
+    createGitLogTool(),
     ...createMemoryTools(options.memoryStore),
     ...createMemoryCandidateTools({ rootDir: options.memoryDir, store: options.memoryStore }),
   ];
