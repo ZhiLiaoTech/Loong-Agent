@@ -153,6 +153,9 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
   readonly #maxToolResultChars = 64_000;
   readonly #listeners = new Set<(event: LoongEvent) => void>();
   readonly #eventCollectors = new Map<string, LoongEvent[]>();
+  /** Per-turn model-facing tool filter from the active tier spec, keyed by
+   * runId so concurrent turns on the same runtime don't clobber each other. */
+  readonly #turnToolFilters = new Map<string, { allow?: ReadonlySet<string>; deny?: ReadonlySet<string> }>();
 
   constructor(options: LoongRuntimeOptions = {}) {
     this.#providerRegistry = options.providerRegistry ?? createProviderRegistry(options.providers ?? []);
@@ -254,6 +257,15 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
         // and trajectory records all see the tier-resolved settings.
         input = applied.input;
         tierAdjustedMaxContextChars = applied.maxContextChars;
+        // Slim the model-facing tool surface for this tier, if configured.
+        const allow = tierSpec?.toolAllowlist;
+        const deny = tierSpec?.toolDenylist;
+        if (allow !== undefined || (deny !== undefined && deny.length > 0)) {
+          this.#turnToolFilters.set(runId, {
+            ...(allow !== undefined ? { allow: new Set(allow) } : {}),
+            ...(deny !== undefined && deny.length > 0 ? { deny: new Set(deny) } : {}),
+          });
+        }
       }
     }
     const turnMaxContextChars = tierAdjustedMaxContextChars ?? this.#maxContextChars;
@@ -487,6 +499,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
     } finally {
       turnAbort.dispose();
       this.#eventCollectors.delete(runId);
+      this.#turnToolFilters.delete(runId);
     }
   }
 
@@ -657,6 +670,22 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
     }
   }
 
+  /** Build the model-facing tool array for a turn, applying the active tier's
+   * allow/deny filter (keyed by runId). Tools excluded here remain registered
+   * and executable; they are just not advertised to the model this turn. */
+  #selectModelTools(runId: string): ReturnType<typeof toModelTool>[] {
+    const filter = this.#turnToolFilters.get(runId);
+    let tools = this.#toolRegistry.list();
+    if (filter !== undefined) {
+      tools = tools.filter(tool => {
+        if (filter.allow !== undefined && !filter.allow.has(tool.name)) return false;
+        if (filter.deny !== undefined && filter.deny.has(tool.name)) return false;
+        return true;
+      });
+    }
+    return tools.map(toModelTool);
+  }
+
   async #completeModel(
     provider: ModelProvider,
     model: string,
@@ -680,7 +709,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
       model,
       messages,
       ...(toolsEnabled && provider.supportsToolCalling
-        ? { tools: this.#toolRegistry.list().map(toModelTool) }
+        ? { tools: this.#selectModelTools(runId) }
         : {}),
       ...(input.signal !== undefined ? { signal: input.signal } : {}),
       ...(onTextDelta !== undefined ? { onTextDelta } : {}),
@@ -1604,7 +1633,7 @@ function cloneEvent(event: LoongEvent): LoongEvent {
 }
 
 function toLoongUsage(
-  usage: { inputTokens?: number; outputTokens?: number } | undefined,
+  usage: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number } | undefined,
 ): LoongUsage | undefined {
   if (!usage) {
     return undefined;
@@ -1616,6 +1645,9 @@ function toLoongUsage(
   }
   if (usage.outputTokens !== undefined) {
     loongUsage.outputTokens = usage.outputTokens;
+  }
+  if (usage.cachedInputTokens !== undefined) {
+    loongUsage.cachedInputTokens = usage.cachedInputTokens;
   }
   if (usage.inputTokens !== undefined && usage.outputTokens !== undefined) {
     loongUsage.totalTokens = usage.inputTokens + usage.outputTokens;

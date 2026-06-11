@@ -26,10 +26,17 @@ export interface LoongCronJob {
   thinking?: LoongCronThinkingLevel;
   toolsEnabled?: boolean;
   memoryEnabled?: boolean;
+  /** Max delivery retries for a failed occurrence before it is dead-lettered
+   * and the schedule advances. Default DEFAULT_CRON_MAX_RETRIES. 0 disables. */
+  maxRetries?: number;
+  /** Base backoff (ms) for retry scheduling; grows exponentially per attempt,
+   * capped at MAX_CRON_RETRY_BACKOFF_MS. Default DEFAULT_CRON_RETRY_BACKOFF_MS. */
+  retryBackoffMs?: number;
   metadata?: Record<string, unknown>;
 }
 
-export type LoongCronJobStatus = "ok" | "error";
+/** "failed" is the terminal dead-letter status after retries are exhausted. */
+export type LoongCronJobStatus = "ok" | "error" | "failed";
 
 export interface LoongCronJobRecord extends LoongCronJob {
   enabled: boolean;
@@ -40,7 +47,17 @@ export interface LoongCronJobRecord extends LoongCronJob {
   lastDeliveredAt?: string;
   lastStatus?: LoongCronJobStatus;
   lastError?: string;
+  /** Retries already spent on the occurrence currently pending retry (0 = none). */
+  attempt?: number;
+  /** Original scheduled time of the occurrence being retried, preserved across
+   * backoff ticks so dead-letter/recovery reports the intended slot, not the
+   * retry time. */
+  pendingScheduledAt?: string;
 }
+
+export const DEFAULT_CRON_MAX_RETRIES = 3;
+export const DEFAULT_CRON_RETRY_BACKOFF_MS = 60_000;
+export const MAX_CRON_RETRY_BACKOFF_MS = 600_000;
 
 export interface LoongCronOccurrence {
   jobId: string;
@@ -320,28 +337,59 @@ async function runCronTick(
     if (!record.enabled || new Date(record.nextRunAt).getTime() > checkedAt.getTime()) {
       continue;
     }
+    // Preserve the ORIGINAL scheduled slot across backoff retries so dead-letter
+    // / recovery reports the intended occurrence, not the retry time.
+    const scheduledAt = record.pendingScheduledAt ?? record.nextRunAt;
     const occurrence: LoongCronOccurrence = {
       jobId: record.id,
-      scheduledAt: record.nextRunAt,
+      scheduledAt,
       deliveredAt: checkedAtIso,
     };
     const result = await target.deliver(record, occurrence);
+    const attempt = record.attempt ?? 0;
+    const maxRetries = record.maxRetries ?? DEFAULT_CRON_MAX_RETRIES;
+    const willRetry = !result.ok && attempt < maxRetries;
     const delivery: LoongCronDeliveryRecord = {
       jobId: record.id,
       scheduledAt: occurrence.scheduledAt,
       deliveredAt: checkedAtIso,
-      status: result.ok ? "ok" : "error",
+      // "error" while retries remain; "failed" once dead-lettered.
+      status: result.ok ? "ok" : willRetry ? "error" : "failed",
       result,
     };
     delivered.push(delivery);
-    await store.upsert({
-      ...record,
-      nextRunAt: nextCronRun(record.schedule, checkedAt).toISOString(),
+
+    const common = {
       lastScheduledAt: occurrence.scheduledAt,
       lastDeliveredAt: checkedAtIso,
       lastStatus: delivery.status,
       ...(result.ok ? { lastError: undefined } : { lastError: result.error ?? `HTTP ${result.status}` }),
-    }, { now: checkedAt });
+    };
+    if (result.ok || !willRetry) {
+      // Success, or retries exhausted → advance to the next cron occurrence and
+      // clear retry state. A dead-lettered occurrence is lost (lastStatus=failed)
+      // but the schedule keeps running.
+      await store.upsert({
+        ...record,
+        ...common,
+        nextRunAt: nextCronRun(record.schedule, checkedAt).toISOString(),
+        attempt: 0,
+        pendingScheduledAt: undefined,
+      }, { now: checkedAt });
+    } else {
+      // Transient failure with retries left → reschedule a capped exponential
+      // backoff for the SAME occurrence instead of skipping it.
+      const baseBackoff = record.retryBackoffMs ?? DEFAULT_CRON_RETRY_BACKOFF_MS;
+      const delayMs = Math.min(baseBackoff * 2 ** attempt, MAX_CRON_RETRY_BACKOFF_MS);
+      const retryAt = new Date(checkedAt.getTime() + delayMs).toISOString();
+      await store.upsert({
+        ...record,
+        ...common,
+        nextRunAt: retryAt,
+        attempt: attempt + 1,
+        pendingScheduledAt: scheduledAt,
+      }, { now: checkedAt });
+    }
   }
   return { checkedAt: checkedAtIso, delivered };
 }
@@ -361,6 +409,8 @@ function normalizeCronJobRecord(
     schedule: schedule.expression,
     ...(job.workspace !== undefined ? { workspace: normalizeNonEmptyString(job.workspace, "Cron job workspace") } : {}),
     ...(job.model !== undefined ? { model: normalizeNonEmptyString(job.model, "Cron job model") } : {}),
+    ...(job.maxRetries !== undefined ? { maxRetries: normalizeNonNegativeInteger(job.maxRetries, "Cron job maxRetries") } : {}),
+    ...(job.retryBackoffMs !== undefined ? { retryBackoffMs: normalizeNonNegativeInteger(job.retryBackoffMs, "Cron job retryBackoffMs") } : {}),
     ...(job.metadata !== undefined ? { metadata: readMetadata(job.metadata) } : {}),
   };
   const enabled = typeof candidate.enabled === "boolean"
@@ -406,7 +456,26 @@ function normalizeCronJobRecord(
   if (lastError !== undefined) {
     record.lastError = lastError;
   }
+  const attempt = hasOwn(candidate, "attempt")
+    ? candidate.attempt === undefined ? undefined : normalizeNonNegativeInteger(candidate.attempt, "Cron job attempt")
+    : previous?.attempt;
+  if (attempt !== undefined && attempt > 0) {
+    record.attempt = attempt;
+  }
+  const pendingScheduledAt = hasOwn(candidate, "pendingScheduledAt")
+    ? candidate.pendingScheduledAt === undefined ? undefined : normalizeIsoDate(candidate.pendingScheduledAt, "Cron job pendingScheduledAt")
+    : previous?.pendingScheduledAt;
+  if (pendingScheduledAt !== undefined) {
+    record.pendingScheduledAt = pendingScheduledAt;
+  }
   return record;
+}
+
+function normalizeNonNegativeInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative number.`);
+  }
+  return Math.floor(value);
 }
 
 function readCronJobRecord(value: unknown): LoongCronJobRecord {
@@ -425,10 +494,14 @@ function readCronJobRecord(value: unknown): LoongCronJobRecord {
     ...(value.workspace !== undefined ? { workspace: normalizeNonEmptyString(value.workspace, "Cron job workspace") } : {}),
     ...(value.model !== undefined ? { model: normalizeNonEmptyString(value.model, "Cron job model") } : {}),
     ...(value.metadata !== undefined ? { metadata: readMetadata(value.metadata) } : {}),
+    ...(value.maxRetries !== undefined ? { maxRetries: normalizeNonNegativeInteger(value.maxRetries, "Cron job maxRetries") } : {}),
+    ...(value.retryBackoffMs !== undefined ? { retryBackoffMs: normalizeNonNegativeInteger(value.retryBackoffMs, "Cron job retryBackoffMs") } : {}),
     ...(value.lastScheduledAt !== undefined ? { lastScheduledAt: normalizeIsoDate(value.lastScheduledAt, "Cron job lastScheduledAt") } : {}),
     ...(value.lastDeliveredAt !== undefined ? { lastDeliveredAt: normalizeIsoDate(value.lastDeliveredAt, "Cron job lastDeliveredAt") } : {}),
     ...(value.lastStatus !== undefined ? { lastStatus: readCronStatus(value.lastStatus) } : {}),
     ...(value.lastError !== undefined ? { lastError: String(value.lastError) } : {}),
+    ...(value.attempt !== undefined ? { attempt: normalizeNonNegativeInteger(value.attempt, "Cron job attempt") } : {}),
+    ...(value.pendingScheduledAt !== undefined ? { pendingScheduledAt: normalizeIsoDate(value.pendingScheduledAt, "Cron job pendingScheduledAt") } : {}),
   };
   return job;
 }
@@ -571,10 +644,10 @@ function normalizeNonEmptyString(value: unknown, label: string): string {
 }
 
 function readCronStatus(value: unknown): LoongCronJobStatus {
-  if (value === "ok" || value === "error") {
+  if (value === "ok" || value === "error" || value === "failed") {
     return value;
   }
-  throw new Error("Cron job lastStatus must be ok or error.");
+  throw new Error("Cron job lastStatus must be ok, error, or failed.");
 }
 
 function readMetadata(value: unknown): Record<string, unknown> {

@@ -70,6 +70,13 @@ export interface ModelResponse {
   usage?: {
     inputTokens?: number;
     outputTokens?: number;
+    /**
+     * Input tokens served from a prompt cache (read hits) rather than processed
+     * fresh — Anthropic `cache_read_input_tokens`, OpenAI
+     * `prompt_tokens_details.cached_tokens`. Surfaces prompt-caching
+     * effectiveness; these tokens are billed at a large discount.
+     */
+    cachedInputTokens?: number;
   };
 }
 

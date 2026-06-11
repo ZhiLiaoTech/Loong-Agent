@@ -125,6 +125,7 @@ async function main(): Promise<void> {
     ["sandbox exec tool", testSandboxExecTool],
     ["cron schedule and gateway delivery", testCronScheduleAndGatewayDelivery],
     ["cron file store and runner", testCronFileStoreAndRunner],
+    ["cron retry backoff and dead-letter", testCronRetryBackoffAndDeadLetter],
     ["browser snapshot and form submit tools", testBrowserSnapshotTool],
     ["delegation planner and runner", testDelegationPlannerAndRunner],
     ["browser playwright snapshot tool", testBrowserPlaywrightSnapshotTool],
@@ -655,6 +656,80 @@ async function testCronFileStoreAndRunner(): Promise<void> {
   }
 }
 
+async function testCronRetryBackoffAndDeadLetter(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cron-retry-"));
+  const filePath = path.join(root, "jobs.json");
+  try {
+    const store = createFileCronJobStore({ filePath });
+    await store.upsert({
+      id: "retry-job",
+      sessionId: "s",
+      message: "deliver me",
+      schedule: "* * * * *",
+      maxRetries: 2,
+      retryBackoffMs: 1000,
+    }, { now: new Date("2026-05-17T10:00:30.000Z") });
+
+    let nowIso = "2026-05-17T10:01:30.000Z";
+    let succeed = false;
+    const deliveries: string[] = [];
+    const runner = createCronRunner({
+      store,
+      now: () => new Date(nowIso),
+      target: {
+        async deliver(_job, occurrence) {
+          deliveries.push(occurrence.scheduledAt);
+          return succeed ? { ok: true, status: 200 } : { ok: false, status: 503, error: "upstream down" };
+        },
+      },
+    });
+
+    // Tick 1: due at 10:01:00, fails → first retry scheduled (backoff 1000ms).
+    await runner.tick();
+    let rec = await store.get("retry-job");
+    assert(rec?.lastStatus === "error", "first failure should be retryable (status error)");
+    assert(rec?.attempt === 1, "first failure should record attempt=1");
+    assert(rec?.nextRunAt === "2026-05-17T10:01:31.000Z", "first retry should be scheduled at backoff, not next cron slot");
+    assert(rec?.pendingScheduledAt === "2026-05-17T10:01:00.000Z", "original occurrence time should be preserved across retries");
+
+    // Tick 2: retry due, fails again → second retry (backoff doubles to 2000ms).
+    nowIso = "2026-05-17T10:01:31.000Z";
+    await runner.tick();
+    rec = await store.get("retry-job");
+    assert(rec?.attempt === 2, "second failure should record attempt=2");
+    assert(rec?.lastStatus === "error", "second failure with retries left stays error");
+    assert(rec?.nextRunAt === "2026-05-17T10:01:33.000Z", "second retry should use exponential backoff (2000ms)");
+
+    // Tick 3: retries exhausted (maxRetries=2) → dead-letter, advance to next slot.
+    nowIso = "2026-05-17T10:01:33.000Z";
+    await runner.tick();
+    rec = await store.get("retry-job");
+    assert(rec?.lastStatus === "failed", "exhausting retries should dead-letter the occurrence (status failed)");
+    assert((rec?.attempt ?? 0) === 0, "dead-letter should reset the attempt counter");
+    assert(rec?.pendingScheduledAt === undefined, "dead-letter should clear the pending occurrence");
+    assert(rec?.nextRunAt === "2026-05-17T10:02:00.000Z", "dead-letter should advance to the next cron occurrence");
+    assert(deliveries.length === 3 && deliveries.every(s => s === "2026-05-17T10:01:00.000Z"),
+      "all 3 delivery attempts should target the same original occurrence");
+
+    // Recovery: next occurrence fails once then succeeds → resets cleanly.
+    nowIso = "2026-05-17T10:02:00.000Z";
+    await runner.tick();
+    rec = await store.get("retry-job");
+    assert(rec?.lastStatus === "error" && rec?.attempt === 1, "new occurrence failure should start a fresh retry cycle");
+
+    succeed = true;
+    nowIso = "2026-05-17T10:02:01.000Z";
+    await runner.tick();
+    rec = await store.get("retry-job");
+    assert(rec?.lastStatus === "ok", "successful retry should mark status ok");
+    assert((rec?.attempt ?? 0) === 0, "success should reset the attempt counter");
+    assert(rec?.lastScheduledAt === "2026-05-17T10:02:00.000Z", "success should report the original occurrence time");
+    assert(rec?.nextRunAt === "2026-05-17T10:03:00.000Z", "success should advance to the next cron occurrence");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
 async function testBrowserSnapshotTool(): Promise<void> {
   let submitted: { method?: string; url?: string; body?: string } = {};
   const server = createServer((request, response) => {
@@ -1017,8 +1092,10 @@ async function testAnthropicProviderToolUse(): Promise<void> {
 
   const body = requests[0];
   assert(body !== undefined, "Anthropic provider should issue one request");
-  assert(readPath(body, ["system"]) === "System prompt.", "system prompt should be sent separately");
+  assert(readPath(body, ["system", 0, "text"]) === "System prompt.", "system prompt should be sent separately as a content block");
+  assert(readPath(body, ["system", 0, "cache_control", "type"]) === "ephemeral", "system prompt block should be prompt-cached");
   assert(readPath(body, ["tools", 0, "name"]) === "git_status", "OpenAI-shaped tool should become Anthropic tool");
+  assert(readPath(body, ["tools", 0, "cache_control", "type"]) === "ephemeral", "last tool schema should be prompt-cached");
   assert(readPath(body, ["tools", 0, "input_schema", "properties", "porcelain", "type"]) === "boolean", "tool schema should be preserved");
   assert(readPath(body, ["messages", 1, "content", 0, "type"]) === "tool_use", "assistant tool calls should become tool_use blocks");
   assert(readPath(body, ["messages", 1, "content", 0, "input", "porcelain"]) === false, "tool call arguments should be parsed");

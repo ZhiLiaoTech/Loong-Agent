@@ -14,6 +14,16 @@ export interface ModelTierSpec {
   maxContextChars?: number;
   /** override input.toolsEnabled */
   toolsEnabled?: boolean;
+  /**
+   * When set, only these tool names are exposed to the model on this tier
+   * (others stay registered/executable but are not advertised in the request).
+   * Lets a tier ship a slim tool surface — e.g. fast → core file/search only —
+   * trimming ~1-2K tokens of tool schemas per call. Empty array = no tools.
+   */
+  toolAllowlist?: readonly string[];
+  /** When set, these tool names are hidden from the model on this tier. Applied
+   * after toolAllowlist. */
+  toolDenylist?: readonly string[];
   /** override input.memoryEnabled (skips memory_recall context provider) */
   memoryEnabled?: boolean;
   /** appended to runtime system prompt as a tier-specific addendum */
@@ -343,6 +353,13 @@ function normalizeTierSpec(raw: unknown): ModelTierSpec | undefined {
     spec.maxContextChars = Math.floor(value.maxContextChars);
   }
   if (typeof value.toolsEnabled === "boolean") spec.toolsEnabled = value.toolsEnabled;
+  if (Array.isArray(value.toolAllowlist)) {
+    spec.toolAllowlist = value.toolAllowlist.filter((t): t is string => typeof t === "string" && t.trim().length > 0).map(t => t.trim());
+  }
+  if (Array.isArray(value.toolDenylist)) {
+    const deny = value.toolDenylist.filter((t): t is string => typeof t === "string" && t.trim().length > 0).map(t => t.trim());
+    if (deny.length > 0) spec.toolDenylist = deny;
+  }
   if (typeof value.memoryEnabled === "boolean") spec.memoryEnabled = value.memoryEnabled;
   if (typeof value.systemPromptAddendum === "string" && value.systemPromptAddendum.trim()) {
     spec.systemPromptAddendum = value.systemPromptAddendum.trim();

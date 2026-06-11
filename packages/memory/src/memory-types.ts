@@ -17,6 +17,7 @@ export interface SessionUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  cachedInputTokens?: number;
   costUsd?: number;
 }
 

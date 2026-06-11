@@ -40,6 +40,8 @@ interface AnthropicMessagesResponse {
   usage?: {
     input_tokens?: number;
     output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
   };
 }
 
@@ -51,6 +53,8 @@ interface AnthropicStreamEvent {
     usage?: {
       input_tokens?: number;
       output_tokens?: number;
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
     };
   };
   content_block?: {
@@ -355,12 +359,22 @@ function toAnthropicBody(request: ModelRequest, maxTokens: number): Record<strin
     messages: prompt.messages,
   };
   if (prompt.system !== undefined) {
-    body.system = prompt.system;
+    // Send the system prompt as a cacheable content block. It is a large, stable
+    // prefix re-sent on every tool-loop iteration; the ephemeral cache_control
+    // breakpoint lets Anthropic serve it from cache (~10% input cost) on
+    // iterations 2..N instead of reprocessing it at full price each time.
+    body.system = [{ type: "text", text: prompt.system, cache_control: { type: "ephemeral" } }];
   }
   if (request.temperature !== undefined) {
     body.temperature = request.temperature;
   }
   if (tools.length > 0) {
+    // Mark the last tool ephemeral: the breakpoint caches the entire tool-schema
+    // array (the largest stable block after the system prompt, ~2K tokens).
+    const lastTool = tools[tools.length - 1];
+    if (lastTool !== undefined) {
+      tools[tools.length - 1] = { ...lastTool, cache_control: { type: "ephemeral" } };
+    }
     body.tools = tools;
   }
   return body;
@@ -637,6 +651,9 @@ function toUsage(usage: NonNullable<AnthropicMessagesResponse["usage"]>): NonNul
   }
   if (usage.output_tokens !== undefined) {
     mapped.outputTokens = usage.output_tokens;
+  }
+  if (usage.cache_read_input_tokens !== undefined) {
+    mapped.cachedInputTokens = usage.cache_read_input_tokens;
   }
   return mapped;
 }

@@ -34,6 +34,7 @@ interface ChatCompletionResponse {
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
   };
 }
 
@@ -321,6 +322,9 @@ function toUsage(usage: NonNullable<ChatCompletionResponse["usage"]>): NonNullab
   }
   if (usage.completion_tokens !== undefined) {
     mapped.outputTokens = usage.completion_tokens;
+  }
+  if (usage.prompt_tokens_details?.cached_tokens !== undefined) {
+    mapped.cachedInputTokens = usage.prompt_tokens_details.cached_tokens;
   }
   return mapped;
 }

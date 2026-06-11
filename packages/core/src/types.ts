@@ -15,10 +15,10 @@ export type LoongAttachmentKind = "image" | "text" | "document" | "binary";
  */
 export interface LoongAttachment {
   /**
-   * `image`    â†?forwarded to the provider as multimodal image content
-   * `text`     â†?decoded as UTF-8 and inlined into the user prompt
-   * `document` â†?extracted to text (mammoth/pdfjs/xlsx/jszip-pptx) and inlined
-   * `binary`   â†?reserved for future use; currently rejected
+   * `image`    ï¿½?forwarded to the provider as multimodal image content
+   * `text`     ï¿½?decoded as UTF-8 and inlined into the user prompt
+   * `document` ï¿½?extracted to text (mammoth/pdfjs/xlsx/jszip-pptx) and inlined
+   * `binary`   ï¿½?reserved for future use; currently rejected
    */
   kind: LoongAttachmentKind;
   mimeType: string;
@@ -72,6 +72,8 @@ export interface LoongUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  /** Subset of inputTokens served from the provider prompt cache (read hits). */
+  cachedInputTokens?: number;
   costUsd?: number;
 }
 

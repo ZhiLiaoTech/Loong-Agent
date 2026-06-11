@@ -155,7 +155,7 @@ function isSessionUsage(value: unknown): value is SessionUsage {
   if (!isObject(value)) {
     return false;
   }
-  return ["inputTokens", "outputTokens", "totalTokens", "costUsd"].every(key => {
+  return ["inputTokens", "outputTokens", "totalTokens", "cachedInputTokens", "costUsd"].every(key => {
     const item = value[key];
     return item === undefined || (typeof item === "number" && Number.isFinite(item) && item >= 0);
   });
