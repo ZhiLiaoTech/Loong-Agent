@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { parseChannelsServeArgs, runChannelsServe } from "./channels-serve.js";
+import { runChannelsConfig } from "./commands/channels-config.js";
 import { runCron } from "./commands/cron.js";
 import { runPlugins } from "./commands/plugins.js";
 import { runSessions } from "./commands/sessions.js";
@@ -80,8 +81,10 @@ try {
         await waitForShutdown();
         await bridge.stop();
       }
+    } else if (sub === "config") {
+      await runChannelsConfig(args.slice(1));
     } else {
-      console.error("Usage: loong channels serve [--port <port>] [--gateway-url <url>]");
+      console.error("Usage: loong channels serve [--port <port>] [--gateway-url <url>]\n       loong channels config list | get <channel> | set <channel> <key> <value>");
       process.exitCode = 2;
     }
     process.exitCode = 0;
