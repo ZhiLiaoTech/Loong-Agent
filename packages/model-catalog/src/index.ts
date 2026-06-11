@@ -8,6 +8,14 @@ export interface LoongModelCapabilities {
   jsonMode?: boolean;
 }
 
+/** Per-1k-token USD pricing for cost accounting. All fields optional. */
+export interface LoongModelPricing {
+  inputPer1kUsd?: number;
+  outputPer1kUsd?: number;
+  /** Discounted rate for prompt-cache read hits; falls back to input rate. */
+  cachedInputPer1kUsd?: number;
+}
+
 export interface LoongProviderModelCatalogEntry {
   id: string;
   displayName?: string;
@@ -17,7 +25,29 @@ export interface LoongProviderModelCatalogEntry {
   capabilities?: LoongModelCapabilities;
   status?: LoongModelStatus;
   default?: boolean;
+  pricing?: LoongModelPricing;
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Compute the USD cost of a turn from per-1k pricing and token usage. Cached
+ * input tokens (prompt-cache read hits) are billed at the discounted cached
+ * rate when provided. Returns undefined when no pricing is configured.
+ */
+export function computeModelCostUsd(
+  pricing: LoongModelPricing | undefined,
+  usage: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number } | undefined,
+): number | undefined {
+  if (pricing === undefined || usage === undefined) return undefined;
+  const input = usage.inputTokens ?? 0;
+  const cached = Math.min(usage.cachedInputTokens ?? 0, input);
+  const uncached = input - cached;
+  const output = usage.outputTokens ?? 0;
+  const inRate = pricing.inputPer1kUsd ?? 0;
+  const cachedRate = pricing.cachedInputPer1kUsd ?? inRate;
+  const outRate = pricing.outputPer1kUsd ?? 0;
+  if (inRate === 0 && outRate === 0 && cachedRate === 0) return undefined;
+  return (uncached / 1000) * inRate + (cached / 1000) * cachedRate + (output / 1000) * outRate;
 }
 
 export interface LoongModelCatalogEntry extends LoongProviderModelCatalogEntry {
@@ -200,6 +230,7 @@ function normalizeProviderModelEntry(entry: LoongProviderModelCatalogEntry): Loo
   const contextWindow = normalizePositiveInteger(entry.contextWindow, "contextWindow");
   const maxOutputTokens = normalizePositiveInteger(entry.maxOutputTokens, "maxOutputTokens");
   const metadata = normalizeMetadata(entry.metadata);
+  const pricing = normalizePricing(entry.pricing);
   const normalized: LoongProviderModelCatalogEntry = {
     id,
   };
@@ -224,10 +255,25 @@ function normalizeProviderModelEntry(entry: LoongProviderModelCatalogEntry): Loo
   if (entry.default !== undefined) {
     normalized.default = Boolean(entry.default);
   }
+  if (pricing !== undefined) {
+    normalized.pricing = pricing;
+  }
   if (metadata !== undefined) {
     normalized.metadata = metadata;
   }
   return Object.freeze(normalized);
+}
+
+function normalizePricing(value: LoongModelPricing | undefined): LoongModelPricing | undefined {
+  if (!isRecord(value)) return undefined;
+  const out: LoongModelPricing = {};
+  for (const key of ["inputPer1kUsd", "outputPer1kUsd", "cachedInputPer1kUsd"] as const) {
+    const raw = value[key];
+    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+      out[key] = raw;
+    }
+  }
+  return Object.keys(out).length > 0 ? Object.freeze(out) : undefined;
 }
 
 function ensureDefaultModelEntry(

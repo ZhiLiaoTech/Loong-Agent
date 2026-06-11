@@ -29,6 +29,7 @@ import {
 import { loadLoongPlugin, type LoongPluginMemoryBackend, type LoadedLoongPlugin } from "@loong/plugin-sdk";
 import {
   catalogEntriesFromProviders,
+  computeModelCostUsd,
   createModelCatalog,
   type LoongModelCatalog,
 } from "@loong/model-catalog";
@@ -247,6 +248,12 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
       ...(defaultProvider?.defaultModel !== undefined ? { defaultModel: defaultProvider.defaultModel } : {}),
       ...(options.modelTimeoutMs !== undefined ? { modelTimeoutMs: options.modelTimeoutMs } : {}),
       ...(options.tierConfig !== undefined ? { tierConfig: options.tierConfig } : {}),
+      // Cost accounting: resolve the model's catalog pricing and attach
+      // usage.costUsd when pricing is configured for the resolved model.
+      costForUsage: (providerId, model, usage) => {
+        const entry = modelCatalog.resolve(`${providerId}:${model}`) ?? modelCatalog.find(providerId, model);
+        return computeModelCostUsd(entry?.pricing, usage);
+      },
       ...(mergedSessionCompaction !== undefined ? { sessionCompaction: mergedSessionCompaction } : {}),
       ...(mergedAiSummarization !== undefined ? { aiSummarization: mergedAiSummarization } : {}),
       ...(options.orgStores

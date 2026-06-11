@@ -72,6 +72,7 @@ import {
 import {
   applyModelCatalogToParams,
   catalogEntriesFromProviders,
+  computeModelCostUsd,
   createModelCatalog,
 } from "@loong/model-catalog";
 import { createAnthropicProvider, createOpenAICompatibleProvider, ProviderError, type ModelProvider, type ModelRequest } from "@loong/providers";
@@ -373,6 +374,7 @@ async function testModelCatalog(): Promise<void> {
           contextWindow: 1_000_000,
           capabilities: { toolCalling: true, streaming: true },
           status: "stable",
+          pricing: { inputPer1kUsd: 3, outputPer1kUsd: 15, cachedInputPer1kUsd: 0.3 },
         },
       ],
     },
@@ -389,6 +391,12 @@ async function testModelCatalog(): Promise<void> {
   assert(catalog.resolve("openai:gpt-4.1")?.id === "gpt-4.1", "model catalog should resolve provider-colon refs");
   assert(catalog.resolve("openai/gpt-4.1")?.id === "gpt-4.1", "model catalog should resolve provider-slash refs");
   assert(catalog.resolve("gpt-main")?.providerId === "openai", "model catalog should resolve unique aliases");
+  const priced = catalog.resolve("openai:gpt-4.1");
+  assert(priced?.pricing?.inputPer1kUsd === 3 && priced?.pricing?.cachedInputPer1kUsd === 0.3, "catalog should carry per-model pricing");
+  // 800 uncached input @3 + 200 cached @0.3 + 500 output @15 (per 1k) = 2.4 + 0.06 + 7.5 = 9.96
+  const cost = computeModelCostUsd(priced?.pricing, { inputTokens: 1000, outputTokens: 500, cachedInputTokens: 200 });
+  assert(cost !== undefined && Math.abs(cost - 9.96) < 1e-9, `cost compute should price cached/uncached/output (got ${cost})`);
+  assert(computeModelCostUsd(undefined, { inputTokens: 100 }) === undefined, "cost should be undefined without pricing");
   assert(catalog.listByProvider("local")[0]?.id === "small", "model catalog should list by provider");
   const first = entries[0];
   assert(first !== undefined, "model catalog test fixture should include entries");

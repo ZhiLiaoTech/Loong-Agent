@@ -105,6 +105,14 @@ export interface LoongRuntimeOptions {
     invocation: ToolInvocation,
     baseline: ToolPermissionResult,
   ) => Promise<ToolPermissionResult>;
+  /** Optional cost resolver: given the resolved provider/model and token usage,
+   * return the turn cost in USD. When set, the runtime attaches usage.costUsd.
+   * Injected (rather than depending on the catalog) so core stays standalone. */
+  costForUsage?: (
+    providerId: string,
+    model: string,
+    usage: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number },
+  ) => number | undefined;
   /** Per model HTTP request timeout in ms (default 300_000). Set 0 to disable. */
   modelTimeoutMs?: number;
   /** When true (default), apply in-turn context prep before each model call. */
@@ -144,6 +152,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
   readonly #lifecycleHookTimeoutMs: number;
   readonly #denyAskWithoutHandler: boolean;
   readonly #permissionEvaluator: LoongRuntimeOptions["permissionEvaluator"];
+  readonly #costForUsage: LoongRuntimeOptions["costForUsage"];
   readonly #modelTimeoutMs: number;
   readonly #turnPrepEnabled: boolean;
   readonly #sessionCompaction: SessionMessageCompactionOptions | false;
@@ -177,6 +186,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
     this.#lifecycleHookTimeoutMs = 500;
     this.#denyAskWithoutHandler = options.denyAskWithoutHandler ?? true;
     this.#permissionEvaluator = options.permissionEvaluator;
+    this.#costForUsage = options.costForUsage;
     this.#modelTimeoutMs = options.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
     this.#turnPrepEnabled = options.turnPrepEnabled !== false;
     this.#sessionCompaction = options.sessionCompaction === false ? false : (options.sessionCompaction ?? {});
@@ -482,6 +492,12 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
 
       const usage = toLoongUsage(providerResponse.usage);
       if (usage) {
+        if (this.#costForUsage !== undefined && resolution !== undefined) {
+          const cost = this.#costForUsage(resolution.provider.id, resolution.model, usage);
+          if (cost !== undefined && Number.isFinite(cost)) {
+            usage.costUsd = cost;
+          }
+        }
         result.usage = usage;
       }
 
