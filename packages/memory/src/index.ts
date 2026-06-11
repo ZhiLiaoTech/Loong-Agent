@@ -70,6 +70,7 @@ export type {
   SessionMessage,
   SessionSource,
   SessionStore,
+  SessionSummary,
   SessionTurnRecord,
   SessionUsage,
 } from "./memory-types.js";

@@ -34,7 +34,21 @@ export interface SessionTurnRecord {
   metadata?: Record<string, unknown>;
 }
 
+export interface SessionSummary {
+  sessionId: string;
+  turns: number;
+  createdAt?: string;
+  updatedAt?: string;
+  lastSource?: SessionSource;
+  lastMessagePreview?: string;
+}
+
 export interface SessionStore {
   loadMessages(sessionId: string): Promise<SessionMessage[]>;
   appendTurn(record: SessionTurnRecord): Promise<void>;
+  /** Enumerate persisted sessions (newest activity first). Optional: not all
+   * backends can list. */
+  list?(): Promise<SessionSummary[]>;
+  /** Delete a persisted session. Returns true if a session existed. Optional. */
+  delete?(sessionId: string): Promise<boolean>;
 }

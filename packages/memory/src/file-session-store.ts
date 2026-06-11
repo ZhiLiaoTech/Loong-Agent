@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type {
   FileSessionStoreOptions,
   SessionMessage,
   SessionStore,
+  SessionSummary,
   SessionTurnRecord,
   SessionUsage,
 } from "./memory-types.js";
@@ -67,6 +68,75 @@ export class FileSessionStore implements SessionStore {
     validateTurnRecord(record, "append");
     await mkdir(this.#rootDir, { recursive: true });
     await appendFile(sessionPath(this.#rootDir, record.sessionId), `${stringifyJson(record)}\n`, "utf8");
+  }
+
+  async list(): Promise<SessionSummary[]> {
+    let entries: string[];
+    try {
+      entries = await readdir(this.#rootDir);
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+    const summaries: SessionSummary[] = [];
+    for (const entry of entries) {
+      if (!entry.endsWith(".jsonl")) {
+        continue;
+      }
+      const filePath = path.join(this.#rootDir, entry);
+      let content: string;
+      try {
+        content = await readFile(filePath, "utf8");
+      } catch {
+        continue;
+      }
+      const lines = content.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      if (lines.length === 0) {
+        continue;
+      }
+      let first: SessionTurnRecord | undefined;
+      let last: SessionTurnRecord | undefined;
+      for (const [index, line] of lines.entries()) {
+        try {
+          const record = parseTurnRecord(line, index + 1, filePath);
+          first ??= record;
+          last = record;
+        } catch {
+          // skip malformed lines for listing resilience
+        }
+      }
+      if (first === undefined || last === undefined) {
+        continue;
+      }
+      const lastMessage = last.messages[last.messages.length - 1];
+      const summary: SessionSummary = {
+        sessionId: last.sessionId,
+        turns: lines.length,
+        createdAt: first.createdAt,
+        updatedAt: last.createdAt,
+        lastSource: last.source,
+      };
+      if (typeof lastMessage?.content === "string" && lastMessage.content.trim()) {
+        summary.lastMessagePreview = lastMessage.content.replace(/\s+/g, " ").trim().slice(0, 120);
+      }
+      summaries.push(summary);
+    }
+    return summaries.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  }
+
+  async delete(sessionId: string): Promise<boolean> {
+    const filePath = sessionPath(this.#rootDir, sessionId);
+    try {
+      await unlink(filePath);
+      return true;
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        return false;
+      }
+      throw error;
+    }
   }
 }
 

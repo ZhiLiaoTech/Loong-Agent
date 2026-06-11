@@ -59,6 +59,7 @@ import {
 import { runTests } from "./runner.js";
 import {
   createFileMemoryStore,
+  createFileSessionStore,
   createFileTrajectoryStore,
   createMemoryCandidateLifecycleHook,
   createMemoryCandidateTools,
@@ -130,6 +131,7 @@ async function main(): Promise<void> {
     ["cron file store and runner", testCronFileStoreAndRunner],
     ["cron retry backoff and dead-letter", testCronRetryBackoffAndDeadLetter],
     ["todo checklist tool", testTodoChecklistTool],
+    ["session store list and delete", testSessionStoreManagement],
     ["browser snapshot and form submit tools", testBrowserSnapshotTool],
     ["delegation planner and runner", testDelegationPlannerAndRunner],
     ["browser playwright snapshot tool", testBrowserPlaywrightSnapshotTool],
@@ -775,6 +777,40 @@ async function testCronRetryBackoffAndDeadLetter(): Promise<void> {
     assert((rec?.attempt ?? 0) === 0, "success should reset the attempt counter");
     assert(rec?.lastScheduledAt === "2026-05-17T10:02:00.000Z", "success should report the original occurrence time");
     assert(rec?.nextRunAt === "2026-05-17T10:03:00.000Z", "success should advance to the next cron occurrence");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function testSessionStoreManagement(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-sessions-"));
+  try {
+    const store = createFileSessionStore({ rootDir: root });
+    await store.appendTurn({
+      sessionId: "alpha", runId: "r1", source: "cli", status: "ok", createdAt: "2026-06-01T10:00:00.000Z",
+      messages: [
+        { id: "a-u", role: "user", content: "hi alpha", createdAt: "2026-06-01T10:00:00.000Z" },
+        { id: "a-a", role: "assistant", content: "hello from alpha", createdAt: "2026-06-01T10:00:01.000Z" },
+      ],
+    });
+    await store.appendTurn({
+      sessionId: "beta", runId: "r2", source: "cli", status: "ok", createdAt: "2026-06-02T10:00:00.000Z",
+      messages: [
+        { id: "b-u", role: "user", content: "hi beta", createdAt: "2026-06-02T10:00:00.000Z" },
+        { id: "b-a", role: "assistant", content: "hello from beta", createdAt: "2026-06-02T10:00:01.000Z" },
+      ],
+    });
+
+    const list = await store.list!();
+    assert(list.length === 2, "list should return both sessions");
+    assert(list[0]?.sessionId === "beta", "list should sort newest activity first");
+    assert(list.find(summary => summary.sessionId === "alpha")?.turns === 1, "summary should report turn count");
+    assert(list[0]?.lastMessagePreview?.includes("hello from beta") === true, "summary should preview the last message");
+
+    assert((await store.delete!("alpha")) === true, "delete should report removal of an existing session");
+    assert((await store.delete!("alpha")) === false, "deleting a missing session should return false");
+    const after = await store.list!();
+    assert(after.length === 1 && after[0]?.sessionId === "beta", "deleted session should be gone from the list");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
