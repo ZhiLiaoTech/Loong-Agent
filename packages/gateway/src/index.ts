@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import path from "node:path";
 import { describeAuthStartup, requiresSharedSecret } from "./auth-policy.js";
 import {
   applyModelCatalogToAgentParams,
@@ -33,8 +34,6 @@ import {
 } from "./gateway-employee-workspace-rpc.js";
 import { bootstrapOrgExample } from "./org-example-bootstrap.js";
 import { seedMandatoryPresetSkills } from "./org-preset-skills.js";
-import { LoongChannelPluginHost } from "@loong/channel-plugin-host";
-import { toGatewayWebhookPayload } from "@loong/channels";
 import { parseGatewayRequest } from "./gateway-rpc-parse.js";
 import {
   isAgentTurnQueuedPayload,
@@ -43,6 +42,15 @@ import {
 } from "./session-coordinator.js";
 import { executeGatewayAgentTurn } from "./gateway-agent-turn.js";
 import { browseGatewayDirectory } from "./gateway-fs-browse.js";
+import {
+  materializeSuiteInstance,
+  materializeSuiteRelease,
+  type LoongSuiteInstanceMaterialization,
+  type LoongSuiteMaterializeInstanceOptions,
+  type LoongSuiteMaterializeReleaseOptions,
+  type LoongSuitePackage,
+  type LoongSuiteReleaseMaterialization,
+} from "@loong/suite";
 import {
   parseGatewayAgentParams,
   parseGatewayWebhookParams,
@@ -133,6 +141,8 @@ export type {
   GatewayModelConfigSaveParams,
   GatewayModelProviderConfig,
   GatewayModelProviderType,
+  GatewaySuiteInstanceMaterializeParams,
+  GatewaySuiteReleaseInstallParams,
   GatewayTierClassifyParams,
   GatewayTierConfigSaveParams,
   GatewayTierKeywordHint,
@@ -155,6 +165,8 @@ import type {
   GatewayMemoryCandidateRejectParams,
   GatewayModelConfigSaveParams,
   GatewayModelProviderConfig,
+  GatewaySuiteInstanceMaterializeParams,
+  GatewaySuiteReleaseInstallParams,
   GatewayTicketUpsertParams,
   GatewayTierClassifyParams,
   GatewayTierConfigSaveParams,
@@ -365,7 +377,7 @@ export interface HttpLoongGatewayOptions {
   directToolNames?: readonly string[];
   skillRoots?: readonly string[];
   pluginRoots?: readonly string[];
-  channelConfig?: Readonly<Record<string, unknown>>;
+  suiteDataDir?: string;
   name?: string;
   pairingStore?: PairingStore;
 }
@@ -405,7 +417,7 @@ export class HttpLoongGateway implements LoongGateway {
   readonly #permissionEngine: ToolPermissionEngine;
   #directToolNames: Set<string>;
   readonly #skillRoots: readonly string[];
-  readonly #channelPluginHost: LoongChannelPluginHost;
+  readonly #suiteDataDir: string | undefined;
   readonly #name: string;
   readonly #pairingStore: PairingStore;
   readonly #lanes = new Map<string, Promise<void>>();
@@ -448,21 +460,7 @@ export class HttpLoongGateway implements LoongGateway {
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
     this.#skillRoots = [...(options.skillRoots ?? [])];
-    this.#channelPluginHost = new LoongChannelPluginHost({
-      pluginRoots: [...(options.pluginRoots ?? [])],
-      channelConfig: options.channelConfig ?? {},
-      deliverInboundMessage: async message =>
-        this.#runWebhook(
-          toGatewayWebhookPayload({
-            channel: message.channel,
-            text: message.text,
-            ...(message.userId !== undefined ? { userId: message.userId } : {}),
-            ...(message.threadId !== undefined ? { threadId: message.threadId } : {}),
-            ...(message.messageId !== undefined ? { messageId: message.messageId } : {}),
-            ...(message.metadata !== undefined ? { metadata: message.metadata } : {}),
-          }),
-        ),
-    });
+    this.#suiteDataDir = options.suiteDataDir !== undefined ? path.resolve(options.suiteDataDir) : undefined;
     this.#name = options.name ?? "loong-gateway";
     this.#pairingStore = options.pairingStore ?? new FilePairingStore();
     this.#connections = new GatewayConnectionHub({
@@ -517,26 +515,6 @@ export class HttpLoongGateway implements LoongGateway {
       this.#connections.broadcastRuntimeEvent(event);
     });
     void seedMandatoryPresetSkills(this.#skillRoots);
-    try {
-      await this.#channelPluginHost.start();
-      const channelHost = this.#channelPluginHost.status;
-      if (channelHost.warnings?.length) {
-        for (const warning of channelHost.warnings) {
-          console.error(`[${this.#name}] Loong Channel Plugin Host: ${warning}`);
-        }
-      }
-      if (channelHost.loadedPlugins > 0) {
-        console.error(
-          `[${this.#name}] Loong Channel Plugin Host ready (${channelHost.loadedPlugins} channel plugin(s): ${channelHost.registeredChannels.join(", ")})`,
-        );
-      }
-    } catch (error) {
-      console.error(
-        `[${this.#name}] Loong Channel Plugin Host failed to start: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
     const authNotice = describeAuthStartup(normalized);
     if (authNotice) {
       console.error(`[${this.#name}] ${authNotice.replace(/^\[loong-gateway\] /, "")}`);
@@ -557,7 +535,6 @@ export class HttpLoongGateway implements LoongGateway {
     this.#runtimeUnsubscribe = undefined;
     this.#connections.closeEventStreams();
     this.#connections.closeWebSocketClients();
-    await this.#channelPluginHost.stop();
     await new Promise<void>((resolve, reject) => {
       server.close(error => {
         if (error) {
@@ -622,8 +599,6 @@ export class HttpLoongGateway implements LoongGateway {
       openEventStream: (req, res, url) => this.#connections.openEventStream(req, res, url),
       runWebhook: body => this.#runWebhook(body),
       handleRpc: req => this.#handleRpc(req),
-      dispatchChannelPluginHttp: (request, response, options) =>
-        this.#channelPluginHost.dispatchHttp(request, response, options),
     }, request, response);
   }
 
@@ -674,6 +649,7 @@ export class HttpLoongGateway implements LoongGateway {
       "pairing.device.revoke",
       "tools.catalog",
       "tool.invoke",
+      ...(this.#suiteDataDir ? ["suite.release.install", "suite.instance.materialize"] : []),
       ...(this.#toolRegistry.has("memory_candidates_list") ? ["memory.candidates.list"] : []),
       ...(this.#toolRegistry.has("memory_candidate_promote") ? ["memory.candidate.promote"] : []),
       ...(this.#toolRegistry.has("memory_candidate_reject") ? ["memory.candidate.reject"] : []),
@@ -723,6 +699,8 @@ export class HttpLoongGateway implements LoongGateway {
       revokePairedDevice: deviceId => this.#revokePairedDevice(deviceId),
       listTools: params => this.#listTools(params as { includeSchemas?: boolean } | undefined),
       invokeTool: params => this.#invokeTool(params as GatewayToolInvokeParams),
+      installSuiteRelease: params => this.#installSuiteRelease(params as GatewaySuiteReleaseInstallParams),
+      materializeSuiteInstance: params => this.#materializeSuiteInstance(params as GatewaySuiteInstanceMaterializeParams),
       listMemoryCandidates: params => this.#listMemoryCandidates(params as GatewayMemoryCandidateListParams | undefined),
       promoteMemoryCandidate: params => this.#promoteMemoryCandidate(params as GatewayMemoryCandidatePromoteParams),
       rejectMemoryCandidate: params => this.#rejectMemoryCandidate(params as GatewayMemoryCandidateRejectParams),
@@ -988,7 +966,6 @@ export class HttpLoongGateway implements LoongGateway {
       address: this.#address,
       pluginCount: this.#plugins.length,
       providerCount: this.#providers.length,
-      channelPluginHost: this.#channelPluginHost.status,
     };
   }
 
@@ -1339,6 +1316,57 @@ export class HttpLoongGateway implements LoongGateway {
     }
     const result = await tool.invoke(invocation);
     return sanitizeDirectToolResult(result, permission);
+  }
+
+  async #installSuiteRelease(params: GatewaySuiteReleaseInstallParams): Promise<unknown> {
+    const dataDir = this.#requireSuiteDataDir();
+    const options: LoongSuiteMaterializeReleaseOptions = {
+      dataDir,
+    };
+    if (params.overwrite !== undefined) {
+      options.overwrite = params.overwrite;
+    }
+    if (params.installedAt !== undefined) {
+      options.installedAt = params.installedAt;
+    }
+    if (params.maxTextFileBytes !== undefined) {
+      options.maxTextFileBytes = params.maxTextFileBytes;
+    }
+    return summarizeSuiteReleaseMaterialization(await materializeSuiteRelease(params.sourceDir, options));
+  }
+
+  async #materializeSuiteInstance(params: GatewaySuiteInstanceMaterializeParams): Promise<unknown> {
+    const dataDir = this.#requireSuiteDataDir();
+    const options: LoongSuiteMaterializeInstanceOptions = {
+      dataDir,
+      tenantId: params.tenantId,
+      agentInstanceId: params.agentInstanceId,
+      suiteId: params.suiteId,
+      suiteVersion: params.suiteVersion,
+    };
+    if (params.employeeId !== undefined) {
+      options.employeeId = params.employeeId;
+    }
+    if (params.overwrite !== undefined) {
+      options.overwrite = params.overwrite;
+    }
+    if (params.createdAt !== undefined) {
+      options.createdAt = params.createdAt;
+    }
+    if (params.metadata !== undefined) {
+      options.metadata = params.metadata;
+    }
+    if (params.maxTextFileBytes !== undefined) {
+      options.maxTextFileBytes = params.maxTextFileBytes;
+    }
+    return summarizeSuiteInstanceMaterialization(await materializeSuiteInstance(options));
+  }
+
+  #requireSuiteDataDir(): string {
+    if (this.#suiteDataDir === undefined) {
+      throw new Error("Suite data directory is not configured for this gateway.");
+    }
+    return this.#suiteDataDir;
   }
 
   async #listMemoryCandidates(params: GatewayMemoryCandidateListParams | undefined): Promise<unknown> {
@@ -1698,6 +1726,49 @@ function normalizePluginSummaries(values: readonly GatewayPluginSummary[]): read
     }
     return Object.freeze(summary);
   }));
+}
+
+function summarizeSuiteReleaseMaterialization(value: LoongSuiteReleaseMaterialization): Record<string, unknown> {
+  return {
+    suite: summarizeSuitePackage(value.suite),
+    releaseDir: value.releaseDir,
+    releaseWorkspaceDir: value.releaseWorkspaceDir,
+    recordPath: value.recordPath,
+    record: value.record,
+  };
+}
+
+function summarizeSuiteInstanceMaterialization(value: LoongSuiteInstanceMaterialization): Record<string, unknown> {
+  return {
+    suite: summarizeSuitePackage(value.suite),
+    instanceDir: value.instanceDir,
+    recordPath: value.recordPath,
+    record: value.record,
+    runtimePaths: value.runtimePaths,
+  };
+}
+
+function summarizeSuitePackage(suite: LoongSuitePackage): Record<string, unknown> {
+  return {
+    id: suite.manifest.id,
+    name: suite.manifest.name,
+    version: suite.manifest.version,
+    schemaVersion: suite.manifest.schemaVersion,
+    warnings: suite.warnings,
+    identity: {
+      hasRoleJson: suite.identity.roleJson !== undefined,
+      hasSoul: suite.identity.soul !== undefined,
+      hasAgents: suite.identity.agents !== undefined,
+      hasUserTemplate: suite.identity.userTemplate !== undefined,
+    },
+    skills: suite.skills.map(skill => ({
+      name: skill.name,
+      slug: skill.slug,
+      skillPath: skill.skillPath,
+    })),
+    configFiles: suite.configFiles,
+    schemaFiles: suite.schemaFiles,
+  };
 }
 
 function normalizeModelSummaries(values: readonly GatewayModelSummary[]): readonly GatewayModelSummary[] {

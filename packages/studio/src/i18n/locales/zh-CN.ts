@@ -326,7 +326,7 @@ export const zhCN: MessageTree = {
 
     title: "Loong Studio",
 
-    lead: "Loong 智能体平台的统一工作台。当前为浏览器端；桌面能力将在 @loong/desktop（P4）中提供。",
+    lead: "Loong 智能体平台的统一浏览器工作台，可连接本地或线上 Gateway。",
 
     surface: "运行环境",
 

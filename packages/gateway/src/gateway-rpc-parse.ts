@@ -24,6 +24,8 @@ import type {
   GatewayModelConfigSaveParams,
   GatewayModelProviderConfig,
   GatewayModelProviderType,
+  GatewaySuiteInstanceMaterializeParams,
+  GatewaySuiteReleaseInstallParams,
   GatewayTierClassifyParams,
   GatewayTierConfigSaveParams,
   GatewayTierKeywordHint,
@@ -267,6 +269,20 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
       type: "tool.invoke",
       id: value.id,
       params: parseToolInvokeParams(value.params),
+    };
+  }
+  if (value.type === "suite.release.install") {
+    return {
+      type: "suite.release.install",
+      id: value.id,
+      params: parseSuiteReleaseInstallParams(value.params),
+    };
+  }
+  if (value.type === "suite.instance.materialize") {
+    return {
+      type: "suite.instance.materialize",
+      id: value.id,
+      params: parseSuiteInstanceMaterializeParams(value.params),
     };
   }
   if (value.type === "memory.candidates.list") {
@@ -824,6 +840,79 @@ function parseToolInvokeParams(value: unknown): GatewayToolInvokeParams {
     params.metadata = value.metadata;
   }
   return params;
+}
+
+function parseSuiteReleaseInstallParams(value: unknown): GatewaySuiteReleaseInstallParams {
+  if (!isRecord(value) || typeof value.sourceDir !== "string" || !value.sourceDir.trim()) {
+    badRequest("suite.release.install requires params.sourceDir.");
+  }
+  const params: GatewaySuiteReleaseInstallParams = {
+    sourceDir: normalizeBoundedText(value.sourceDir, "sourceDir", 4000),
+  };
+  if (typeof value.overwrite === "boolean") {
+    params.overwrite = value.overwrite;
+  }
+  if (typeof value.installedAt === "string" && value.installedAt.trim()) {
+    params.installedAt = normalizeIsoTimestamp(value.installedAt, "installedAt");
+  }
+  const maxTextFileBytes = parseMaxTextFileBytes(value.maxTextFileBytes, "maxTextFileBytes");
+  if (maxTextFileBytes !== undefined) {
+    params.maxTextFileBytes = maxTextFileBytes;
+  }
+  return params;
+}
+
+function parseSuiteInstanceMaterializeParams(value: unknown): GatewaySuiteInstanceMaterializeParams {
+  if (!isRecord(value)) {
+    badRequest("suite.instance.materialize params must be an object.");
+  }
+  const tenantId = parseRequiredShortString(value.tenantId, "tenantId", "suite.instance.materialize");
+  const agentInstanceId = parseRequiredShortString(value.agentInstanceId, "agentInstanceId", "suite.instance.materialize");
+  const suiteId = parseRequiredShortString(value.suiteId, "suiteId", "suite.instance.materialize");
+  const suiteVersion = parseRequiredShortString(value.suiteVersion, "suiteVersion", "suite.instance.materialize");
+  const params: GatewaySuiteInstanceMaterializeParams = {
+    tenantId,
+    agentInstanceId,
+    suiteId,
+    suiteVersion,
+  };
+  if (typeof value.employeeId === "string" && value.employeeId.trim()) {
+    params.employeeId = normalizeShortText(value.employeeId, "employeeId", 200);
+  }
+  if (typeof value.overwrite === "boolean") {
+    params.overwrite = value.overwrite;
+  }
+  if (typeof value.createdAt === "string" && value.createdAt.trim()) {
+    params.createdAt = normalizeIsoTimestamp(value.createdAt, "createdAt");
+  }
+  if (value.metadata !== undefined) {
+    if (!isRecord(value.metadata)) {
+      badRequest("suite.instance.materialize metadata must be an object.");
+    }
+    params.metadata = value.metadata;
+  }
+  const maxTextFileBytes = parseMaxTextFileBytes(value.maxTextFileBytes, "maxTextFileBytes");
+  if (maxTextFileBytes !== undefined) {
+    params.maxTextFileBytes = maxTextFileBytes;
+  }
+  return params;
+}
+
+function parseRequiredShortString(value: unknown, fieldName: string, rpcName: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    badRequest(`${rpcName} requires params.${fieldName}.`);
+  }
+  return normalizeShortText(value, fieldName, 200);
+}
+
+function parseMaxTextFileBytes(value: unknown, fieldName: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    badRequest(`${fieldName} must be a positive number.`);
+  }
+  return Math.min(Math.floor(value), 10 * 1024 * 1024);
 }
 
 function parseMemoryCandidateListParams(value: unknown): GatewayMemoryCandidateListParams | undefined {

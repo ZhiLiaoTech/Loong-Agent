@@ -19,7 +19,6 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@loong/channel-plugin-host": "workspace:*",
     "@loong/channels": "workspace:*",
     "@loong/core": "workspace:*",
     "@loong/cron": "workspace:*",

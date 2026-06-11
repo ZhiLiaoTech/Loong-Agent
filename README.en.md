@@ -56,7 +56,7 @@ We align with proven patterns from mainstream local and coding agents, implement
 
 | Source | What we take | How Loong implements it |
 |--------|----------------|---------------------------|
-| **OpenClaw** | Gateway, plugins, sessions, local-first | `@loong/gateway` (HTTP/WS/SSE RPC), plugin discovery, per-session lanes, Dashboard |
+| **Loong native runtime** | Gateway, plugins, sessions, headless deployment | `@loong/gateway` (HTTP/WS/SSE RPC), Suite materialization, plugin discovery, per-session lanes, Dashboard |
 | **Hermes Agent** | Skill evolution, memory, routing, trajectories | `SKILL.md` + skill tools, reviewable memory candidates, tier routing & fallback, trajectory store |
 | **Claude Code** | Coding UX, permissions, engineering toolchain | file/patch/shell/sandbox tools, interactive `ask` approvals, turn-level tool loop & events |
 
@@ -77,7 +77,7 @@ Compared with “CLI-only coding assistants” or “chat-only gateways,” Loon
 
 ### Technical challenges to tackle next
 
-Relative to the depth of OpenClaw, Hermes, and Claude Code, these are the main gaps to close:
+Relative to the depth expected from a production headless agent runtime, these are the main gaps to close:
 
 | Priority | Challenge | Notes |
 |----------|-----------|-------|

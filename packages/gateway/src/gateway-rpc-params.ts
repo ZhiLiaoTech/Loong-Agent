@@ -175,6 +175,25 @@ export interface GatewayToolInvokeParams {
   metadata?: Record<string, unknown>;
 }
 
+export interface GatewaySuiteReleaseInstallParams {
+  sourceDir: string;
+  overwrite?: boolean;
+  installedAt?: string;
+  maxTextFileBytes?: number;
+}
+
+export interface GatewaySuiteInstanceMaterializeParams {
+  tenantId: string;
+  agentInstanceId: string;
+  suiteId: string;
+  suiteVersion: string;
+  employeeId?: string;
+  overwrite?: boolean;
+  createdAt?: string;
+  metadata?: Record<string, unknown>;
+  maxTextFileBytes?: number;
+}
+
 export interface GatewayMemoryCandidateListParams {
   status?: "pending" | "promoted" | "rejected" | "all";
   dateFrom?: string;

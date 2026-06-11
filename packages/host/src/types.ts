@@ -1,5 +1,5 @@
-/** Host surface: browser (no native APIs) vs desktop (Tauri). */
-export type HostSurface = "browser" | "desktop";
+/** Host surface exposed to Studio. */
+export type HostSurface = "browser";
 
 export interface HostCapabilities {
   surface: HostSurface;

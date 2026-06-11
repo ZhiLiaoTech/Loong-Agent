@@ -56,7 +56,7 @@
 
 | 来源 | 借鉴能力 | Loong 中的对应实现 |
 |------|----------|---------------------|
-| **OpenClaw** | 网关、插件、会话、本地优先 | `@loong/gateway`（HTTP/WS/SSE RPC）、插件发现、按会话队列（Lane）、Dashboard |
+| **Loong 原生运行时** | 网关、插件、会话、Headless 部署 | `@loong/gateway`（HTTP/WS/SSE RPC）、Suite 物化、插件发现、按会话队列（Lane）、Dashboard |
 | **Hermes Agent** | 技能进化、记忆、模型路由、轨迹 | `SKILL.md` 与技能工具、可审核记忆候选、Tier 路由与 Fallback、Trajectory 持久化 |
 | **Claude Code** | 编码交互、权限、工程化工具链 | 文件/补丁/Shell/Sandbox、交互式 `ask` 审批、回合级工具循环与事件流 |
 

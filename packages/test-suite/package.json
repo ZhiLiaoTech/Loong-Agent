@@ -21,6 +21,7 @@
     "@loong/model-catalog": "workspace:*",
     "@loong/providers": "workspace:*",
     "@loong/security": "workspace:*",
+    "@loong/suite": "workspace:*",
     "@loong/tools": "workspace:*"
   },
   "devDependencies": {

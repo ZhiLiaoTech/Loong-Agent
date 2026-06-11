@@ -18,7 +18,6 @@ import {
   defaultToolPolicyConfigPath,
 } from "@loong/org";
 import { createHttpGateway, type GatewayConfig, type HttpLoongGateway } from "@loong/gateway";
-import { loadChannelConfig } from "../channel-config.js";
 import { createFileTrajectoryStore } from "@loong/memory";
 import {
   loadGatewaySettingsFile,
@@ -58,6 +57,7 @@ export interface ParsedGatewayArgs {
   allowExec: boolean;
   sessionDir: string;
   memoryDir: string;
+  suiteDataDir: string;
   cronJobsFile: string;
   memoryBackendId?: string;
   skillRoots: string[];
@@ -117,7 +117,6 @@ export async function runGateway(args: string[]): Promise<void> {
   const pluginProviders = runtimeBundle.plugins.flatMap(
     plugin => [...plugin.providers] as import("@loong/providers").ModelProvider[],
   );
-  const channelConfig = await loadChannelConfig();
   let gateway!: HttpLoongGateway;
   gateway = createHttpGateway({
     runtime: runtimeBundle.runtime,
@@ -155,7 +154,7 @@ export async function runGateway(args: string[]): Promise<void> {
     toolRegistry: runtimeBundle.toolRegistry,
     skillRoots: parsed.skillRoots,
     pluginRoots: parsed.pluginRoots,
-    channelConfig,
+    suiteDataDir: parsed.suiteDataDir,
     ...(runtimeBundle.permissionEngine ? { permissionEngine: runtimeBundle.permissionEngine } : {}),
   }) as HttpLoongGateway;
   try {
@@ -163,6 +162,7 @@ export async function runGateway(args: string[]): Promise<void> {
     const address = gateway.address();
     process.stderr.write(`Loong gateway listening on ${address?.url ?? "unknown address"}\n`);
     process.stderr.write(`Loong data root: ${dataRoot}\n`);
+    process.stderr.write(`Loong suite data dir: ${parsed.suiteDataDir}\n`);
     process.stderr.write(`Loong model config: ${modelConfigPath}\n`);
     process.stderr.write(`Loong agent config: ${agentConfigPath}\n`);
     process.stderr.write(`Loong model timeout: ${Math.round(parsed.modelTimeoutMs / 1000)}s\n`);
@@ -202,6 +202,7 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
   const dataRoot = resolveLoongDataRoot();
   let sessionDir = process.env.LOONG_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
   let memoryDir = process.env.LOONG_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");
+  let suiteDataDir = process.env.LOONG_SUITE_DATA_DIR?.trim() || dataRoot;
   let cronJobsFile = process.env.LOONG_CRON_JOBS?.trim() || path.join(dataRoot, "cron", "jobs.json");
   let memoryBackendId = process.env.LOONG_MEMORY_BACKEND?.trim() || undefined;
   const defaultSkillRoots = configuredSkillRoots();
@@ -299,6 +300,23 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
         throw new Error("Usage: loong gateway --memory-dir=<path>");
       }
       memoryDir = path.resolve(value);
+      continue;
+    }
+    if (arg === "--suite-data-dir") {
+      const value = args[index + 1]?.trim();
+      if (!value) {
+        throw new Error("Usage: loong gateway --suite-data-dir <path>");
+      }
+      suiteDataDir = path.resolve(value);
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith("--suite-data-dir=")) {
+      const value = arg.slice("--suite-data-dir=".length).trim();
+      if (!value) {
+        throw new Error("Usage: loong gateway --suite-data-dir=<path>");
+      }
+      suiteDataDir = path.resolve(value);
       continue;
     }
     if (arg === "--memory-backend") {
@@ -419,6 +437,7 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
     allowExec,
     sessionDir: path.resolve(sessionDir),
     memoryDir: path.resolve(memoryDir),
+    suiteDataDir: path.resolve(suiteDataDir),
     cronJobsFile: path.resolve(cronJobsFile),
     ...(memoryBackendId !== undefined ? { memoryBackendId } : {}),
     skillRoots: uniquePaths([...skillRoots, ...defaultSkillRoots]),

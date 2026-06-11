@@ -27,8 +27,8 @@ Channels        Pairing      Observability           Trajectory
 - Permission by design. Tool execution is mediated by a dedicated policy layer.
 - Secret-safe diagnostics. Logs, provider errors, and permission summaries
   share a common redaction policy.
-- Incremental reuse. OpenClaw modules are migrated into Loong boundaries one at
-  a time, with attribution preserved.
+- Runtime-native boundaries. Loong keeps its runtime contracts first-class and
+  does not carry desktop shells or legacy compatibility layers into the core.
 
 ## Package Responsibilities
 

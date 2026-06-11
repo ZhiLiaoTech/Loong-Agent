@@ -11,6 +11,8 @@ import type {
   GatewayMemoryCandidateListParams,
   GatewayMemoryCandidatePromoteParams,
   GatewayMemoryCandidateRejectParams,
+  GatewaySuiteInstanceMaterializeParams,
+  GatewaySuiteReleaseInstallParams,
   GatewayModelConfigSaveParams,
   GatewayTicketUpsertParams,
   GatewayTierClassifyParams,
@@ -61,6 +63,8 @@ export type GatewayRequest =
   | { type: "pairing.device.revoke"; id: string; params: { deviceId: string } }
   | { type: "tools.catalog"; id: string; params?: { includeSchemas?: boolean } }
   | { type: "tool.invoke"; id: string; params: GatewayToolInvokeParams }
+  | { type: "suite.release.install"; id: string; params: GatewaySuiteReleaseInstallParams }
+  | { type: "suite.instance.materialize"; id: string; params: GatewaySuiteInstanceMaterializeParams }
   | { type: "memory.candidates.list"; id: string; params?: GatewayMemoryCandidateListParams }
   | { type: "memory.candidate.promote"; id: string; params: GatewayMemoryCandidatePromoteParams }
   | { type: "memory.candidate.reject"; id: string; params: GatewayMemoryCandidateRejectParams }

@@ -38,9 +38,8 @@ function isTrustedGatewayOrigin(origin: string): boolean {
     const protocol = url.protocol.toLowerCase();
     const localhostHost =
       hostname === "127.0.0.1"
-      || hostname === "localhost"
-      || hostname === "tauri.localhost";
-    return localhostHost && (protocol === "http:" || protocol === "https:" || protocol === "tauri:");
+      || hostname === "localhost";
+    return localhostHost && (protocol === "http:" || protocol === "https:");
   } catch {
     return false;
   }

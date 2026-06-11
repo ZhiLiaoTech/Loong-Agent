@@ -49,7 +49,6 @@ Skills:
 
 Plugins:
   Plugin roots can point to a plugin directory or a directory containing plugin directories.
-  Install OpenClaw-format channel plugins with: loong plugins install -l <path>
   Default install dir: .loong/plugins (loaded automatically by loong gateway via Loong Channel Plugin Host).
   Optional: LOONG_PLUGIN_ROOTS, --plugin-root <path>.
   Tool plugins are available in agent and gateway mode. Tools that declare permission "allow" can run without an interactive prompt, permission "deny" is always refused, and omitted permission defaults to ask. Ask is skipped when no permission handler is available.

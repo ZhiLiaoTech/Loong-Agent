@@ -8,11 +8,6 @@
   "scripts": {
     "studio:dev": "corepack pnpm --filter @loong/studio dev",
     "studio:build": "corepack pnpm --filter @loong/studio build",
-    "desktop:inspect": "node scripts/package-desktop-release.mjs inspect",
-    "desktop:prepare-runtime": "node scripts/package-desktop-release.mjs prepare-runtime",
-    "desktop:build": "node scripts/package-desktop-release.mjs build --profile build",
-    "desktop:release": "node scripts/package-desktop-release.mjs build --profile release",
-    "desktop:publish": "node scripts/package-desktop-release.mjs publish",
     "build": "corepack pnpm -r build",
     "check": "corepack pnpm -r check",
     "clean": "corepack pnpm -r clean",

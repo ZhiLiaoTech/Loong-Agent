@@ -1,13 +1,12 @@
 import { cp, mkdir, readFile, readdir, realpath, rm, symlink, stat } from "node:fs/promises";
 import path from "node:path";
-import { hasOpenClawPluginManifest, readOpenClawPluginManifest } from "@loong/channel-plugin-host";
 import { resolveLoongDataRoot } from "../loong-paths.js";
 
 export interface InstalledPluginSummary {
   id: string;
   name: string;
   root: string;
-  kind: "openclaw-channel" | "loong";
+  kind: "loong";
   linked: boolean;
 }
 
@@ -45,7 +44,7 @@ export async function installPlugin(source: string, options: { link?: boolean } 
   }
   const summary = await describeInstalledPlugin(resolvedSource);
   if (!summary) {
-    throw new Error(`Plugin source is missing loong.plugin.json or openclaw.plugin.json: ${resolvedSource}`);
+    throw new Error(`Plugin source is missing loong.plugin.json: ${resolvedSource}`);
   }
   const target = path.join(pluginsDir, summary.id);
   await rm(target, { recursive: true, force: true });
@@ -64,16 +63,6 @@ export async function installPlugin(source: string, options: { link?: boolean } 
 async function describeInstalledPlugin(root: string): Promise<InstalledPluginSummary | undefined> {
   const resolved = await realpath(root);
   const linked = await isSymlink(root);
-  if (await hasOpenClawPluginManifest(resolved)) {
-    const manifest = await readOpenClawPluginManifest(resolved);
-    return {
-      id: manifest.id,
-      name: manifest.name ?? manifest.id,
-      root: resolved,
-      kind: "openclaw-channel",
-      linked,
-    };
-  }
   try {
     const manifestPath = path.join(resolved, "loong.plugin.json");
     const manifestStat = await stat(manifestPath);
@@ -154,6 +143,5 @@ Usage:
   loong plugins install [-l|--link] <plugin-path>
 
 Installed plugins are loaded from ${defaultPluginsInstallDir()} by loong gateway.
-OpenClaw-format channel plugins use openclaw.plugin.json and run under Loong Channel Plugin Host.
 `);
 }

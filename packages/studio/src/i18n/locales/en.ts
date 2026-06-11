@@ -328,7 +328,7 @@ export const en: MessageTree = {
 
     title: "Loong Studio",
 
-    lead: "Unified workbench for the Loong agent platform. Browser surface is active; desktop host capabilities arrive in @loong/desktop (P4).",
+    lead: "Unified browser workbench for the Loong agent platform, connected to a local or hosted Gateway.",
 
     surface: "Surface",
 

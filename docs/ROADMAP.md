@@ -1,6 +1,6 @@
 # Loong Roadmap
 
-> **Loong 桌面一体化**（Host + Studio + Desktop Surface）的详细阶段与任务 ID 见 [LOONG_PRODUCT_ARCHITECTURE.md](./LOONG_PRODUCT_ARCHITECTURE.md)。
+> **Loong 线上 Headless Runtime 与 Suite 原生物化**的详细阶段与任务 ID 见 [LOONG_PRODUCT_ARCHITECTURE.md](./LOONG_PRODUCT_ARCHITECTURE.md)。
 
 ## Phase 0: Foundation
 
@@ -136,7 +136,7 @@ Goal: make Loong extensible without editing core.
 - Add memory backend plugins. Initial explicit-selection memory backend
   registration is implemented with `LOONG_MEMORY_BACKEND` / `--memory-backend`.
 - Add hook lifecycle. Initial read-only lifecycle hooks are implemented.
-- Migrate selected OpenClaw provider plugins.
+- Harden native provider plugin loading for hosted runtime deployments.
 
 ## Phase 5: Multi-Surface Agent
 

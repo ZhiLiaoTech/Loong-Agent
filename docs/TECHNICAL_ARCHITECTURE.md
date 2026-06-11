@@ -12,7 +12,7 @@ Loong 是 **TypeScript 原生、本地优先（local-first）** 的智能体框�
 
 | 来源 | 借鉴能力 |
 |------|----------|
-| OpenClaw | Gateway、插件、会话、Cron、Provider、安全边界 |
+| Loong 原生运行时 | Gateway、插件、会话、Cron、Provider、安全边界 |
 | Hermes Agent | 技能自改进、记忆、轨迹、Provider 路由（概念用 TS 重写） |
 | Claude Code | 编码 Agent 交互、权限体验、工程工作流（仅作产品研究，不抄源码） |
 
@@ -272,7 +272,7 @@ corepack pnpm smoke:gateway
 ## 10. 相关文档
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — 产品架构与包职责
-- [REUSE_PLAN.md](./REUSE_PLAN.md) — OpenClaw/Hermes 复用策略
+- [REUSE_PLAN.md](./REUSE_PLAN.md) — 许可、来源与归因策略
 - [DEPLOYMENT.md](./DEPLOYMENT.md) — 部署与冒烟
 - [PERMISSIONS.md](./PERMISSIONS.md) — 权限模型
 - [PLUGINS.md](./PLUGINS.md) — 插件开发

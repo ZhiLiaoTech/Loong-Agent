@@ -328,16 +328,16 @@ async function testCliPluginsInstallLink(): Promise<void> {
   const dataRoot = await mkdtemp(path.join(os.tmpdir(), "loong-plugins-data-"));
   const pluginRoot = await mkdtemp(path.join(os.tmpdir(), "loong-plugin-src-"));
   await writeFile(
-    path.join(pluginRoot, "openclaw.plugin.json"),
-    JSON.stringify({ id: "cli-test-channel", channels: ["cli-test-channel"], entry: "index.mjs" }),
+    path.join(pluginRoot, "loong.plugin.json"),
+    JSON.stringify({ name: "cli-test-plugin", version: "0.0.0", entry: "index.mjs" }),
   );
-  await writeFile(path.join(pluginRoot, "index.mjs"), "export default { register() {} };");
+  await writeFile(path.join(pluginRoot, "index.mjs"), "export function register() {};");
   try {
     const install = await runCli(["plugins", "install", "-l", pluginRoot], { LOONG_DATA_ROOT: dataRoot });
-    assert(install.stdout.includes("cli-test-channel"), "plugins install should report installed plugin id");
+    assert(install.stdout.includes("cli-test-plugin"), "plugins install should report installed plugin id");
     const list = await runCli(["plugins", "list"], { LOONG_DATA_ROOT: dataRoot });
-    assert(list.stdout.includes("cli-test-channel"), "plugins list should include installed plugin");
-    assert(list.stdout.includes("openclaw-channel"), "plugins list should identify openclaw channel plugin kind");
+    assert(list.stdout.includes("cli-test-plugin"), "plugins list should include installed plugin");
+    assert(list.stdout.includes("loong"), "plugins list should identify native Loong plugin kind");
   } finally {
     await rm(dataRoot, { recursive: true, force: true });
     await rm(pluginRoot, { recursive: true, force: true });

@@ -16,7 +16,6 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@loong/channel-plugin-host": "workspace:*",
     "@loong/channels": "workspace:*",
     "@loong/gateway-dashboard": "workspace:*",
     "@loong/studio": "workspace:*",
@@ -24,6 +23,7 @@
     "@loong/cron": "workspace:*",
     "@loong/model-catalog": "workspace:*",
     "@loong/org": "workspace:*",
+    "@loong/suite": "workspace:*",
     "@loong/tools": "workspace:*"
   },
   "devDependencies": {

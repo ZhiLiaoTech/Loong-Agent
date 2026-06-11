@@ -39,6 +39,8 @@ export interface GatewayRpcHandlerDeps {
   revokePairedDevice(deviceId: string): Promise<unknown>;
   listTools(params: unknown): unknown;
   invokeTool(params: unknown): Promise<unknown>;
+  installSuiteRelease?(params: unknown): Promise<unknown>;
+  materializeSuiteInstance?(params: unknown): Promise<unknown>;
   listMemoryCandidates(params: unknown): Promise<unknown>;
   promoteMemoryCandidate(params: unknown): Promise<unknown>;
   rejectMemoryCandidate(params: unknown): Promise<unknown>;
@@ -177,6 +179,18 @@ export async function handleGatewayRpc(
       }
       if (request.type === "tool.invoke") {
         return { type: "response", id: request.id, ok: true, payload: await deps.invokeTool(request.params) };
+      }
+      if (request.type === "suite.release.install") {
+        if (!deps.installSuiteRelease) {
+          throw new Error("suite.release.install is not configured for this gateway.");
+        }
+        return { type: "response", id: request.id, ok: true, payload: await deps.installSuiteRelease(request.params) };
+      }
+      if (request.type === "suite.instance.materialize") {
+        if (!deps.materializeSuiteInstance) {
+          throw new Error("suite.instance.materialize is not configured for this gateway.");
+        }
+        return { type: "response", id: request.id, ok: true, payload: await deps.materializeSuiteInstance(request.params) };
       }
       if (request.type === "memory.candidates.list") {
         return { type: "response", id: request.id, ok: true, payload: await deps.listMemoryCandidates(request.params) };

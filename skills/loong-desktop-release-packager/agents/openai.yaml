@@ -1,4 +1,0 @@
-interface:
-  display_name: "Loong Desktop Release"
-  short_description: "Package and verify the Loong desktop app"
-  default_prompt: "Use $loong-desktop-release-packager to inspect, package, and verify a Loong desktop release on this machine."
