@@ -113,6 +113,24 @@ export function createMemoryCandidateLifecycleHook(
       if (!candidate) {
         return;
       }
+      if (options.autoPromote === true && options.store !== undefined) {
+        // Closed-loop: promote the explicit-intent candidate to durable memory
+        // immediately instead of parking it for human review.
+        await options.store.remember({
+          scope: candidate.scope,
+          content: candidate.content,
+          source: "memory_candidate_autopromote",
+          metadata: {
+            candidateId: candidate.id,
+            candidateRunId: candidate.runId,
+            candidateSessionId: candidate.sessionId,
+            capturedBy: "memory_candidate_capture",
+            autoPromoted: true,
+            ...(candidate.workspace !== undefined ? { workspace: candidate.workspace } : {}),
+          },
+        });
+        return;
+      }
       const serialized = stringifyMemoryCandidate(candidate, maxCandidateBytes);
       const filePath = memoryCandidatePath(rootDir, candidate.createdAt);
       await mkdir(path.dirname(filePath), { recursive: true });

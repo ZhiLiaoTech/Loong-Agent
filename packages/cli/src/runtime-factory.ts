@@ -127,8 +127,14 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
     const memoryStore = options.mode === "agent"
       ? selectMemoryStore(options.memoryBackendId, pluginMemoryBackends, options.memoryDir)
       : undefined;
+    // Opt-in closed-loop memory: LOONG_MEMORY_AUTO_PROMOTE=1 promotes explicit
+    // remember/note intents straight to durable memory (no review queue).
+    const autoPromoteMemory = process.env.LOONG_MEMORY_AUTO_PROMOTE?.trim() === "1";
     const memoryCandidateHook = options.mode === "agent" && memoryStore
-      ? createMemoryCandidateLifecycleHook({ rootDir: options.memoryDir })
+      ? createMemoryCandidateLifecycleHook({
+          rootDir: options.memoryDir,
+          ...(autoPromoteMemory ? { autoPromote: true, store: memoryStore } : {}),
+        })
       : undefined;
     const lifecycleHooks = [
       ...pluginLifecycleHooks,

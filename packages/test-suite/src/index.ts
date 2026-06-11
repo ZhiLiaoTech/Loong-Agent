@@ -122,6 +122,7 @@ async function main(): Promise<void> {
     ["openrouter provider plugin", testOpenRouterProviderPlugin],
     ["dashboard memory review smoke", testDashboardMemoryReviewSmoke],
     ["memory candidate review tools", testMemoryCandidateTools],
+    ["memory auto-promote closed loop", testMemoryAutoPromoteLoop],
     ["model catalog", testModelCatalog],
     ["security redaction", testSecurityRedaction],
     ["sandbox exec tool", testSandboxExecTool],
@@ -265,6 +266,35 @@ async function testDashboardMemoryReviewSmoke(): Promise<void> {
       process.env.LOONG_UI = previousUi;
     }
     resetDashboardStaticCache();
+  }
+}
+
+async function testMemoryAutoPromoteLoop(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-auto-promote-"));
+  const provider = {
+    id: "mock", displayName: "Mock", defaultModel: "mock-model", supportsToolCalling: false,
+    async complete() { return { id: "r", text: "ack" }; },
+  };
+  try {
+    const store = createFileMemoryStore({ rootDir: root });
+    const runtime = createLoongRuntime({
+      providers: [provider],
+      defaultModel: "mock-model",
+      lifecycleHooks: [createMemoryCandidateLifecycleHook({ rootDir: root, autoPromote: true, store })],
+    });
+    await runtime.runTurn({ sessionId: "s1", source: "cli", message: "remember that the build uses pnpm only" });
+    await delay(5);
+    const hits = await store.search("pnpm", 5);
+    assert(hits.length >= 1, "auto-promote should write the explicit-intent memory straight to durable store");
+    assert(hits.some(hit => (hit.record.metadata as Record<string, unknown> | undefined)?.autoPromoted === true),
+      "auto-promoted record should be flagged autoPromoted");
+
+    await runtime.runTurn({ sessionId: "s1", source: "cli", message: "what time is it right now" });
+    await delay(5);
+    const none = await store.search("what time", 5);
+    assert(none.length === 0, "non-intent turns should not be auto-promoted");
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 }
 

@@ -394,6 +394,16 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
       }
 
       let toolIterations = 0;
+      // Dynamic tier cool-down state. A deep/standard turn that has burned many
+      // tool iterations has usually converged to mechanical edits; tighten its
+      // context budget and lower thinking for the remaining iterations so we
+      // stop paying deep-tier cost after convergence. Cheap (no extra LLM call),
+      // bounded, and only narrows — never widens — the budget.
+      let coolDownApplied = false;
+      let coolDownInput: LoongTurnInput = activeInput;
+      let coolDownMaxContextChars = turnMaxContextChars;
+      const coolDownEligible = tierDecision?.tier === "deep" || tierDecision?.tier === "standard";
+      const coolDownThreshold = Math.max(3, Math.ceil(this.#maxToolIterations / 2));
       while (providerResponse.toolCalls?.length && toolIterations < this.#maxToolIterations) {
         toolIterations += 1;
         const assistantTurn: ModelMessage = {
@@ -429,8 +439,27 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
           throw new LoongCancelledError("Turn was cancelled.");
         }
 
-        completion = await this.#completeModelWithPrep(modelRefs, modelMessages, activeInput, runId, turnMaxContextChars);
-        providerResponse = augmentResponseWithTextToolCalls(completion.response, activeInput.toolsEnabled);
+        if (coolDownEligible && !coolDownApplied && toolIterations >= coolDownThreshold) {
+          coolDownApplied = true;
+          coolDownMaxContextChars = Math.min(turnMaxContextChars, Math.max(8000, Math.floor(turnMaxContextChars / 2)));
+          if (activeInput.thinking === "high" || activeInput.thinking === "medium") {
+            coolDownInput = { ...activeInput, thinking: "low" };
+          }
+          this.#emit({
+            type: "context",
+            runId,
+            providerName: "tier_cooldown",
+            phase: "end",
+            payload: {
+              ok: true,
+              afterIterations: toolIterations,
+              maxContextChars: coolDownMaxContextChars,
+              thinking: coolDownInput.thinking ?? null,
+            },
+          });
+        }
+        completion = await this.#completeModelWithPrep(modelRefs, modelMessages, coolDownInput, runId, coolDownMaxContextChars);
+        providerResponse = augmentResponseWithTextToolCalls(completion.response, coolDownInput.toolsEnabled);
         resolution = completion.resolution;
         fallbackFailures = completion.failures;
       }

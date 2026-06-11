@@ -6,6 +6,16 @@ export interface MemoryCandidateLifecycleHookOptions {
   maxContentChars?: number;
   maxCandidateBytes?: number;
   maxFileBytes?: number;
+  /**
+   * Close the memory self-improvement loop: when true (and `store` is set),
+   * explicit-intent candidates are promoted straight to durable memory at turn
+   * end instead of waiting in the pending-review queue. Capture is already
+   * intent-gated (remember/note/记住…), so the agent learns across turns without
+   * manual bookkeeping. Default false (human-review queue) preserves the
+   * existing safety posture.
+   */
+  autoPromote?: boolean;
+  store?: MemoryStore;
 }
 
 export interface MemoryCandidateToolsOptions {
