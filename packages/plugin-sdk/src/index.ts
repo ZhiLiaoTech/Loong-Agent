@@ -46,6 +46,13 @@ export interface LoadedLoongPlugin {
 
 export interface LoongPluginLoadOptions {
   manifestFile?: string;
+  /**
+   * Trust gate. When provided, only plugins whose manifest name is in this list
+   * are allowed to load; any other plugin is rejected BEFORE its module code is
+   * imported (so untrusted code never runs with host privileges). Undefined =
+   * no allowlist (load any discovered plugin, unchanged behavior).
+   */
+  allowlist?: readonly string[];
 }
 
 const DEFAULT_MANIFEST_FILE = "loong.plugin.json";
@@ -69,6 +76,11 @@ export async function loadLoongPlugin(
   const rootDir = await resolvePluginRoot(pluginRoot);
   const manifest = await readPluginManifest(rootDir, options.manifestFile ?? DEFAULT_MANIFEST_FILE);
   assertLoongVersionCompatible(manifest.loongVersion);
+  // Trust gate: reject untrusted plugins BEFORE importing their module, so the
+  // plugin's top-level code never executes in the host process.
+  if (options.allowlist !== undefined && !options.allowlist.includes(manifest.name)) {
+    throw new Error(`Plugin "${manifest.name}" is not in the configured plugin allowlist; refusing to load.`);
+  }
   const entryPath = await resolvePluginEntry(rootDir, manifest.entry);
   const moduleUrl = pathToFileURL(entryPath).href;
   const plugin = normalizePluginModule(await import(moduleUrl), manifest);

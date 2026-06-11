@@ -302,10 +302,18 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
 
 async function loadConfiguredPlugins(pluginRoots: string[]): Promise<LoadedLoongPlugin[]> {
   const roots = await discoverPluginRoots(pluginRoots);
+  // Opt-in trust gate: LOONG_PLUGIN_ALLOWLIST="name1,name2" restricts which
+  // plugins may load (rejected before their code is imported). Empty/unset =
+  // load all discovered plugins (unchanged behavior).
+  const allowlist = (process.env.LOONG_PLUGIN_ALLOWLIST ?? "")
+    .split(",")
+    .map(name => name.trim())
+    .filter(name => name.length > 0);
+  const loadOptions = allowlist.length > 0 ? { allowlist } : {};
   const plugins: LoadedLoongPlugin[] = [];
   try {
     for (const root of roots) {
-      plugins.push(await loadLoongPlugin(root));
+      plugins.push(await loadLoongPlugin(root, loadOptions));
     }
     return plugins;
   } catch (error) {

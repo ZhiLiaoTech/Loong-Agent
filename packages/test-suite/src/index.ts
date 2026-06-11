@@ -121,6 +121,7 @@ import { mergeAllTestCases } from "./suites/registry.js";
 async function main(): Promise<void> {
   await runTests(mergeAllTestCases([
     ["openrouter provider plugin", testOpenRouterProviderPlugin],
+    ["plugin allowlist trust gate", testPluginAllowlistGate],
     ["dashboard memory review smoke", testDashboardMemoryReviewSmoke],
     ["memory candidate review tools", testMemoryCandidateTools],
     ["memory auto-promote closed loop", testMemoryAutoPromoteLoop],
@@ -142,6 +143,21 @@ async function main(): Promise<void> {
     ["anthropic provider tool use translation", testAnthropicProviderToolUse],
     ["anthropic provider streaming", testAnthropicProviderStreaming],
   ]));
+}
+
+async function testPluginAllowlistGate(): Promise<void> {
+  const pluginRoot = path.join(WORKSPACE_ROOT, "packages", "plugin-openrouter-compatible");
+  let rejected = false;
+  try {
+    await runCli(
+      ["chat", "--no-session", "--plugin-root", pluginRoot, "hi"],
+      { LOONG_PLUGIN_ALLOWLIST: "some-other-plugin-name" },
+    );
+  } catch (error) {
+    const stderr = String((error as { stderr?: string }).stderr ?? error);
+    rejected = /not in the configured plugin allowlist/i.test(stderr);
+  }
+  assert(rejected, "plugin allowlist should reject a plugin whose name is not allowlisted (before importing its code)");
 }
 
 async function testOpenRouterProviderPlugin(): Promise<void> {
