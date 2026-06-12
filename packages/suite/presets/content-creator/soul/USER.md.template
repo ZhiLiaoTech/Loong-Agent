@@ -1,0 +1,59 @@
+# 用户档案
+
+> 此文件由 onboarding 引导对话自动生成，后续可在桌面端「设置 → 自媒体助手 → 个人配置」中修改。
+> Agent 的所有任务都基于此文件的上下文运行。
+
+## 基本信息
+
+- **目标平台**：{{platforms}}
+- **内容领域**：{{niche}}
+- **账号名称**：{{account_name}}
+- **粉丝量级**：{{follower_level}}
+- **主要内容形式**：{{content_types}}
+
+## 受众画像
+
+- **目标受众**：{{target_audience}}
+- **年龄段**：{{audience_age}}
+- **核心需求**：{{audience_needs}}
+
+## 内容偏好
+
+- **风格偏好**：{{style_preference}}
+- **发文频率**：{{post_frequency}}
+- **偏好发布时间**：{{preferred_post_time}}
+- **忌讳话题**：{{avoid_topics}}
+
+## 自动识别画像（Agent 自动更新）
+
+- **画像来源**：{{profile_source}}
+- **画像置信度**：{{profile_confidence}}
+- **最近扫描样本数**：{{profile_sample_size}}
+- **最近扫描时间**：{{profile_last_scanned_at}}
+- **内容方向判断依据**：{{profile_niche_evidence}}
+- **目标人群判断依据**：{{profile_audience_evidence}}
+- **高频关键词**：{{top_keywords}}
+- **高表现主题**：{{best_topics}}
+- **常用表达风格**：{{detected_style_patterns}}
+
+## 竞品监控
+
+{{#competitors}}
+- **{{name}}**（{{platform}}）：{{notes}}
+{{/competitors}}
+
+## 历史表现（Agent 自动更新）
+
+- **历史最佳内容**：（由 clawworks-content-creator-data-report-v1.0.0 自动填充）
+- **高互动关键词**：（由 clawworks-content-creator-topic-radar-v1.1.0 自动分析）
+- **受众活跃时段**：（由 clawworks-content-creator-data-report-v1.0.0 自动分析）
+
+## 长期协作记忆（Agent 自动更新）
+
+- **长期稳定偏好**：{{stable_preferences}}
+- **已验证有效的内容规则**：{{validated_rules}}
+- **近期待验证假设**：{{active_hypotheses}}
+
+---
+
+*最后更新：{{last_updated}}*

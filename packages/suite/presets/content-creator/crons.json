@@ -1,0 +1,98 @@
+{
+  "$schema": "https://nexodesk.com/schemas/crons.v1.json",
+  "$comment": "定时任务配置。schedule 使用标准 cron 表达式（分 时 日 月 周）。用户可在桌面端「设置 → Suite 配置」中覆盖时间。",
+  "crons": [
+    {
+      "id": "daily-data-collect",
+      "schedule": "30 5 * * *",
+      "message": "执行每日平台数据采集：打开各平台创作者后台，读取粉丝数据、内容互动数据、竞品最新动态",
+      "skill": "clawworks-content-creator-data-report-v1.0.0",
+      "action": "collect",
+      "mode": "batch",
+      "requires_browser": true,
+      "description": "每日数据采集（05:30）",
+      "on_failure": "skip_and_notify"
+    },
+    {
+      "id": "daily-topic-analysis",
+      "schedule": "0 6 * * *",
+      "message": "执行每日选题分析：基于最新热点趋势和用户定位，生成推荐选题并自动创建 2-3 篇内容草稿",
+      "skill": "clawworks-content-creator-scheduler-v1.1.0",
+      "action": "morning_generate",
+      "mode": "batch",
+      "description": "每日选题分析 + 草稿生成（06:00）"
+    },
+    {
+      "id": "morning-report",
+      "schedule": "0 8 * * *",
+      "message": "生成并推送晨报：昨日数据摘要、今日推荐选题、AI 生成的草稿预览",
+      "skill": "clawworks-content-creator-scheduler-v1.1.0",
+      "action": "push_morning_report",
+      "channel": "default",
+      "card_template": "cards/morning-report.json",
+      "description": "推送晨报（08:00）"
+    },
+    {
+      "id": "evening-report",
+      "schedule": "0 20 * * *",
+      "message": "生成今日数据日报：今日发布内容表现、竞品动态汇总、明日选题建议",
+      "skill": "clawworks-content-creator-scheduler-v1.1.0",
+      "action": "push_evening_report",
+      "channel": "default",
+      "card_template": "cards/daily-report.json",
+      "mode": "batch",
+      "description": "推送日报（20:00）"
+    },
+    {
+      "id": "weekly-report",
+      "schedule": "30 8 * * 1",
+      "message": "生成本周数据周报：一周数据趋势总结、爆款内容分析、下周内容规划建议",
+      "skill": "clawworks-content-creator-scheduler-v1.1.0",
+      "action": "push_weekly_report",
+      "channel": "default",
+      "card_template": "cards/weekly-report.json",
+      "mode": "batch",
+      "description": "推送周报（每周一 08:30）"
+    },
+    {
+      "id": "competitor-monitor",
+      "schedule": "0 */4 * * *",
+      "message": "巡检竞品账号：检查竞品是否有新内容发布，如有则推送通知",
+      "skill": "clawworks-content-creator-topic-radar-v1.1.0",
+      "action": "check_competitors",
+      "requires_browser": true,
+      "notify_only_on_change": true,
+      "description": "竞品巡检（每 4 小时）"
+    },
+    {
+      "id": "profile-refresh",
+      "schedule": "45 5 * * 1,4",
+      "message": "检查用户画像是否过旧或信息不完整；如需刷新则读取最近作品并自动识别内容定位、目标人群与偏好",
+      "skill": "clawworks-content-creator-account-profiler-v1.1.0",
+      "action": "refresh_profile",
+      "mode": "batch",
+      "requires_browser": true,
+      "description": "账号画像刷新（每周一、周四 05:45）",
+      "on_failure": "skip_and_notify"
+    },
+    {
+      "id": "self-learning-memory-sync",
+      "schedule": "0 * * * *",
+      "message": "总结最近 60 分钟的沟通内容、草稿修改与任务结果，提炼稳定偏好写入 soul，短期约束写入 memory",
+      "skill": "clawworks-content-creator-learning-memory-v1.2.0",
+      "action": "summarize_and_sync_memory",
+      "mode": "batch",
+      "description": "自学习总结与记忆沉淀（每小时）",
+      "on_failure": "skip_and_notify"
+    }
+  ],
+  "catch_up_policy": {
+    "enabled": true,
+    "max_catch_up_age_hours": 12,
+    "description": "电脑关机期间错过的任务，开机后自动补执行（仅补最近 12 小时内的）"
+  },
+  "user_overridable_fields": [
+    "schedule",
+    "channel"
+  ]
+}

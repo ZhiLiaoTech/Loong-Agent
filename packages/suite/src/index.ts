@@ -1,6 +1,8 @@
 import type { Dirent } from "node:fs";
 import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { downloadAndExtractSuite, extractZipFileToTempDir, type DownloadOptions } from "./suite-fetch.js";
+import { resolveLoongDataRoot } from "./paths.js";
 
 const DEFAULT_MAX_TEXT_FILE_BYTES = 256 * 1024;
 
@@ -17,6 +19,7 @@ export interface LoongSuiteManifest {
   version: string;
   description?: string;
   schemaVersion?: string;
+  uiConfigPath?: string;
   raw: Record<string, unknown>;
 }
 
@@ -913,4 +916,216 @@ function errorOptions(pathValue: string | undefined): { path?: string } {
 
 function isNotFoundError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+export * from "./suite-fetch.js";
+export * from "./cron-schedule.js";
+export { resolveLoongDataRoot, loongConfigDir, loongSuitesDir } from "./paths.js";
+
+export interface InstallSuiteOptions extends LoongSuiteLoadOptions {
+  /** Compatibility alias used by the suite CLI. Prefer dataDir for hosted runtime code. */
+  dataRoot?: string;
+  dataDir?: string;
+  overwrite?: boolean;
+  installedAt?: string;
+  /** Skip when the same suite release is already materialized. */
+  skipIfUpToDate?: boolean;
+}
+
+export interface InstallAndRegisterResult extends LoongSuiteReleaseMaterialization {
+  manifest: LoongSuiteManifest;
+  workspaceDir: string;
+  dataRoot: string;
+  profileId: string;
+  skillsCopied: string[];
+  skillsMissing: string[];
+  cronsImported: number;
+  cronJobsFile?: string;
+  toolPolicyFile?: string;
+  orgToolPolicyId?: string;
+  orgToolPolicyFile?: string;
+  orgEmployeeId?: string;
+  orgEmployeeFile?: string;
+  onboardingUserFile?: string;
+  onboardingSeeded?: boolean;
+  pipelinePlanFile?: string;
+  skipped?: boolean;
+}
+
+export interface InstallSuiteFromUrlOptions extends InstallSuiteOptions, DownloadOptions {
+  cleanup?: boolean;
+  suiteCode?: string;
+  expectedVersion?: string;
+  expectedDigest?: string;
+}
+
+export interface InstalledSuiteSummary {
+  id: string;
+  version: string;
+  workspace: string;
+}
+
+export async function installSuite(
+  sourceDir: string,
+  options: InstallSuiteOptions = {},
+): Promise<InstallAndRegisterResult> {
+  const dataDir = resolveInstallDataDir(options);
+  const suite = await loadSuiteWorkspace(sourceDir, options);
+  if (options.skipIfUpToDate === true && await isReleaseMaterialized(dataDir, suite.manifest.id, suite.manifest.version)) {
+    return skippedInstallResult(suite, dataDir);
+  }
+  const materialized = await materializeSuiteRelease(sourceDir, {
+    dataDir,
+    overwrite: options.overwrite,
+    installedAt: options.installedAt,
+    maxTextFileBytes: options.maxTextFileBytes,
+  });
+  return toInstallResult(materialized, dataDir, false);
+}
+
+export async function installSuiteFromUrl(
+  url: string,
+  options: InstallSuiteFromUrlOptions = {},
+): Promise<InstallAndRegisterResult> {
+  const dataDir = resolveInstallDataDir(options);
+  if (
+    options.skipIfUpToDate === true
+    && options.suiteCode
+    && options.expectedVersion
+    && await isReleaseMaterialized(dataDir, options.suiteCode, options.expectedVersion)
+  ) {
+    return skippedInstallResultFromIdentity(options.suiteCode, options.expectedVersion, dataDir);
+  }
+  const tempDir = await downloadAndExtractSuite(url, options);
+  try {
+    return await installSuite(tempDir, { ...options, dataDir });
+  } finally {
+    if (options.cleanup !== false) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+}
+
+export async function installSuiteFromZipFile(
+  zipPath: string,
+  options: InstallSuiteOptions & { cleanup?: boolean } = {},
+): Promise<InstallAndRegisterResult> {
+  const dataDir = resolveInstallDataDir(options);
+  const tempDir = await extractZipFileToTempDir(zipPath);
+  try {
+    return await installSuite(tempDir, { ...options, dataDir });
+  } finally {
+    if (options.cleanup !== false) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+}
+
+export async function listInstalledSuites(dataRoot?: string): Promise<InstalledSuiteSummary[]> {
+  const dataDir = path.resolve(dataRoot ?? resolveLoongDataRoot());
+  const suitesDir = path.join(dataDir, "suites");
+  const summaries: InstalledSuiteSummary[] = [];
+  let suiteEntries: Dirent[];
+  try {
+    suiteEntries = await readdir(suitesDir, { withFileTypes: true });
+  } catch {
+    return summaries;
+  }
+  for (const suiteEntry of suiteEntries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!suiteEntry.isDirectory()) {
+      continue;
+    }
+    const suiteDir = path.join(suitesDir, suiteEntry.name);
+    let versionEntries: Dirent[];
+    try {
+      versionEntries = await readdir(suiteDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const versionEntry of versionEntries.sort((left, right) => left.name.localeCompare(right.name))) {
+      if (!versionEntry.isDirectory()) {
+        continue;
+      }
+      const releaseDir = path.join(suiteDir, versionEntry.name);
+      const record = await readReleaseRecord(releaseDir);
+      summaries.push({
+        id: record?.suiteId ?? suiteEntry.name,
+        version: record?.suiteVersion ?? versionEntry.name,
+        workspace: path.join(releaseDir, "workspace"),
+      });
+    }
+  }
+  return summaries;
+}
+
+function resolveInstallDataDir(options: { dataDir?: string; dataRoot?: string }): string {
+  return path.resolve(options.dataDir ?? options.dataRoot ?? resolveLoongDataRoot());
+}
+
+async function isReleaseMaterialized(dataDir: string, suiteId: string, version: string): Promise<boolean> {
+  const releaseDir = resolveDataPath(dataDir, "suites", suiteId, version);
+  const record = await readReleaseRecord(releaseDir);
+  return record?.suiteId === suiteId && record.suiteVersion === version;
+}
+
+async function readReleaseRecord(releaseDir: string): Promise<LoongSuiteReleaseRecord | undefined> {
+  try {
+    const raw = JSON.parse(await readFile(path.join(releaseDir, "release.json"), "utf8")) as Partial<LoongSuiteReleaseRecord>;
+    if (raw.schemaVersion !== LOONG_SUITE_RELEASE_RECORD_SCHEMA_VERSION) {
+      return undefined;
+    }
+    if (typeof raw.suiteId !== "string" || typeof raw.suiteVersion !== "string") {
+      return undefined;
+    }
+    return raw as LoongSuiteReleaseRecord;
+  } catch {
+    return undefined;
+  }
+}
+
+function toInstallResult(
+  materialized: LoongSuiteReleaseMaterialization,
+  dataRoot: string,
+  skipped: boolean,
+): InstallAndRegisterResult {
+  return {
+    ...materialized,
+    manifest: materialized.suite.manifest,
+    workspaceDir: materialized.releaseWorkspaceDir,
+    dataRoot,
+    profileId: materialized.suite.manifest.id,
+    skillsCopied: [],
+    skillsMissing: [],
+    cronsImported: 0,
+    skipped,
+  };
+}
+
+function skippedInstallResult(suite: LoongSuitePackage, dataRoot: string): InstallAndRegisterResult {
+  const releaseDir = resolveDataPath(dataRoot, "suites", suite.manifest.id, suite.manifest.version);
+  const releaseWorkspaceDir = path.join(releaseDir, "workspace");
+  const record: LoongSuiteReleaseRecord = {
+    schemaVersion: LOONG_SUITE_RELEASE_RECORD_SCHEMA_VERSION,
+    suiteId: suite.manifest.id,
+    suiteName: suite.manifest.name,
+    suiteVersion: suite.manifest.version,
+    workspacePath: "workspace",
+    installedAt: "",
+    warnings: suite.warnings,
+  };
+  return toInstallResult({ suite, releaseDir, releaseWorkspaceDir, recordPath: path.join(releaseDir, "release.json"), record }, dataRoot, true);
+}
+
+function skippedInstallResultFromIdentity(suiteId: string, version: string, dataRoot: string): InstallAndRegisterResult {
+  const manifest: LoongSuiteManifest = { id: suiteId, name: suiteId, version, raw: {} };
+  const suite: LoongSuitePackage = {
+    rootDir: "",
+    workspaceDir: "",
+    manifest,
+    identity: {},
+    skills: [],
+    configFiles: [],
+    schemaFiles: [],
+    warnings: [],
+  };
+  return skippedInstallResult(suite, dataRoot);
 }

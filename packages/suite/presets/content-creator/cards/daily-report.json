@@ -1,0 +1,49 @@
+{
+  "$schema": "https://nexodesk.com/schemas/card.v1.json",
+  "card_type": "daily-report",
+  "title": "🌙 日报 · {{date}}",
+  "description": "今日内容表现与竞品动态",
+
+  "sections": [
+    {
+      "type": "metrics",
+      "title": "📈 今日表现",
+      "fields": [
+        { "label": "发布", "value": "{{published_count}} 篇" },
+        { "label": "总阅读", "value": "{{total_reads}}" },
+        { "label": "总互动", "value": "{{total_interactions}}" },
+        { "label": "新增粉丝", "value": "{{new_followers}}", "change_type": "{{followers_trend}}" }
+      ]
+    },
+    {
+      "type": "list",
+      "title": "📊 各内容表现",
+      "items": "{{published_items}}",
+      "item_template": {
+        "title": "{{title}}",
+        "subtitle": "👁{{reads}} 👍{{likes}} 💬{{comments}} ⭐{{collects}} · {{platform}}"
+      },
+      "condition": "{{published_count}} > 0"
+    },
+    {
+      "type": "list",
+      "title": "👀 竞品动态",
+      "items": "{{competitor_updates}}",
+      "item_template": {
+        "title": "{{account_name}}",
+        "subtitle": "发布了「{{content_title}}」· 👍{{likes}}"
+      },
+      "max_items": 5
+    },
+    {
+      "type": "text",
+      "title": "💡 明日建议",
+      "content": "{{tomorrow_suggestion}}"
+    }
+  ],
+
+  "actions": [
+    { "label": "查看详情", "type": "primary", "action": "open_desktop", "page": "dashboard" },
+    { "label": "明日选题", "type": "default", "action": "trigger_skill", "skill": "clawworks-content-creator-topic-radar-v1.0.0" }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://nexodesk.com/schemas/card.v1.json",
+  "card_type": "morning-report",
+  "title": "☀️ 晨报 · {{date}}",
+  "description": "今日选题推荐和昨日数据速览",
+
+  "sections": [
+    {
+      "type": "metrics",
+      "title": "📊 昨日数据",
+      "fields": [
+        { "label": "粉丝", "value": "{{followers}}", "change": "{{followers_change}}", "change_type": "{{followers_trend}}" },
+        { "label": "阅读", "value": "{{total_reads}}", "change": "{{reads_change}}", "change_type": "{{reads_trend}}" },
+        { "label": "互动", "value": "{{total_interactions}}", "change": "{{interactions_change}}", "change_type": "{{interactions_trend}}" }
+      ]
+    },
+    {
+      "type": "list",
+      "title": "🔥 今日推荐选题",
+      "items": "{{topics}}",
+      "item_template": {
+        "title": "{{topic}}",
+        "subtitle": "热度 {{heat_score}} · {{platform}} · {{tags}}"
+      },
+      "max_items": 3
+    },
+    {
+      "type": "list",
+      "title": "📝 AI 已生成草稿",
+      "items": "{{drafts}}",
+      "item_template": {
+        "title": "{{title}}",
+        "subtitle": "评分 {{score}}/100 · {{platform}}"
+      },
+      "max_items": 3
+    }
+  ],
+
+  "actions": [
+    { "label": "查看选题", "type": "primary", "action": "trigger_skill", "skill": "clawworks-content-creator-topic-radar-v1.0.0" },
+    { "label": "查看草稿", "type": "default", "action": "open_desktop", "page": "drafts" },
+    { "label": "查看数据", "type": "default", "action": "trigger_skill", "skill": "clawworks-content-creator-data-report-v1.0.0" }
+  ],
+
+  "footer": "本月剩余 {{remaining_quota}} 次创作",
+
+  "platform_adapters": {
+    "feishu": {
+      "card_version": "1.0",
+      "header_template": "purple",
+      "enable_forward": true
+    },
+    "wecom": {
+      "card_type": "template_card",
+      "task_id": "morning-{{date}}"
+    },
+    "dingtalk": {
+      "card_type": "actionCard",
+      "btn_orientation": "0"
+    }
+  }
+}

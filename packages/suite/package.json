@@ -1,6 +1,8 @@
 {
   "name": "@loong/suite",
   "version": "0.0.0",
+  "private": true,
+  "description": "Suite parsing, release materialization, URL/zip install helpers, and runtime context loading for Loong.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,12 +12,22 @@
       "default": "./dist/index.js"
     }
   },
+  "bin": {
+    "loong-suite": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
+  "dependencies": {
+    "@loong/org": "workspace:*"
+  },
   "devDependencies": {
+    "@types/node": "^24.10.1",
     "typescript": "^5.9.3"
   }
 }

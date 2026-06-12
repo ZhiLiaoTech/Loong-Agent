@@ -5,13 +5,16 @@ import { useWorkbenchT } from "../i18n/WorkbenchI18nContext.js";
 import wb from "../workbench.module.css";
 import modelStyles from "../models/ModelsWorkspace.module.css";
 import { useOrgEmployeePage } from "./useOrgEmployeePage.js";
+import { CronTasksTab } from "./components/CronTasksTab.js";
+import { useEmployeeCronJobs } from "./useEmployeeCronJobs.js";
 
-type OrganizationTab = "capability" | "identity";
+type OrganizationTab = "capability" | "identity" | "cron";
 
 export function OrganizationWorkspace() {
   const t = useWorkbenchT();
   const page = useOrgEmployeePage();
   const [activeTab, setActiveTab] = useState<OrganizationTab>("capability");
+  const cron = useEmployeeCronJobs(page.form.profileId);
 
   const handleSave = useCallback(async () => {
     try {
@@ -81,6 +84,15 @@ export function OrganizationWorkspace() {
         >
           {t("org.tabIdentity")}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "cron"}
+          className={activeTab === "cron" ? `${modelStyles.tab} ${modelStyles.tabActive}` : modelStyles.tab}
+          onClick={() => setActiveTab("cron")}
+        >
+          定时任务
+        </button>
       </div>
 
       <section className={modelStyles.tabPanel} role="tabpanel">
@@ -96,6 +108,15 @@ export function OrganizationWorkspace() {
             onChange={patch => page.updateForm(patch)}
             onApplyPositionPreset={() => page.applyPositionPreset()}
             onSave={() => void handleSave()}
+          />
+        ) : activeTab === "cron" ? (
+          <CronTasksTab
+            jobs={cron.jobs}
+            loading={cron.loading}
+            error={cron.error}
+            busyId={cron.busyId}
+            onToggle={job => void cron.toggle(job)}
+            onRefresh={() => void cron.refresh()}
           />
         ) : (
           <OrganizationIdentityTab
