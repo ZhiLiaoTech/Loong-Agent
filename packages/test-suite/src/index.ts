@@ -24,6 +24,7 @@ import {
   buildTurnPrepOptions,
   classifyTierHeuristic,
   canRunToolCallsInParallel,
+  estimateTreatmentEffects,
   createLoongRuntime,
   runTurnWithQueryLoop,
   isParallelSafeTool,
@@ -32,6 +33,8 @@ import {
   isLikelyContextOverflowError,
   normalizeTierConfig,
   pickAssistantDisplayText,
+  recommendTierByCausalEffect,
+  trajectoriesToCausalObservations,
   compactSessionMessagesByTurn,
   estimateModelMessagesChars,
   mergeAgentProfileIntoTurnInput,
@@ -44,11 +47,14 @@ import type { ModelMessage } from "@loong/providers";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget, nextCronRun, parseCronSchedule, toGatewayWebhookCronPayload } from "@loong/cron";
 import {
   createDelegationPlan,
+  computeCriticalPathMs,
   createRuntimeDelegatedTaskExecutor,
   createRuntimeDelegationTool,
   runDelegationPlan,
+  scoreDelegatedTask,
   type LoongRuntimeDelegationToolInput,
 } from "@loong/delegation";
+import { rankEmployeesForTask } from "@loong/org";
 import {
   applyModelCatalogToAgentParams,
   assertLoongGatewayWebhookPayload,
@@ -127,6 +133,7 @@ async function main(): Promise<void> {
     ["cron file store and runner", testCronFileStoreAndRunner],
     ["browser snapshot and form submit tools", testBrowserSnapshotTool],
     ["delegation planner and runner", testDelegationPlannerAndRunner],
+    ["governed scheduling and causal learning", testGovernedSchedulingAndCausalLearning],
     ["browser playwright snapshot tool", testBrowserPlaywrightSnapshotTool],
     ["mcp http transport", testMcpHttpTransport],
     ["browser SSRF redirect block", testBrowserSsrfRedirectBlock],
@@ -788,6 +795,22 @@ async function testDelegationPlannerAndRunner(): Promise<void> {
   assert(executionOrder[0] === "inspect", "delegation should respect dependencies");
   assert(readPath(run.results[2], ["output"]) === "done:summarize", "delegation should preserve executor output");
 
+  const governedPlan = createDelegationPlan([
+    { id: "cheap", title: "Cheap", prompt: "Run cheap task.", expectedDurationMs: 100, risk: "low" },
+    { id: "critical", title: "Critical", prompt: "Run critical path task.", expectedDurationMs: 2000, risk: "high", uncertainty: 0.8 },
+    { id: "dependent", title: "Dependent", prompt: "Run dependent task.", dependsOn: ["critical"], expectedDurationMs: 3000 },
+  ]);
+  assert(computeCriticalPathMs("critical", governedPlan) > computeCriticalPathMs("cheap", governedPlan), "critical-path scoring should include downstream duration");
+  const governedOrder: string[] = [];
+  const governedRun = await runDelegationPlan(governedPlan, async task => {
+    governedOrder.push(task.id);
+    return task.id;
+  }, { maxConcurrency: 1, scheduler: "governance-aware" });
+  assert(governedRun.status === "ok", "governed delegation run should complete");
+  assert(governedOrder[0] === "critical", `governance-aware scheduler should prioritize critical path first, got ${governedOrder.join(",")}`);
+  const criticalSchedule = scoreDelegatedTask(governedPlan.tasks[1]!, governedPlan);
+  assert(criticalSchedule.priority > 0 && criticalSchedule.reason.includes("criticalPathMs"), "task scoring should expose priority reasons");
+
   const runtimeInputs: LoongTurnInput[] = [];
   const runtimeExecutor = createRuntimeDelegatedTaskExecutor({
     runtime: {
@@ -957,6 +980,113 @@ async function testDelegationPlannerAndRunner(): Promise<void> {
     cycleRejected = true;
   }
   assert(cycleRejected, "delegation planner should reject dependency cycles");
+}
+
+async function testGovernedSchedulingAndCausalLearning(): Promise<void> {
+  const base = {
+    sessionId: "causal-session",
+    source: "api" as const,
+    userMessage: "analyze this task",
+    createdAt: "2026-05-17T10:00:00.000Z",
+    completedAt: "2026-05-17T10:00:02.000Z",
+    workspace: "/tmp/loong",
+    events: [],
+  };
+  const records = [
+    {
+      ...base,
+      runId: "deep-1",
+      status: "ok" as const,
+      assistantMessage: "done",
+      usage: { costUsd: 0.02 },
+      metadata: { tier: "deep", delegationTaskType: "code-review", delegationTaskRisk: "high" },
+    },
+    {
+      ...base,
+      runId: "deep-2",
+      status: "ok" as const,
+      assistantMessage: "done",
+      usage: { costUsd: 0.02 },
+      metadata: { tier: "deep", delegationTaskType: "code-review", delegationTaskRisk: "high" },
+    },
+    {
+      ...base,
+      runId: "fast-1",
+      status: "error" as const,
+      completedAt: "2026-05-17T10:00:01.000Z",
+      error: "missed issue",
+      usage: { costUsd: 0.001 },
+      metadata: { tier: "fast", delegationTaskType: "code-review", delegationTaskRisk: "high" },
+    },
+    {
+      ...base,
+      runId: "fast-2",
+      status: "error" as const,
+      completedAt: "2026-05-17T10:00:01.000Z",
+      error: "missed issue",
+      usage: { costUsd: 0.001 },
+      metadata: { tier: "fast", delegationTaskType: "code-review", delegationTaskRisk: "high" },
+    },
+  ];
+  const observations = trajectoriesToCausalObservations(records, {
+    contextKeys: ["taskType", "taskRisk"],
+    minSamples: 2,
+  });
+  const estimates = estimateTreatmentEffects(observations, "tier", {
+    contextKeys: ["taskType", "taskRisk"],
+    minSamples: 2,
+  });
+  const deep = estimates.find(estimate => estimate.treatment === "deep");
+  assert(deep !== undefined && deep.effect > 0, "causal estimator should find positive deep-tier effect");
+  const tier = recommendTierByCausalEffect(observations, "standard", {
+    contextKeys: ["taskType", "taskRisk"],
+    minSamples: 2,
+  });
+  assert(tier.tier === "deep", `causal tier recommendation should prefer deep, got ${tier.tier}`);
+
+  const ranked = rankEmployeesForTask({
+    defaultEmployeeId: "writer",
+    employees: [
+      {
+        id: "writer",
+        displayName: "Writer",
+        profileId: "writer",
+        positionId: "writer",
+        unitId: "research",
+        status: "active",
+        toolPolicyId: "writer-policy",
+      },
+      {
+        id: "reviewer",
+        displayName: "Reviewer",
+        profileId: "reviewer",
+        positionId: "reviewer",
+        unitId: "research",
+        status: "active",
+        toolPolicyId: "reviewer-policy",
+        budget: { tierDefault: "deep", maxDelegationDepth: 2 },
+      },
+    ],
+  }, {
+    type: "code-review",
+    requiredRole: "reviewer",
+    requiredCapabilities: ["review", "static-analysis"],
+    risk: "high",
+    requiredTier: "deep",
+  }, {
+    capabilities: {
+      byPositionId: {
+        reviewer: ["review", "static-analysis"],
+        writer: ["draft"],
+      },
+    },
+    trajectoryStats: [
+      { employeeId: "writer", taskType: "code-review", attempts: 4, successes: 1, avgLatencyMs: 30_000, avgCostUsd: 0.01 },
+      { employeeId: "reviewer", taskType: "code-review", attempts: 4, successes: 4, avgLatencyMs: 20_000, avgCostUsd: 0.02 },
+    ],
+  });
+  assert(ranked[0]?.employeeId === "reviewer", `agent matching should prefer reviewer, got ${ranked[0]?.employeeId}`);
+  assert(ranked[0]?.reasons.some(reason => reason.startsWith("success=")), "agent matching should explain trajectory success contribution");
 }
 
 async function testAnthropicProviderToolUse(): Promise<void> {
@@ -1345,7 +1475,3 @@ main().catch(error => {
   process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
   process.exitCode = 1;
 });
-
-
-
-

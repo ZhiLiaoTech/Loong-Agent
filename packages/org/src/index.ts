@@ -40,6 +40,18 @@ export {
 export { isOrgApprovalReason, parseApprovalChainId, stripApprovalPrefix } from "./approval-reason.js";
 export { resolveApprovalAssignee, type ApprovalAssignee } from "./approval-routing.js";
 export { resolveEmployeeForMessage, type EmployeeRouteResult } from "./employee-routing.js";
+export {
+  rankEmployeesForTask,
+  resolveBestEmployeeForTask,
+  scoreEmployeeForTask,
+  type AgentCapabilityIndex,
+  type AgentLoadSnapshot,
+  type AgentMatchOptions,
+  type AgentMatchScore,
+  type AgentMatchWeights,
+  type AgentTaskProfile,
+  type AgentTrajectoryStats,
+} from "./agent-matching.js";
 export { buildEmployeeMetadata, mergeEmployeeIntoAgentParams } from "./agent-context.js";
 
 export {

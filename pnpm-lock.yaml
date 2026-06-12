@@ -435,6 +435,9 @@ importers:
       '@loong/model-catalog':
         specifier: workspace:*
         version: link:../model-catalog
+      '@loong/org':
+        specifier: workspace:*
+        version: link:../org
       '@loong/providers':
         specifier: workspace:*
         version: link:../providers

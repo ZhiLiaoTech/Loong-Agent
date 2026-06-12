@@ -19,6 +19,7 @@
     "@loong/gateway": "workspace:*",
     "@loong/memory": "workspace:*",
     "@loong/model-catalog": "workspace:*",
+    "@loong/org": "workspace:*",
     "@loong/providers": "workspace:*",
     "@loong/security": "workspace:*",
     "@loong/suite": "workspace:*",

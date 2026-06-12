@@ -142,3 +142,16 @@ export {
   type RunTurnWithQueryLoopOptions,
   type RunTurnWithQueryLoopResult,
 } from "./session-runner.js";
+export {
+  estimateTreatmentEffects,
+  recommendTierByCausalEffect,
+  recommendTreatmentByCausalEffect,
+  trajectoriesToCausalObservations,
+  trajectoryToCausalObservation,
+  type CausalLearningOptions,
+  type CausalObservation,
+  type CausalOutcome,
+  type CausalTreatmentKey,
+  type TreatmentEffectEstimate,
+  type TreatmentRecommendation,
+} from "./causal-learning.js";
