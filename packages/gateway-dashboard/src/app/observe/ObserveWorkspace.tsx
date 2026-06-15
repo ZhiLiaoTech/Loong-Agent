@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom";
 import { useLoongEvents } from "../events/EventsContext.js";
 import { EventsFeed } from "./components/EventsFeed.js";
 import { ApprovalInboxPanel } from "./components/ApprovalInboxPanel.js";
@@ -12,6 +13,8 @@ import { useObservePage } from "./useObservePage.js";
 export function ObserveWorkspace() {
   const page = useObservePage();
   const { events, sseStatus, reconnect } = useLoongEvents();
+  const [searchParams] = useSearchParams();
+  const highlightApprovalId = searchParams.get("approval")?.trim() || undefined;
 
   return (
     <div className={styles.workspace}>
@@ -69,6 +72,7 @@ export function ObserveWorkspace() {
           mineOnly={page.approvalMineOnly}
           approverEmployeeId={page.approverEmployeeId}
           employeeOptions={page.employeeOptions}
+          {...(highlightApprovalId ? { highlightApprovalId } : {})}
           onMineOnlyChange={page.setApprovalMineOnly}
           onApproverChange={page.setApproverEmployeeId}
           onRefresh={() => void page.refreshApprovals()}

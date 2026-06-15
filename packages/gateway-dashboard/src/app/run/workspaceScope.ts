@@ -48,12 +48,12 @@ const CUSTOM_PATHS_KEY = "loong.chat.customScopePaths.v1";
 
 export function loadWorkspaceScopeSelection(): WorkspaceScopeSelection {
   if (typeof globalThis.localStorage === "undefined") {
-    return { kind: "global" };
+    return { kind: "workspace" };
   }
   try {
     const raw = globalThis.localStorage.getItem(SCOPE_STORAGE_KEY);
     if (!raw) {
-      return { kind: "global" };
+      return { kind: "workspace" };
     }
     const parsed = JSON.parse(raw) as Partial<WorkspaceScopeSelection>;
     if (parsed.kind === "workspace" || parsed.kind === "custom" || parsed.kind === "global") {
@@ -65,7 +65,7 @@ export function loadWorkspaceScopeSelection(): WorkspaceScopeSelection {
   } catch {
     // ignore
   }
-  return { kind: "global" };
+  return { kind: "workspace" };
 }
 
 export function saveWorkspaceScopeSelection(selection: WorkspaceScopeSelection): void {

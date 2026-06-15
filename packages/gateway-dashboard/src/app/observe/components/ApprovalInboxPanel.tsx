@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { formatTime, shortId } from "../../shared/format.js";
 import type { ApprovalInboxItem } from "../types.js";
 import styles from "./ApprovalInboxPanel.module.css";
@@ -9,6 +10,7 @@ export function ApprovalInboxPanel({
   mineOnly,
   approverEmployeeId,
   employeeOptions,
+  highlightApprovalId,
   onMineOnlyChange,
   onApproverChange,
   onRefresh,
@@ -21,12 +23,22 @@ export function ApprovalInboxPanel({
   mineOnly: boolean;
   approverEmployeeId: string;
   employeeOptions: readonly { id: string; displayName: string }[];
+  highlightApprovalId?: string;
   onMineOnlyChange: (value: boolean) => void;
   onApproverChange: (employeeId: string) => void;
   onRefresh: () => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
 }) {
+  const highlightRef = useRef<HTMLLIElement | null>(null);
+
+  useEffect(() => {
+    if (!highlightApprovalId) {
+      return;
+    }
+    highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [highlightApprovalId, approvals.length]);
+
   return (
     <section className={styles.card}>
       <div className={styles.head}>
@@ -78,7 +90,11 @@ export function ApprovalInboxPanel({
             ].filter(Boolean).join(" · ");
 
             return (
-              <li key={item.id} className={styles.item}>
+              <li
+                key={item.id}
+                ref={item.id === highlightApprovalId ? highlightRef : undefined}
+                className={`${styles.item}${item.id === highlightApprovalId ? ` ${styles.itemHighlight}` : ""}`}
+              >
                 <strong className={styles.tool}>{item.toolName}</strong>
                 {meta ? <p className={styles.meta}>{meta}</p> : null}
                 {item.reason ? <p className={styles.reason}>{item.reason}</p> : null}

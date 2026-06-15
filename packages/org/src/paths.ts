@@ -2,7 +2,8 @@ import path from "node:path";
 
 export function defaultOrgRoot(cwd: string = process.cwd()): string {
   const configured = process.env.LOONG_ORG_ROOT?.trim();
-  return path.resolve(configured || path.join(cwd, ".loong", "org"));
+  const dataRoot = process.env.LOONG_DATA_ROOT?.trim();
+  return path.resolve(configured || (dataRoot ? path.join(dataRoot, "org") : path.join(cwd, ".loong", "org")));
 }
 
 export function defaultOrgConfigPath(root: string = defaultOrgRoot()): string {

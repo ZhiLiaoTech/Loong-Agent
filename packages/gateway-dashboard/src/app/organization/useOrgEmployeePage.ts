@@ -42,6 +42,41 @@ interface EmployeeListPayload {
   defaultEmployeeId?: string;
 }
 
+interface LoadOrgEmployeeOptions {
+  preferredEmployeeId?: string;
+  preferredProfileId?: string;
+}
+
+function fallbackOrgLabel(id: string): string {
+  if (id === "suites") {
+    return "Suites";
+  }
+  if (id === "suite") {
+    return "Suite";
+  }
+  return id;
+}
+
+function mergeSelectedOrgOptions(
+  units: readonly OrgUnitOption[],
+  positions: readonly OrgPositionOption[],
+  employee: EmployeeListPayload["employees"][number] | undefined,
+): { units: OrgUnitOption[]; positions: OrgPositionOption[] } {
+  const nextUnits = [...units];
+  const nextPositions = [...positions];
+  if (employee?.unitId && !nextUnits.some(unit => unit.id === employee.unitId)) {
+    nextUnits.push({ id: employee.unitId, name: fallbackOrgLabel(employee.unitId) });
+  }
+  if (employee?.positionId && !nextPositions.some(position => position.id === employee.positionId)) {
+    nextPositions.push({
+      id: employee.positionId,
+      name: fallbackOrgLabel(employee.positionId),
+      unitId: employee.unitId,
+    });
+  }
+  return { units: nextUnits, positions: nextPositions };
+}
+
 function applyWorkspaceToForm(
   base: OrgEmployeeFormState,
   workspace: Awaited<ReturnType<typeof fetchWorkspaceSnapshot>>,
@@ -176,7 +211,7 @@ export function useOrgEmployeePage() {
   const [saving, setSaving] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options: LoadOrgEmployeeOptions = {}) => {
     setLoading(true);
     setError(null);
     try {
@@ -200,15 +235,30 @@ export function useOrgEmployeePage() {
 
       const profiles = agentPayload.profiles ?? [];
       const employees = employeePayload.employees ?? [];
-      const localEmployee = resolveLocalEmployeeRecord(employees, employeePayload.defaultEmployeeId);
-      const localProfile = resolveLocalProfile(
-        profiles,
-        agentPayload.defaultProfileId,
-        localEmployee?.profileId,
+      const preferredEmployeeId = options.preferredEmployeeId?.trim();
+      const preferredProfileId = options.preferredProfileId?.trim();
+      const preferredEmployee = preferredEmployeeId
+        ? employees.find(entry => entry.id === preferredEmployeeId)
+        : undefined;
+      const localEmployee = preferredEmployee
+        ?? resolveLocalEmployeeRecord(employees, employeePayload.defaultEmployeeId);
+      const localProfile =
+        (preferredProfileId
+          ? profiles.find(entry => entry.id === preferredProfileId)
+          : undefined)
+        ?? resolveLocalProfile(
+          profiles,
+          agentPayload.defaultProfileId,
+          localEmployee?.profileId,
+        );
+      const orgOptions = mergeSelectedOrgOptions(
+        orgPayload.units ?? [],
+        orgPayload.positions ?? [],
+        localEmployee,
       );
 
-      setUnits(orgPayload.units ?? []);
-      setPositions(orgPayload.positions ?? []);
+      setUnits(orgOptions.units);
+      setPositions(orgOptions.positions);
       setPolicies(
         (policyPayload.policies ?? []).map(policy => ({
           id: policy.id,
@@ -231,16 +281,14 @@ export function useOrgEmployeePage() {
         nextForm = formFromSources(localEmployee, localProfile);
       } else if (localProfile) {
         const ids = createDefaultIds(localProfile.name);
-        const orgUnits = orgPayload.units ?? [];
-        const orgPositions = orgPayload.positions ?? [];
         const policyList = policyPayload.policies ?? [];
         nextForm = formFromSources(
           {
             id: ids.employeeId,
             displayName: localProfile.name,
             profileId: localProfile.id,
-            positionId: orgPositions[0]?.id ?? "",
-            unitId: orgPositions[0]?.unitId ?? orgUnits[0]?.id ?? "",
+            positionId: orgOptions.positions[0]?.id ?? "",
+            unitId: orgOptions.positions[0]?.unitId ?? orgOptions.units[0]?.id ?? "",
             status: "active",
             toolPolicyId: policyList[0]?.id ?? "",
           },
@@ -253,8 +301,8 @@ export function useOrgEmployeePage() {
           employeeId: ids.employeeId,
           profileId: ids.profileId,
           displayName: t("org.defaultName"),
-          unitId: orgPayload.units?.[0]?.id ?? "",
-          positionId: orgPayload.positions?.[0]?.id ?? "",
+          unitId: orgOptions.units[0]?.id ?? "",
+          positionId: orgOptions.positions[0]?.id ?? "",
           toolPolicyId: policyPayload.policies?.[0]?.id ?? "",
         };
       }

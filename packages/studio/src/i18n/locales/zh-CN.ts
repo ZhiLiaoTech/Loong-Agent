@@ -14,12 +14,29 @@ export const zhCN: MessageTree = {
 
     connections: "连接",
 
+    observe: "观测",
+
     agents: "助手",
 
     settings: "设置",
 
     about: "关于",
 
+  },
+
+  observe: {
+    title: "观测",
+    lead: "查看运行状态、实时事件、工具审批与记忆候选。",
+    session: "会话 ID",
+    statsRuns: "运行",
+    statsActive: "进行中",
+    statsPending: "待审批",
+    statsEvents: "事件缓冲",
+    approvalsSection: "工具审批",
+    approvalsLead: "Agent 请求执行敏感工具时会出现在这里。",
+    eventsSection: "实时事件",
+    memorySection: "记忆候选",
+    runsSection: "最近运行",
   },
 
   sidebar: {
@@ -192,7 +209,10 @@ export const zhCN: MessageTree = {
       collapse: "收起",
       collapsedSummary: "{count} 个步骤",
       tierSelected: "选择模型档位",
-      readingFile: "正在读取",
+      thinking: "思考过程",
+      loadingSkill: "加载技能",
+      improvingSkill: "优化技能",
+      readingFile: "阅读文件",
       searchingFile: "搜索文件",
       patchingFile: "修改文件",
       runningCommand: "执行命令",
@@ -204,6 +224,15 @@ export const zhCN: MessageTree = {
       awaitingApproval: "等待批准…",
       approvalGranted: "已批准",
       approvalDenied: "已拒绝",
+    },
+
+    approval: {
+      title: "需要工具审批",
+      approve: "批准",
+      reject: "拒绝",
+      inbox: "打开收件箱",
+      resolving: "处理中…",
+      notificationTitle: "Loong 工具审批",
     },
 
   },
@@ -443,6 +472,50 @@ export const zhCN: MessageTree = {
     bootstrapSuccess: "示例组织已创建，请继续完善配置。",
 
     bootstrapSkipped: "组织已存在，未重复创建。",
+
+    suite: {
+
+      importTitle: "导入 Suite",
+
+      importHint: "将本地 suite 工作区导入 Gateway，并注册对应的 profile、数字员工、权限、技能和定时任务。",
+
+      pathLabel: "Suite 目录",
+
+      pathPlaceholder: "请选择包含 suite.json 的目录",
+
+      browse: "浏览目录",
+
+      browseTitle: "选择 Suite 目录",
+
+      browseHint: "浏览 Gateway 所在机器的本地目录，选择包含 suite.json 的文件夹。",
+
+      browseUp: "上一级",
+
+      browseLoading: "正在读取目录...",
+
+      browseEmpty: "此目录没有子目录",
+
+      browseError: "无法读取此目录",
+
+      browseSelect: "选择此目录",
+
+      pathRequired: "请输入包含 suite.json 的本地目录。",
+
+      overwrite: "覆盖已存在的同版本 release",
+
+      importing: "导入中...",
+
+      importAction: "导入 Suite",
+
+      importComplete: "导入完成",
+
+      skillsCopied: "技能",
+
+      cronsImported: "定时任务",
+
+      warnings: "警告",
+
+    },
 
     capability: {
 

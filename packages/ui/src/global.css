@@ -181,6 +181,22 @@ textarea {
   width: 56px;
 }
 
+.loong-sidebar--icon-only {
+  width: 56px;
+}
+
+.loong-sidebar--icon-only .loong-sidebar-header {
+  flex-direction: column;
+  padding: var(--space-2) var(--space-1);
+}
+
+.loong-sidebar--icon-only .loong-sidebar-brand {
+  flex: 0;
+  width: 100%;
+  padding: 0;
+  justify-content: center;
+}
+
 .loong-sidebar-header {
   display: flex;
   align-items: center;
@@ -286,6 +302,31 @@ textarea {
   color: currentColor;
 }
 
+.loong-sidebar-item-icon-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loong-sidebar-item-badge {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--loong-error);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--loong-surface-1);
+}
+
 .loong-sidebar-item-icon svg {
   display: block;
   width: 18px;
@@ -323,6 +364,49 @@ textarea {
   width: 3px;
   border-radius: 999px;
   background: var(--loong-accent);
+}
+
+.loong-sidebar--icon-only .loong-sidebar-item[data-tooltip]:hover::after,
+.loong-sidebar--icon-only .loong-sidebar-item[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--loong-surface-2);
+  border: 1px solid var(--loong-border);
+  color: var(--loong-text);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+
+.loong-icon-tooltip {
+  position: relative;
+}
+
+.loong-icon-tooltip[data-tooltip]:hover::after,
+.loong-icon-tooltip[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--loong-surface-2);
+  border: 1px solid var(--loong-border);
+  color: var(--loong-text);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
 }
 
 .loong-sidebar-footer-nav {

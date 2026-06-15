@@ -16,4 +16,5 @@ export {
   type SidebarProps,
   type SidebarStatus,
   type SidebarStatusTone,
+  type SidebarVariant,
 } from "./layout/Sidebar.js";

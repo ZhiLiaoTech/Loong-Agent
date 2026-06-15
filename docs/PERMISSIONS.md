@@ -5,23 +5,32 @@ Loong should treat every tool call as a policy decision.
 ## Default Policy
 
 - Reads inside the workspace: allow.
-- Writes inside the workspace: ask until trusted.
+- Writes inside the workspace: allow when a workspace context is active (turn
+  workspace path, Studio scope metadata, or profile workspace root).
 - Shell commands: ask by default.
 - Sandbox commands: ask by default, even when limited to read-only command
   allowlists, because Docker and SSH targets can cross trust boundaries.
-- Network access: ask by default.
+- Network access: allow within an active workspace context; ask otherwise.
 - Files outside the workspace: ask or deny depending on profile.
 - Destructive commands: deny unless explicitly overridden.
 
 ## Current CLI Policy
 
-`loong agent` enables read-only workspace tools by default. The `file_patch`
-write tool and memory candidate promotion/rejection tools are registered with
-an `ask` policy. In an interactive terminal, the CLI prompts the user before
-execution; in non-interactive mode, unresolved `ask` decisions are skipped and
-reported back to the model. Passing `--allow-write` explicitly allows
-`file_patch`, skill authoring tools, and memory candidate promotion/rejection
-without prompting.
+`loong agent` enables read-only workspace tools by default. Write and network
+tools are allowed automatically when the turn has workspace context (for
+example `loong agent` sets `workspace` to the current working directory).
+Org policy `deny` decisions still win. Passing `--allow-write` keeps the
+previous explicit opt-in behavior for turns without workspace context.
+
+Interactive terminal sessions prompt for unresolved `ask` decisions; Gateway
+and other non-interactive clients queue unresolved `ask` decisions in the
+approval inbox (`approval.list`) and emit a `permission` SSE event with phase
+`queued`. Studio and the gateway dashboard show inline approve/reject cards in
+chat; Desktop also raises a system notification that deep-links to Observe.
+Org policy `deny` decisions still win.
+
+`loong gateway` enables workspace write access by default. Set
+`LOONG_ALLOW_WRITE=0` or pass `--no-allow-write` to restore the stricter default.
 
 `delegation_run` is registered as an allowlisted orchestration tool in
 `loong agent`. It only creates bounded child turns through the current

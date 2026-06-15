@@ -1,5 +1,5 @@
 /** Host surface exposed to Studio. */
-export type HostSurface = "browser";
+export type HostSurface = "browser" | "desktop";
 
 export interface HostCapabilities {
   surface: HostSurface;

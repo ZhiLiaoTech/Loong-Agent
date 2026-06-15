@@ -6,6 +6,7 @@ coverage/
 .cache/
 .tmp/
 release/
+packages/desktop/src-tauri/resources/runtime/
 .dragon/
 *.log
 .env

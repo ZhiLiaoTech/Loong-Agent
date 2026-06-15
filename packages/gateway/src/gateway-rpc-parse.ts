@@ -24,6 +24,7 @@ import type {
   GatewayModelConfigSaveParams,
   GatewayModelProviderConfig,
   GatewayModelProviderType,
+  GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
   GatewayTierClassifyParams,
@@ -269,6 +270,13 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
       type: "tool.invoke",
       id: value.id,
       params: parseToolInvokeParams(value.params),
+    };
+  }
+  if (value.type === "suite.install") {
+    return {
+      type: "suite.install",
+      id: value.id,
+      params: parseSuiteInstallParams(value.params),
     };
   }
   if (value.type === "suite.release.install") {
@@ -602,6 +610,15 @@ function parseApprovalListParams(value: unknown): GatewayApprovalListParams {
   if (typeof value.assignedApproverId === "string" && value.assignedApproverId.trim()) {
     params.assignedApproverId = normalizeShortText(value.assignedApproverId, "assignedApproverId", 120);
   }
+  if (typeof value.runId === "string" && value.runId.trim()) {
+    params.runId = normalizeShortText(value.runId, "runId", 120);
+  }
+  if (typeof value.toolCallId === "string" && value.toolCallId.trim()) {
+    params.toolCallId = normalizeShortText(value.toolCallId, "toolCallId", 120);
+  }
+  if (typeof value.sessionId === "string" && value.sessionId.trim()) {
+    params.sessionId = normalizeShortText(value.sessionId, "sessionId", 120);
+  }
   return params;
 }
 
@@ -840,6 +857,10 @@ function parseToolInvokeParams(value: unknown): GatewayToolInvokeParams {
     params.metadata = value.metadata;
   }
   return params;
+}
+
+function parseSuiteInstallParams(value: unknown): GatewaySuiteInstallParams {
+  return parseSuiteReleaseInstallParams(value);
 }
 
 function parseSuiteReleaseInstallParams(value: unknown): GatewaySuiteReleaseInstallParams {

@@ -36,3 +36,17 @@ export function readWorkspaceScopePathFromMetadata(
   const raw = metadata.workspaceScopePath;
   return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
 }
+
+/** True when a turn is scoped to a workspace (path, profile root, or Studio scope metadata). */
+export function hasWorkspacePermissionContext(
+  invocation: Pick<{ workspace?: string; metadata?: Record<string, unknown> }, "workspace" | "metadata">,
+): boolean {
+  if (invocation.workspace?.trim()) {
+    return true;
+  }
+  const metadata = invocation.metadata;
+  if (readWorkspaceScopePathFromMetadata(metadata)) {
+    return true;
+  }
+  return readWorkspaceScopeFromMetadata(metadata) !== undefined;
+}

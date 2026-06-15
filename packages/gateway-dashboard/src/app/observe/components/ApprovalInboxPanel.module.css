@@ -85,6 +85,12 @@
   margin-bottom: var(--space-2);
 }
 
+.itemHighlight {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 24%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+}
+
 .tool {
   display: block;
   font-size: var(--text-sm);
@@ -123,14 +129,14 @@
 }
 
 .primary {
-  border: 1px solid var(--accent, #2f6fed);
-  background: var(--accent, #2f6fed);
-  color: #fff;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent, #fff);
 }
 
 .danger {
-  border: 1px solid #d9bbbb;
-  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
   color: var(--danger);
 }
 

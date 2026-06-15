@@ -9,7 +9,7 @@ export type RateLimitRouteClass = "health" | "rpc" | "webhook" | "events" | "web
 
 const DEFAULT_LIMITS: Record<RateLimitRouteClass, RateLimitConfig> = {
   health: { windowMs: 60_000, maxRequests: 300 },
-  rpc: { windowMs: 60_000, maxRequests: 120 },
+  rpc: { windowMs: 60_000, maxRequests: 1_200 },
   webhook: { windowMs: 60_000, maxRequests: 60 },
   events: { windowMs: 60_000, maxRequests: 30 },
   websocket: { windowMs: 60_000, maxRequests: 20 },
@@ -24,6 +24,10 @@ export class SlidingWindowRateLimiter {
   }
 
   tryConsume(route: RateLimitRouteClass, clientKey: string): boolean {
+    if (isLoopbackClientKey(clientKey)) {
+      return true;
+    }
+
     const config = this.#limits[route];
     const bucketKey = `${route}:${clientKey}`;
     const now = Date.now();
@@ -45,6 +49,17 @@ export function clientRateLimitKey(request: IncomingMessage): string {
     return forwarded.split(",")[0]!.trim();
   }
   return request.socket.remoteAddress ?? "unknown";
+}
+
+export function isLoopbackClientKey(clientKey: string): boolean {
+  const normalized = clientKey.trim().toLowerCase();
+  return (
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized === "localhost" ||
+    normalized === "::ffff:127.0.0.1" ||
+    normalized.startsWith("127.")
+  );
 }
 
 export function classifyHttpRoute(method: string | undefined, pathname: string): RateLimitRouteClass | undefined {

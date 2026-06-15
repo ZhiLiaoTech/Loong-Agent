@@ -6,9 +6,10 @@ import wb from "../workbench.module.css";
 import modelStyles from "../models/ModelsWorkspace.module.css";
 import { useOrgEmployeePage } from "./useOrgEmployeePage.js";
 import { CronTasksTab } from "./components/CronTasksTab.js";
+import { SuiteImportTab } from "./components/SuiteImportTab.js";
 import { useEmployeeCronJobs } from "./useEmployeeCronJobs.js";
 
-type OrganizationTab = "capability" | "identity" | "cron";
+type OrganizationTab = "capability" | "identity" | "suite" | "cron";
 
 export function OrganizationWorkspace() {
   const t = useWorkbenchT();
@@ -93,6 +94,15 @@ export function OrganizationWorkspace() {
         >
           定时任务
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "suite"}
+          className={activeTab === "suite" ? `${modelStyles.tab} ${modelStyles.tabActive}` : modelStyles.tab}
+          onClick={() => setActiveTab("suite")}
+        >
+          Suite
+        </button>
       </div>
 
       <section className={modelStyles.tabPanel} role="tabpanel">
@@ -117,6 +127,19 @@ export function OrganizationWorkspace() {
             busyId={cron.busyId}
             onToggle={job => void cron.toggle(job)}
             onRefresh={() => void cron.refresh()}
+          />
+        ) : activeTab === "suite" ? (
+          <SuiteImportTab
+            onImported={result => {
+              const options: NonNullable<Parameters<typeof page.load>[0]> = {};
+              if (result.orgEmployeeId) {
+                options.preferredEmployeeId = result.orgEmployeeId;
+              }
+              if (result.profileId) {
+                options.preferredProfileId = result.profileId;
+              }
+              return page.load(options);
+            }}
           />
         ) : (
           <OrganizationIdentityTab

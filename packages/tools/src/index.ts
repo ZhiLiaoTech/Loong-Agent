@@ -99,6 +99,7 @@ export {
   readWorkspaceScopeFromMetadata,
   readWorkspaceScopePathFromMetadata,
   isStudioScopedWebTurn,
+  hasWorkspacePermissionContext,
   type WorkspaceScopeKind,
 } from "./workspace-scope.js";
 export {

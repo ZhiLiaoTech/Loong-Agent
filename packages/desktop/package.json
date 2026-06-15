@@ -1,0 +1,18 @@
+{
+  "name": "@loong/desktop",
+  "version": "0.2.15",
+  "private": true,
+  "description": "Loong desktop surface (Tauri 2 + @loong/studio)",
+  "scripts": {
+    "inspect": "node ../../scripts/package-desktop-release.mjs inspect",
+    "prepare:runtime": "node ../../scripts/package-desktop-release.mjs prepare-runtime",
+    "dev": "tauri dev",
+    "build": "node ../../scripts/package-desktop-release.mjs build --profile build",
+    "release": "node ../../scripts/package-desktop-release.mjs build --profile release",
+    "check": "node -e \"console.log('desktop check: build uses package-desktop-release.mjs')\""
+  },
+  "devDependencies": {
+    "@loong/studio": "workspace:*",
+    "@tauri-apps/cli": "^2.5.0"
+  }
+}

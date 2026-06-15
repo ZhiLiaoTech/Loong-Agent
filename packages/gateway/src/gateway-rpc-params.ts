@@ -138,6 +138,9 @@ export type GatewayToolPolicySaveParams = ToolPolicyDocument;
 export interface GatewayApprovalListParams {
   status?: ApprovalStatus;
   assignedApproverId?: string;
+  runId?: string;
+  toolCallId?: string;
+  sessionId?: string;
 }
 
 export interface GatewayApprovalResolveParams {
@@ -181,6 +184,8 @@ export interface GatewaySuiteReleaseInstallParams {
   installedAt?: string;
   maxTextFileBytes?: number;
 }
+
+export interface GatewaySuiteInstallParams extends GatewaySuiteReleaseInstallParams {}
 
 export interface GatewaySuiteInstanceMaterializeParams {
   tenantId: string;

@@ -1,4 +1,12 @@
-export type SidebarIconName = "chat" | "models" | "org" | "connections" | "agents" | "settings" | "about";
+export type SidebarIconName =
+  | "chat"
+  | "models"
+  | "org"
+  | "observe"
+  | "connections"
+  | "agents"
+  | "settings"
+  | "about";
 
 const ICON_PROPS = {
   width: 18,
@@ -36,6 +44,13 @@ export function SidebarNavIcon({ name }: { name: SidebarIconName }) {
           <path d="M3 21h18" />
           <path d="M5 21V7l7-4 7 4v14" />
           <path d="M9 21v-6h6v6" />
+        </svg>
+      );
+    case "observe":
+      return (
+        <svg {...ICON_PROPS} aria-hidden>
+          <path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7S2.5 12 2.5 12Z" />
+          <circle cx="12" cy="12" r="2.5" />
         </svg>
       );
     case "connections":

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ChatActivityStep, ChatTurn } from "@dashboard/app/run/types.js";
+import { visibleAssistantReplyText } from "@dashboard/app/run/activity/timelineState.js";
 import { AssistantActivityPanel } from "./AssistantActivityPanel.js";
 import styles from "./ChatThread.module.css";
 
@@ -52,10 +53,12 @@ export function ChatThread({
         {turns.map((turn, index) => {
           const isUser = turn.role === "user";
           const isLast = index === turns.length - 1;
-          const showThinking = busy && isLast && !isUser;
+          const showThinking = busy && isLast && !isUser && !turn.text.trim();
           const activities = turn.activities ?? [];
-          const hasActivities = showActivities && !isUser && activities.length > 0;
+          const timeline = turn.timeline ?? [];
+          const hasActivities = showActivities && !isUser && (activities.length > 0 || timeline.length > 0);
           const expanded = turn.activitiesExpanded !== false;
+          const replyText = visibleAssistantReplyText(turn.text, timeline);
           return (
             <div
               key={`${turn.role}-${index}-${turn.streaming ? "s" : "d"}`}
@@ -72,23 +75,10 @@ export function ChatThread({
                 </span>
               )}
               <div className={isUser ? styles.userContent : styles.assistantContent}>
-                <span
-                  className={
-                    isUser
-                      ? styles.messageUser
-                      : `${styles.messageAssistant}${turn.streaming ? ` ${styles.streaming}` : ""}`
-                  }
-                >
-                  {turn.text}
-                  {turn.errorDetail ? (
-                    <span className={styles.errorDetail} role="alert">
-                      {turn.errorDetail}
-                    </span>
-                  ) : null}
-                </span>
                 {hasActivities ? (
                   <AssistantActivityPanel
                     steps={activities}
+                    timeline={timeline}
                     expanded={expanded}
                     collapsedSummary={
                       activityCollapsedSummary
@@ -100,6 +90,22 @@ export function ChatThread({
                     onToggleExpanded={() => onToggleTurnActivities?.(index)}
                     {...(onActivityStepClick ? { onStepClick: onActivityStepClick } : {})}
                   />
+                ) : null}
+                {replyText || turn.errorDetail ? (
+                  <span
+                    className={
+                      isUser
+                        ? styles.messageUser
+                        : `${styles.messageAssistant}${turn.streaming ? ` ${styles.streaming}` : ""}`
+                    }
+                  >
+                    {replyText}
+                    {turn.errorDetail ? (
+                      <span className={styles.errorDetail} role="alert">
+                        {turn.errorDetail}
+                      </span>
+                    ) : null}
+                  </span>
                 ) : null}
               </div>
               {isUser ? <span className={styles.senderUser}>{userLabel}</span> : null}

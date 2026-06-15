@@ -38,8 +38,12 @@ function isTrustedGatewayOrigin(origin: string): boolean {
     const protocol = url.protocol.toLowerCase();
     const localhostHost =
       hostname === "127.0.0.1"
-      || hostname === "localhost";
-    return localhostHost && (protocol === "http:" || protocol === "https:");
+      || hostname === "localhost"
+      || hostname.endsWith(".localhost");
+    if (localhostHost && (protocol === "http:" || protocol === "https:")) {
+      return true;
+    }
+    return protocol === "tauri:" && localhostHost;
   } catch {
     return false;
   }

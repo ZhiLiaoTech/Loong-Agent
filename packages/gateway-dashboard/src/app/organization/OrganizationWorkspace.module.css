@@ -67,6 +67,157 @@
   padding-top: var(--space-2);
 }
 
+.inlineCheck {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.inlineCheck input {
+  accent-color: var(--accent);
+}
+
+.pathPickerRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+.pathPickerRow input {
+  width: 100%;
+}
+
+.directoryBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, #000 50%, transparent);
+}
+
+.directoryDialog {
+  width: min(92vw, 620px);
+  max-height: min(82vh, 680px);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.directoryTitle {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+}
+
+.directoryHint {
+  margin: var(--space-2) 0 var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+  color: var(--muted);
+}
+
+.directoryToolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.directoryCurrentPath {
+  min-width: 0;
+  padding: 8px var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directoryList {
+  flex: 1;
+  min-height: 240px;
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.directoryStatus,
+.directoryError {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+}
+
+.directoryStatus {
+  color: var(--muted);
+}
+
+.directoryError {
+  color: var(--danger);
+}
+
+.directoryRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+  width: 100%;
+  padding: 10px var(--space-3);
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.directoryRow:last-child {
+  border-bottom: 0;
+}
+
+.directoryRow:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.directoryIcon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.directoryName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+
+.directoryActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
 .sectionHeadRow {
   display: flex;
   align-items: flex-start;
@@ -167,4 +318,19 @@
   font-size: var(--text-xs);
   line-height: var(--line-height-normal);
   color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .pathPickerRow,
+  .directoryToolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .directoryActions {
+    flex-direction: column-reverse;
+  }
+
+  .directoryActions button {
+    width: 100%;
+  }
 }

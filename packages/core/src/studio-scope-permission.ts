@@ -1,10 +1,12 @@
 import type { ToolDefinition, ToolInvocation, ToolPermissionResult } from "@loong/tools";
-import { isStudioScopedWebTurn, readWorkspaceScopeFromMetadata } from "@loong/tools";
+import { hasWorkspacePermissionContext } from "@loong/tools";
 
 const SCOPED_TOOL_NAMES = new Set([
   "file_read",
   "file_search",
   "file_patch",
+  "file_write",
+  "web_search",
   "browser_snapshot",
   "browser_form_submit",
   "browser_playwright_snapshot",
@@ -12,7 +14,7 @@ const SCOPED_TOOL_NAMES = new Set([
   "skill_improve",
 ]);
 
-function isScopedStudioTool(tool: ToolDefinition): boolean {
+function isWorkspaceScopedTool(tool: ToolDefinition): boolean {
   if (SCOPED_TOOL_NAMES.has(tool.name)) {
     return true;
   }
@@ -23,7 +25,7 @@ function isScopedStudioTool(tool: ToolDefinition): boolean {
   return caps.includes("read") || caps.includes("write") || caps.includes("network");
 }
 
-export function evaluateStudioWorkspaceScopePermission(
+export function evaluateWorkspaceScopePermission(
   tool: ToolDefinition,
   invocation: ToolInvocation,
   baseline: ToolPermissionResult,
@@ -31,18 +33,17 @@ export function evaluateStudioWorkspaceScopePermission(
   if (baseline.decision === "deny") {
     return baseline;
   }
-  if (!isStudioScopedWebTurn(invocation.metadata)) {
+  if (!hasWorkspacePermissionContext(invocation)) {
     return baseline;
   }
-  const scope = readWorkspaceScopeFromMetadata(invocation.metadata);
-  if (!scope) {
-    return baseline;
-  }
-  if (!isScopedStudioTool(tool)) {
+  if (!isWorkspaceScopedTool(tool)) {
     return baseline;
   }
   return {
     decision: "allow",
-    reason: `Allowed by Studio workspace scope (${scope}).`,
+    reason: "Allowed by workspace scope (read, write, and network within the active workspace).",
   };
 }
+
+/** @deprecated Use {@link evaluateWorkspaceScopePermission}. */
+export const evaluateStudioWorkspaceScopePermission = evaluateWorkspaceScopePermission;

@@ -4,7 +4,7 @@ import {
   createLoongRuntime,
   mergeAiSummarizationLayers,
   mergeSessionCompactionLayers,
-  evaluateStudioWorkspaceScopePermission,
+  evaluateWorkspaceScopePermission,
   type LoongAgentRuntime,
   type LoongLifecycleHook,
   type LoongPermissionHandler,
@@ -36,6 +36,7 @@ import { createProviderRegistry, type ModelProvider } from "@loong/providers";
 import {
   createToolPermissionEngine,
   createToolRegistry,
+  hasWorkspacePermissionContext,
   type ToolDefinition,
   type ToolPermissionEngine,
   type ToolPermissionRule,
@@ -163,6 +164,18 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
             { toolName: "trajectory_list", decision: "allow" as const, reason: "CLI agent read-only trajectory listing tool." },
             { toolName: "trajectory_get", decision: "allow" as const, reason: "CLI agent read-only trajectory loading tool." },
             { toolName: "delegation_run", decision: "allow" as const, reason: "CLI agent bounded delegation execution tool." },
+            {
+              capability: "write",
+              decision: "allow" as const,
+              reason: "Workspace-scoped write access.",
+              when: context => hasWorkspacePermissionContext(context.invocation),
+            },
+            {
+              capability: "network",
+              decision: "allow" as const,
+              reason: "Workspace-scoped network access.",
+              when: context => hasWorkspacePermissionContext(context.invocation),
+            },
             ...pluginToolPermissionRules(pluginTools),
             ...(options.allowWrite
               ? [
@@ -209,7 +222,9 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
         ? {
             ...(permissionEngine ? { permissionEngine } : {}),
             systemPrompt: [
-              "You are Loong, a TypeScript-native local-first coding agent.",
+              "Runtime/tooling guidance for the active agent profile.",
+              "The active agent profile or suite system prompt defines your identity, audience, and domain capabilities.",
+              "When asked what you can do, answer from the active profile or suite definition first; mention Loong runtime tools only as implementation support when relevant.",
               "Use tools when they help inspect the current workspace.",
               "Use skill_list and skill_load to discover and apply configured Loong skills when they are relevant.",
               "Human-readable Markdown memory files are injected automatically when present.",
@@ -227,9 +242,7 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
               options.allowExec
                 ? "Use shell_run to execute arbitrary commands (build, test, install, scripts) inside the workspace; each call requires approval. Prefer the read-only shell_exec/sandbox_exec for inspection."
                 : undefined,
-              options.allowWrite
-                ? "You may use file_patch for exact text replacements, file_write to create or overwrite files, and skill_create/skill_improve for reviewable skill updates when requested."
-                : "Write tools require CLI approval and may be denied.",
+              "You may use file_patch for exact text replacements, file_write to create or overwrite files, and skill_create/skill_improve for reviewable skill updates when requested.",
               "Summarize findings clearly and mention any tool errors.",
             ].filter(Boolean).join("\n"),
             ...(options.permissionHandler ? { permissionHandler: options.permissionHandler } : {}),
@@ -261,12 +274,12 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
                 tool,
                 invocation,
               );
-              return evaluateStudioWorkspaceScopePermission(tool, invocation, org);
+              return evaluateWorkspaceScopePermission(tool, invocation, org);
             },
           }
         : {
             permissionEvaluator: async (tool, invocation, baseline) =>
-              evaluateStudioWorkspaceScopePermission(tool, invocation, baseline),
+              evaluateWorkspaceScopePermission(tool, invocation, baseline),
           }),
     };
 

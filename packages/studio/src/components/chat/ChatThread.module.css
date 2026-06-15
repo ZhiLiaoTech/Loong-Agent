@@ -45,17 +45,21 @@
   text-align: right;
 }
 
-.assistantContent,
-.userContent {
+.assistantContent {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
   width: 100%;
   min-width: 0;
 }
 
 .userContent {
-  justify-content: flex-end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: min(75%, 720px);
+  min-width: 0;
 }
 
 .senderRow {
@@ -85,17 +89,22 @@
 }
 
 .messageAssistant {
-  flex: 1;
-  min-width: 0;
-  max-width: min(72%, 640px);
+  width: 100%;
+  max-width: none;
   color: var(--loong-text, #eaeaf2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .messageUser {
-  max-width: min(75%, 640px);
+  display: block;
+  max-width: 100%;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--loong-accent, #7c6cf0) 32%, transparent);
+  border-radius: 14px 14px 4px 14px;
+  background: color-mix(in srgb, var(--loong-accent, #7c6cf0) 16%, transparent);
   color: var(--loong-text, #eaeaf2);
+  text-align: left;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

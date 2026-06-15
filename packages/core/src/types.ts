@@ -15,10 +15,10 @@ export type LoongAttachmentKind = "image" | "text" | "document" | "binary";
  */
 export interface LoongAttachment {
   /**
-   * `image`    â†?forwarded to the provider as multimodal image content
-   * `text`     â†?decoded as UTF-8 and inlined into the user prompt
-   * `document` â†?extracted to text (mammoth/pdfjs/xlsx/jszip-pptx) and inlined
-   * `binary`   â†?reserved for future use; currently rejected
+   * `image`    ï¿½?forwarded to the provider as multimodal image content
+   * `text`     ï¿½?decoded as UTF-8 and inlined into the user prompt
+   * `document` ï¿½?extracted to text (mammoth/pdfjs/xlsx/jszip-pptx) and inlined
+   * `binary`   ï¿½?reserved for future use; currently rejected
    */
   kind: LoongAttachmentKind;
   mimeType: string;
@@ -202,6 +202,8 @@ export interface LoongPermissionEventPayload {
   capabilities?: readonly string[];
   inputSummary?: unknown;
   decision?: "allow" | "deny";
+  /** Set when the approval is queued in the gateway inbox. */
+  approvalId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -220,7 +222,7 @@ export type LoongEvent =
       runId: string;
       toolName: string;
       toolCallId: string;
-      phase: "request" | "resolved";
+      phase: "request" | "queued" | "resolved";
       payload: LoongPermissionEventPayload;
     }
   | {
@@ -229,6 +231,16 @@ export type LoongEvent =
       providerName: string;
       phase: "start" | "end";
       payload?: unknown;
+    }
+  | {
+      type: "model";
+      runId: string;
+      phase: "start" | "end";
+      payload?: {
+        round?: number;
+        hasReasoning?: boolean;
+        reasoningPreview?: string;
+      };
     }
   | { type: "tool"; runId: string; toolName: string; phase: "start" | "update" | "end"; payload?: unknown };
 

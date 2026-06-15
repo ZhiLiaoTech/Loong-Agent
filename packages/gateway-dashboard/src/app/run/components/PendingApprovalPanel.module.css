@@ -1,0 +1,108 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.card {
+  border: 1px solid #f59e0b66;
+  background: linear-gradient(180deg, #fffbeb 0%, #fff7ed 100%);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.08);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+}
+
+.toolName {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.reason {
+  margin: 0 0 0.5rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: #4b5563;
+}
+
+.input {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid #fde68a;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #374151;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.approve,
+.reject,
+.inboxLink {
+  appearance: none;
+  border-radius: 8px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.approve {
+  border: none;
+  background: #059669;
+  color: #fff;
+}
+
+.approve:disabled,
+.reject:disabled,
+.inboxLink:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reject {
+  border: 1px solid #fca5a5;
+  background: #fff;
+  color: #b91c1c;
+}
+
+.inboxLink {
+  border: 1px solid #fcd34d;
+  background: #fff;
+  color: #92400e;
+}

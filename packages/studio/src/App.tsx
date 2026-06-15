@@ -1,8 +1,13 @@
+import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { Sidebar, type SidebarStatusTone } from "@loong/ui";
 
+import { NAVIGATE_EVENT } from "@loong/host";
+
 import { useLoongEvents } from "@dashboard/app/events/EventsContext.js";
+
+import { useNavCounts } from "@dashboard/app/shell/useNavCounts.js";
 
 import { AuthBanner } from "./components/AuthBanner.js";
 
@@ -17,6 +22,8 @@ import { ConnectionsPage } from "./pages/ConnectionsPage.js";
 import { OrgPage } from "./pages/OrgPage.js";
 
 import { ChatPage } from "./pages/ChatPage.js";
+
+import { ObservePage } from "./pages/ObservePage.js";
 
 import { ModelsPage } from "./pages/ModelsPage.js";
 
@@ -33,6 +40,8 @@ const PATH_TO_NAV: Record<string, string> = {
   "/org": "org",
 
   "/connections": "connections",
+
+  "/observe": "observe",
 
   "/settings": "settings",
 
@@ -82,7 +91,24 @@ function AppRoutes() {
 
   const { sseStatus } = useLoongEvents();
 
+  const navCounts = useNavCounts();
 
+
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string }>).detail;
+      if (detail?.path) {
+        navigate(detail.path);
+      }
+    };
+    globalThis.addEventListener(NAVIGATE_EVENT, handler);
+    return () => globalThis.removeEventListener(NAVIGATE_EVENT, handler);
+  }, [navigate]);
+
+
+
+  const pendingApprovals = navCounts.observePending ?? 0;
 
   const navItems = [
 
@@ -91,6 +117,8 @@ function AppRoutes() {
     { id: "models", label: t("nav.models"), path: "/models", icon: "models" as const },
 
     { id: "org", label: t("nav.org"), path: "/org", icon: "org" as const },
+
+    { id: "observe", label: t("nav.observe"), path: "/observe", icon: "observe" as const, ...(pendingApprovals > 0 ? { badge: pendingApprovals } : {}) },
 
     { id: "connections", label: t("nav.connections"), path: "/connections", icon: "connections" as const },
 
@@ -145,6 +173,8 @@ function AppRoutes() {
           footerItem={settingsNavItem}
 
           activeId={activeNav}
+
+          variant="icon"
 
           productName="Loong"
 
@@ -201,6 +231,7 @@ function AppRoutes() {
               <Route path="/models" element={<ModelsPage />} />
 
               <Route path="/org" element={<OrgPage />} />
+              <Route path="/observe" element={<ObservePage />} />
               <Route path="/connections" element={<ConnectionsPage />} />
               <Route path="/agents" element={<Navigate to="/org" replace />} />
 

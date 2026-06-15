@@ -141,6 +141,7 @@ export type {
   GatewayModelConfigSaveParams,
   GatewayModelProviderConfig,
   GatewayModelProviderType,
+  GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
   GatewayTierClassifyParams,
@@ -165,6 +166,7 @@ import type {
   GatewayMemoryCandidateRejectParams,
   GatewayModelConfigSaveParams,
   GatewayModelProviderConfig,
+  GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
   GatewayTicketUpsertParams,
@@ -469,6 +471,9 @@ export class HttpLoongGateway implements LoongGateway {
       handleRpc: request => this.#handleRpc(request),
       resolveSessionId: event => this.#runSessions.get(event.runId) ?? readEventSessionId(event),
     });
+    this.#approvalService?.attachEventPublisher(event => {
+      this.#connections.broadcastRuntimeEvent(event);
+    });
   }
 
   async start(config: GatewayConfig = {}): Promise<void> {
@@ -476,6 +481,7 @@ export class HttpLoongGateway implements LoongGateway {
       throw new Error("Gateway is already started.");
     }
     const normalized = normalizeConfig(config);
+    await this.#repairSuiteDefaultSelection();
     const server = createServer((request, response) => {
       this.#handleRequest(request, response).catch(error => {
         writeJson(response, errorToStatusCode(error), {
@@ -552,6 +558,51 @@ export class HttpLoongGateway implements LoongGateway {
 
   address(): GatewayAddress | undefined {
     return this.#address;
+  }
+
+  async #repairSuiteDefaultSelection(): Promise<void> {
+    if (!this.#employeeStore || !this.#agentConfigStore) {
+      return;
+    }
+
+    const [employeeRegistry, agentConfig] = await Promise.all([
+      this.#employeeStore.load(),
+      this.#agentConfigStore.load(),
+    ]);
+    const suiteEmployee = [...employeeRegistry.employees]
+      .reverse()
+      .find(employee => isSuiteEmployee(employee));
+    if (!suiteEmployee) {
+      return;
+    }
+
+    const profileExists = agentConfig.profiles.some(profile => profile.id === suiteEmployee.profileId);
+    if (!profileExists) {
+      return;
+    }
+
+    const currentEmployee = employeeRegistry.employees.find(employee => employee.id === employeeRegistry.defaultEmployeeId);
+    const shouldPromoteEmployee =
+      !currentEmployee || isExampleEmployee(currentEmployee) || employeeRegistry.defaultEmployeeId === undefined;
+    const shouldPromoteProfile =
+      !agentConfig.defaultProfileId
+      || agentConfig.defaultProfileId === "dev-01"
+      || !agentConfig.profiles.some(profile => profile.id === agentConfig.defaultProfileId);
+
+    if (shouldPromoteEmployee) {
+      await this.#employeeStore.save({
+        employees: employeeRegistry.employees,
+        defaultEmployeeId: suiteEmployee.id,
+      });
+    }
+    if (shouldPromoteProfile) {
+      await this.#agentConfigStore.save({
+        profiles: agentConfig.profiles,
+        defaultProfileId: suiteEmployee.profileId,
+        ...(agentConfig.sessionCompaction !== undefined ? { sessionCompaction: agentConfig.sessionCompaction } : {}),
+        ...(agentConfig.aiSummarization !== undefined ? { aiSummarization: agentConfig.aiSummarization } : {}),
+      });
+    }
   }
 
   async #resolveAgentParams(params: GatewayAgentParams): Promise<GatewayAgentParams> {
@@ -649,7 +700,7 @@ export class HttpLoongGateway implements LoongGateway {
       "pairing.device.revoke",
       "tools.catalog",
       "tool.invoke",
-      ...(this.#suiteDataDir ? ["suite.release.install", "suite.instance.materialize"] : []),
+      ...(this.#suiteDataDir ? ["suite.install", "suite.release.install", "suite.instance.materialize"] : []),
       ...(this.#toolRegistry.has("memory_candidates_list") ? ["memory.candidates.list"] : []),
       ...(this.#toolRegistry.has("memory_candidate_promote") ? ["memory.candidate.promote"] : []),
       ...(this.#toolRegistry.has("memory_candidate_reject") ? ["memory.candidate.reject"] : []),
@@ -699,6 +750,7 @@ export class HttpLoongGateway implements LoongGateway {
       revokePairedDevice: deviceId => this.#revokePairedDevice(deviceId),
       listTools: params => this.#listTools(params as { includeSchemas?: boolean } | undefined),
       invokeTool: params => this.#invokeTool(params as GatewayToolInvokeParams),
+      installSuite: params => this.#installSuite(params as GatewaySuiteInstallParams),
       installSuiteRelease: params => this.#installSuiteRelease(params as GatewaySuiteReleaseInstallParams),
       materializeSuiteInstance: params => this.#materializeSuiteInstance(params as GatewaySuiteInstanceMaterializeParams),
       listMemoryCandidates: params => this.#listMemoryCandidates(params as GatewayMemoryCandidateListParams | undefined),
@@ -1101,6 +1153,9 @@ export class HttpLoongGateway implements LoongGateway {
     return await this.#approvalService.list({
       ...(params?.status ? { status: params.status } : {}),
       ...(params?.assignedApproverId ? { assignedApproverId: params.assignedApproverId } : {}),
+      ...(params?.runId ? { runId: params.runId } : {}),
+      ...(params?.toolCallId ? { toolCallId: params.toolCallId } : {}),
+      ...(params?.sessionId ? { sessionId: params.sessionId } : {}),
     });
   }
 
@@ -1320,6 +1375,28 @@ export class HttpLoongGateway implements LoongGateway {
 
   async #installSuiteRelease(params: GatewaySuiteReleaseInstallParams): Promise<unknown> {
     const dataDir = this.#requireSuiteDataDir();
+    const options = this.#suiteReleaseOptions(dataDir, params);
+    return summarizeSuiteReleaseMaterialization(await materializeSuiteRelease(params.sourceDir, options));
+  }
+
+  async #installSuite(params: GatewaySuiteInstallParams): Promise<unknown> {
+    const dataDir = this.#requireSuiteDataDir();
+    const options = this.#suiteReleaseOptions(dataDir, params);
+    const materialized = await materializeSuiteRelease(params.sourceDir, options);
+    const registration = await this.#registerInstalledSuite(materialized, dataDir);
+    return {
+      ...summarizeSuiteReleaseMaterialization(materialized),
+      manifest: materialized.suite.manifest,
+      workspaceDir: materialized.releaseWorkspaceDir,
+      dataRoot: dataDir,
+      ...registration,
+    };
+  }
+
+  #suiteReleaseOptions(
+    dataDir: string,
+    params: GatewaySuiteReleaseInstallParams,
+  ): LoongSuiteMaterializeReleaseOptions {
     const options: LoongSuiteMaterializeReleaseOptions = {
       dataDir,
     };
@@ -1332,7 +1409,90 @@ export class HttpLoongGateway implements LoongGateway {
     if (params.maxTextFileBytes !== undefined) {
       options.maxTextFileBytes = params.maxTextFileBytes;
     }
-    return summarizeSuiteReleaseMaterialization(await materializeSuiteRelease(params.sourceDir, options));
+    return options;
+  }
+
+  async #registerInstalledSuite(
+    materialized: LoongSuiteReleaseMaterialization,
+    dataDir: string,
+  ): Promise<Record<string, unknown>> {
+    const suite = materialized.suite;
+    const suiteId = suite.manifest.id;
+    const policyId = `suite:${suiteId}`;
+    const profile = buildSuiteAgentProfile(suite, materialized.releaseWorkspaceDir);
+    const out: Record<string, unknown> = {
+      profileId: profile.id,
+      skillsCopied: suite.skills.map(skill => skill.name),
+      skillsMissing: [],
+      cronsImported: 0,
+    };
+
+    if (this.#agentConfigStore) {
+      const current = await this.#agentConfigStore.load();
+      await this.#agentConfigStore.save({
+        profiles: [
+          ...current.profiles.filter(existing => existing.id !== profile.id),
+          profile,
+        ],
+        defaultProfileId: profile.id,
+        ...(current.sessionCompaction !== undefined ? { sessionCompaction: current.sessionCompaction } : {}),
+        ...(current.aiSummarization !== undefined ? { aiSummarization: current.aiSummarization } : {}),
+      });
+    }
+
+    if (this.#toolPolicyStore) {
+      const current = await this.#toolPolicyStore.load();
+      await this.#toolPolicyStore.save({
+        policies: [
+          ...current.policies.filter(policy => policy.id !== policyId),
+          {
+            id: policyId,
+            description: `Tool policy for suite ${suiteId}`,
+            rules: buildSuiteToolPolicyRules(suite, materialized.releaseWorkspaceDir),
+          },
+        ],
+      });
+      out.toolPolicyId = policyId;
+    }
+
+    if (this.#employeeStore) {
+      const current = await this.#employeeStore.load();
+      await this.#employeeStore.save({
+        employees: [
+          ...current.employees.filter(employee => employee.id !== suiteId),
+          {
+            id: suiteId,
+            displayName: readSuiteDisplayName(suite),
+            profileId: profile.id,
+            positionId: "suite",
+            unitId: "suites",
+            status: "active",
+            toolPolicyId: policyId,
+          },
+        ],
+        defaultEmployeeId: suiteId,
+      });
+      out.orgEmployeeId = suiteId;
+    }
+
+    if (this.#cronStore) {
+      const prefix = `suite:${suiteId}:`;
+      const existing = await this.#cronStore.list();
+      for (const job of existing) {
+        if (job.id.startsWith(prefix)) {
+          await this.#cronStore.remove(job.id);
+        }
+      }
+      const jobs = buildSuiteCronJobs(suite, materialized.releaseWorkspaceDir);
+      for (const job of jobs) {
+        await this.#cronStore.upsert(job);
+      }
+      out.cronsImported = jobs.length;
+    }
+
+    out.workspaceDir = materialized.releaseWorkspaceDir;
+    out.dataRoot = dataDir;
+    return out;
   }
 
   async #materializeSuiteInstance(params: GatewaySuiteInstanceMaterializeParams): Promise<unknown> {
@@ -1746,6 +1906,212 @@ function summarizeSuiteInstanceMaterialization(value: LoongSuiteInstanceMaterial
     record: value.record,
     runtimePaths: value.runtimePaths,
   };
+}
+
+function buildSuiteAgentProfile(suite: LoongSuitePackage, workspaceDir: string): GatewayAgentProfileConfig {
+  const profile: GatewayAgentProfileConfig = {
+    id: suite.manifest.id,
+    name: readSuiteDisplayName(suite),
+    workspace: workspaceDir,
+    systemPrompt: composeInstalledSuitePrompt(suite),
+    toolsEnabled: true,
+    memoryEnabled: true,
+  };
+  if (suite.manifest.description !== undefined) {
+    profile.description = suite.manifest.description;
+  }
+  const defaultModel = readSuiteDefaultModel(suite);
+  if (defaultModel !== undefined) {
+    profile.defaultModel = defaultModel;
+  }
+  return profile;
+}
+
+function readSuiteDisplayName(suite: LoongSuitePackage): string {
+  const raw = suite.manifest.raw;
+  const identity = isRecord(raw.identity) ? raw.identity : undefined;
+  const identityName = typeof identity?.name === "string" && identity.name.trim()
+    ? identity.name.trim()
+    : undefined;
+  return identityName ?? suite.manifest.name;
+}
+
+function isSuiteEmployee(employee: EmployeeRegistry["employees"][number]): boolean {
+  return (
+    employee.status === "active"
+    && (
+      employee.unitId === "suites"
+      || employee.positionId === "suite"
+      || employee.toolPolicyId.startsWith("suite:")
+    )
+  );
+}
+
+function isExampleEmployee(employee: EmployeeRegistry["employees"][number]): boolean {
+  return employee.id === "dev-01" || employee.profileId === "dev-01";
+}
+
+function readSuiteDefaultModel(suite: LoongSuitePackage): string | undefined {
+  const raw = suite.manifest.raw;
+  const routing = isRecord(raw.defaultModelRouting)
+    ? raw.defaultModelRouting
+    : isRecord(raw.default_model_routing)
+      ? raw.default_model_routing
+      : undefined;
+  if (routing) {
+    const wildcard = routing["*"];
+    if (typeof wildcard === "string" && wildcard.trim()) {
+      return wildcard.trim();
+    }
+    for (const value of Object.values(routing)) {
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+  }
+  const requiredModels = readStringArray(raw.requiredModels) ?? readStringArray(raw.required_models);
+  return requiredModels?.[0];
+}
+
+function composeInstalledSuitePrompt(suite: LoongSuitePackage): string {
+  const parts = [
+    `Suite ${suite.manifest.name} (${suite.manifest.id}@${suite.manifest.version})`,
+  ];
+  if (suite.manifest.description !== undefined) {
+    parts.push(suite.manifest.description);
+  }
+  if (suite.identity.roleJson !== undefined) {
+    parts.push(`Suite role.json\n${JSON.stringify(suite.identity.roleJson, null, 2)}`);
+  }
+  if (suite.identity.soul !== undefined) {
+    parts.push(`Suite soul/SOUL.md\n${suite.identity.soul}`);
+  }
+  if (suite.identity.agents !== undefined) {
+    parts.push(`Suite soul/AGENTS.md\n${suite.identity.agents}`);
+  }
+  if (suite.identity.userTemplate !== undefined) {
+    parts.push(`Suite soul/USER.md.template\n${suite.identity.userTemplate}`);
+  }
+  return parts.join("\n\n");
+}
+
+function buildSuiteToolPolicyRules(
+  suite: LoongSuitePackage,
+  workspaceDir: string,
+): ToolPolicyDocument["policies"][number]["rules"] {
+  const permissions = isRecord(suite.manifest.raw.permissions) ? suite.manifest.raw.permissions : {};
+  const filesystem = readStringArray(permissions.filesystem) ?? [];
+  const browserInteract = readStringArray(permissions.browserInteract) ?? readStringArray(permissions.browser_interact) ?? [];
+  const browserPublish = readStringArray(permissions.browserPublish) ?? readStringArray(permissions.browser_publish) ?? [];
+  const shell = permissions.shell === true;
+
+  const rules: ToolPolicyDocument["policies"][number]["rules"] = [
+    {
+      match: { capability: "read" },
+      decision: "allow",
+      risk: "low",
+      reason: "suite read access",
+    },
+    {
+      match: { capability: "network" },
+      decision: "allow",
+      risk: "medium",
+      reason: "suite network access",
+    },
+    {
+      match: { capability: "write", inputPathContains: workspaceDir },
+      decision: "allow",
+      risk: "medium",
+      reason: "suite workspace write access",
+    },
+    ...filesystem.map(allowed => ({
+      match: { capability: "write", inputPathContains: allowed },
+      decision: "allow" as const,
+      risk: "medium" as const,
+      reason: "suite filesystem allowlist",
+    })),
+    {
+      match: { capability: "write" },
+      decision: "ask",
+      risk: "medium",
+      reason: "suite write outside allowlist",
+    },
+    {
+      match: { capability: "execute" },
+      decision: shell ? "ask" : "deny",
+      risk: "high",
+      reason: shell ? "suite allows shell with approval" : "suite shell access denied",
+    },
+    ...[...new Set([...browserInteract, ...browserPublish])].map(domain => ({
+      match: { inputPathContains: domain },
+      decision: "allow" as const,
+      risk: "medium" as const,
+      reason: "suite browser domain allowlist",
+    })),
+  ];
+  return rules;
+}
+
+function buildSuiteCronJobs(suite: LoongSuitePackage, workspaceDir: string): LoongCronJob[] {
+  const entries = readSuiteCronEntries(suite.crons);
+  return entries.map(entry => {
+    parseCronSchedule(entry.schedule);
+    return {
+      id: `suite:${suite.manifest.id}:${entry.id}`,
+      sessionId: `suite:${suite.manifest.id}`,
+      message: entry.message ?? entry.description ?? `Run ${entry.skill ?? entry.id}`,
+      schedule: entry.schedule,
+      workspace: workspaceDir,
+      profileId: suite.manifest.id,
+      metadata: {
+        suiteId: suite.manifest.id,
+        ...(entry.skill ? { skill: entry.skill } : {}),
+        ...(entry.action ? { action: entry.action } : {}),
+        ...(entry.channel ? { channel: entry.channel } : {}),
+      },
+    };
+  });
+}
+
+interface SuiteCronEntry {
+  id: string;
+  schedule: string;
+  message?: string;
+  description?: string;
+  skill?: string;
+  action?: string;
+  channel?: string;
+}
+
+function readSuiteCronEntries(value: unknown): SuiteCronEntry[] {
+  const list = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.crons)
+      ? value.crons
+      : [];
+  const out: SuiteCronEntry[] = [];
+  for (const item of list) {
+    if (!isRecord(item) || typeof item.id !== "string" || typeof item.schedule !== "string") {
+      continue;
+    }
+    out.push({
+      id: item.id,
+      schedule: item.schedule,
+      ...(typeof item.message === "string" ? { message: item.message } : {}),
+      ...(typeof item.description === "string" ? { description: item.description } : {}),
+      ...(typeof item.skill === "string" ? { skill: item.skill } : {}),
+      ...(typeof item.action === "string" ? { action: item.action } : {}),
+      ...(typeof item.channel === "string" ? { channel: item.channel } : {}),
+    });
+  }
+  return out;
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map(item => item.trim());
 }
 
 function summarizeSuitePackage(suite: LoongSuitePackage): Record<string, unknown> {

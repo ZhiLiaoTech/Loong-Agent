@@ -42,7 +42,19 @@ export function formatToolActivityDisplay(
   const command = readStringField(inputSummary, ["command", "cmd", "script", "shell"]);
 
   if (name === "file_read" && path) {
-    return { displayLabel: "读取文件", displayDetail: basename(path) };
+    return { displayLabel: "阅读文件", displayDetail: basename(path) };
+  }
+  if (name === "skill_load") {
+    const skillName = readStringField(inputSummary, ["name", "skill", "skillName"]);
+    return skillName
+      ? { displayLabel: "加载技能", displayDetail: skillName }
+      : { displayLabel: "加载技能" };
+  }
+  if (name === "skill_improve") {
+    const skillName = readStringField(inputSummary, ["name", "skill", "skillName"]);
+    return skillName
+      ? { displayLabel: "优化技能", displayDetail: skillName }
+      : { displayLabel: "优化技能" };
   }
   if (name === "file_search" && (query || path)) {
     const detail = query ?? path;

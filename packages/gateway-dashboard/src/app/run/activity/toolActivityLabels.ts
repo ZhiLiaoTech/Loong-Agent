@@ -53,6 +53,18 @@ export function labelForToolActivity(
       detail: basename(path),
     };
   }
+  if (name === "skill_load") {
+    const skillName = readStringField(inputSummary, ["name", "skill", "skillName"]);
+    return skillName
+      ? { label: t("chat.activity.loadingSkill"), detail: skillName }
+      : { label: t("chat.activity.loadingSkill") };
+  }
+  if (name === "skill_improve") {
+    const skillName = readStringField(inputSummary, ["name", "skill", "skillName"]);
+    return skillName
+      ? { label: t("chat.activity.improvingSkill"), detail: skillName }
+      : { label: t("chat.activity.improvingSkill") };
+  }
   if (name === "file_search" && (query || path)) {
     const detail = query ?? path;
     return detail

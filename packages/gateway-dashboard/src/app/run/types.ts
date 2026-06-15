@@ -11,13 +11,15 @@ export interface AgentAiSummarizationConfig {
 
 export type ThinkingLevel = "" | "none" | "low" | "medium" | "high";
 
-import type { ChatActivityStep } from "./activity/types.js";
+import type { ChatActivityStep, ChatTimelineItem } from "./activity/types.js";
 
 export type {
   ActivityGranularity,
   ActivityStepStatus,
   ActivityCategory,
+  ActivityStepKind,
   ChatActivityStep,
+  ChatTimelineItem,
   ChatActivityPreferences,
 } from "./activity/types.js";
 
@@ -33,8 +35,10 @@ export interface ChatTurn {
   errorDetail?: string;
   /** Gateway run id for war-room linking on assistant turns. */
   runId?: string;
-  /** Live processing steps shown beside the assistant bubble. */
+  /** Live processing steps shown above the assistant bubble. */
   activities?: readonly ChatActivityStep[];
+  /** Chronological text + step items interleaved during the run. */
+  timeline?: readonly ChatTimelineItem[];
   /** Whether the activity panel is expanded (auto-collapses after run completes). */
   activitiesExpanded?: boolean;
 }

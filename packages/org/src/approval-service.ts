@@ -1,4 +1,4 @@
-import type { LoongPermissionHandler, LoongPermissionRequest, LoongPermissionResponse } from "@loong/core";
+import type { LoongEvent, LoongPermissionHandler, LoongPermissionRequest, LoongPermissionResponse } from "@loong/core";
 import { resolveApprovalAssignee } from "./approval-routing.js";
 import { isOrgApprovalReason, parseApprovalChainId, stripApprovalPrefix } from "./approval-reason.js";
 import { readEmployeeId } from "./policy.js";
@@ -13,6 +13,8 @@ import type {
   TicketStore,
 } from "./types.js";
 
+const WORKSPACE_DEFAULT_CHAIN_ID = "workspace-default";
+
 interface PendingApproval {
   request: LoongPermissionRequest;
   resolve: (response: LoongPermissionResponse | "allow" | "deny") => void;
@@ -21,6 +23,9 @@ interface PendingApproval {
 export interface ApprovalListFilter {
   status?: ApprovalStatus;
   assignedApproverId?: string;
+  runId?: string;
+  toolCallId?: string;
+  sessionId?: string;
 }
 
 export interface GatewayApprovalService {
@@ -28,6 +33,7 @@ export interface GatewayApprovalService {
   list(filter?: ApprovalListFilter): Promise<ApprovalRegistry>;
   approve(id: string, resolvedBy?: string, note?: string): Promise<ApprovalRequest>;
   reject(id: string, resolvedBy?: string, note?: string): Promise<ApprovalRequest>;
+  attachEventPublisher(publish: (event: LoongEvent) => void): void;
 }
 
 export interface GatewayApprovalServiceOptions {
@@ -43,36 +49,41 @@ export function createGatewayApprovalService(
 ): GatewayApprovalService {
   const pending = new Map<string, PendingApproval>();
   const timeoutMs = options.defaultTimeoutMs ?? 30 * 60_000;
+  let publishEvent: ((event: LoongEvent) => void) | undefined;
 
   const handler: LoongPermissionHandler = async request => {
-    if (!isOrgApprovalReason(request.reason)) {
-      return {
-        decision: "deny",
-        reason: request.reason.trim()
-          ? `Permission denied: ${request.reason}`
-          : "Permission denied by gateway policy.",
-      };
-    }
+    const orgReason = isOrgApprovalReason(request.reason);
+    let chainId: string;
+    let reason: string;
+    let assignee: ReturnType<typeof resolveApprovalAssignee> = {};
 
-    const chainId = parseApprovalChainId(request.reason);
-    if (!chainId) {
-      return { decision: "deny", reason: "Invalid approval chain reference." };
+    if (orgReason) {
+      const parsedChainId = parseApprovalChainId(request.reason);
+      if (!parsedChainId) {
+        return { decision: "deny", reason: "Invalid approval chain reference." };
+      }
+      chainId = parsedChainId;
+      reason = stripApprovalPrefix(request.reason);
+      const employeeId = readEmployeeId(request.metadata);
+      if (options.getOrg && options.getEmployees) {
+        const [org, employees] = await Promise.all([options.getOrg(), options.getEmployees()]);
+        assignee = resolveApprovalAssignee(org, employees, chainId, employeeId);
+        if (!assignee.approverId) {
+          return {
+            decision: "deny",
+            reason: `No active approver found for approval chain "${assignee.chainName ?? chainId}".`,
+          };
+        }
+      }
+    } else {
+      chainId = WORKSPACE_DEFAULT_CHAIN_ID;
+      reason = request.reason.trim() || `Tool "${request.toolName}" requires approval.`;
+      assignee = { chainName: "Workspace tool approval" };
     }
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const employeeId = readEmployeeId(request.metadata);
-    let assignee: ReturnType<typeof resolveApprovalAssignee> = {};
-    if (options.getOrg && options.getEmployees) {
-      const [org, employees] = await Promise.all([options.getOrg(), options.getEmployees()]);
-      assignee = resolveApprovalAssignee(org, employees, chainId, employeeId);
-      if (!assignee.approverId) {
-        return {
-          decision: "deny",
-          reason: `No active approver found for approval chain "${assignee.chainName ?? chainId}".`,
-        };
-      }
-    }
     const record: ApprovalRequest = {
       id,
       status: "pending",
@@ -81,7 +92,7 @@ export function createGatewayApprovalService(
       toolCallId: request.toolCallId,
       toolName: request.toolName,
       sessionId: request.sessionId,
-      reason: stripApprovalPrefix(request.reason),
+      reason,
       createdAt: now,
       updatedAt: now,
       ...(employeeId ? { employeeId } : {}),
@@ -97,6 +108,22 @@ export function createGatewayApprovalService(
     const registry = await options.store.load();
     await options.store.save({
       requests: [...registry.requests, record],
+    });
+
+    publishEvent?.({
+      type: "permission",
+      runId: record.runId,
+      toolName: record.toolName,
+      toolCallId: record.toolCallId,
+      phase: "queued",
+      payload: {
+        toolCallId: record.toolCallId,
+        toolName: record.toolName,
+        sessionId: record.sessionId,
+        reason: record.reason,
+        approvalId: record.id,
+        inputSummary: record.inputSummary,
+      },
     });
 
     return await new Promise<LoongPermissionResponse | "allow" | "deny">(resolve => {
@@ -160,20 +187,18 @@ export function createGatewayApprovalService(
       requests: registry.requests.map(request => (request.id === id ? updated : request)),
     });
 
-    if (entry) {
-      pending.delete(id);
-      entry.resolve(
-        decision === "allow"
-          ? {
-              decision: "allow",
-              reason: note?.trim() || `Approved via dashboard (${status}).`,
-            }
-          : {
-              decision: "deny",
-              reason: note?.trim() || `Rejected via dashboard (${status}).`,
-            },
-      );
-    }
+    pending.delete(id);
+    entry.resolve(
+      decision === "allow"
+        ? {
+            decision: "allow",
+            reason: note?.trim() || `Approved via dashboard (${status}).`,
+          }
+        : {
+            decision: "deny",
+            reason: note?.trim() || `Rejected via dashboard (${status}).`,
+          },
+    );
 
     if (status === "rejected" && options.ticketStore) {
       await appendRejectionTicket(options.ticketStore, updated);
@@ -184,6 +209,9 @@ export function createGatewayApprovalService(
 
   return {
     handler,
+    attachEventPublisher(publish) {
+      publishEvent = publish;
+    },
     async list(filter) {
       const registry = await options.store.load();
       let requests = registry.requests;
@@ -194,6 +222,15 @@ export function createGatewayApprovalService(
         requests = requests.filter(
           request => request.assignedApproverId === filter.assignedApproverId,
         );
+      }
+      if (filter?.runId) {
+        requests = requests.filter(request => request.runId === filter.runId);
+      }
+      if (filter?.toolCallId) {
+        requests = requests.filter(request => request.toolCallId === filter.toolCallId);
+      }
+      if (filter?.sessionId) {
+        requests = requests.filter(request => request.sessionId === filter.sessionId);
       }
       return { ...registry, requests };
     },

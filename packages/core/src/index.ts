@@ -68,6 +68,7 @@ export {
   type ToolActivityDisplay,
 } from "./tool-activity-display.js";
 export {
+  evaluateWorkspaceScopePermission,
   evaluateStudioWorkspaceScopePermission,
 } from "./studio-scope-permission.js";
 export {

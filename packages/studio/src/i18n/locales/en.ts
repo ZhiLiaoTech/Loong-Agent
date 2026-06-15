@@ -14,12 +14,29 @@ export const en: MessageTree = {
 
     connections: "Connections",
 
+    observe: "Observe",
+
     agents: "Agents",
 
     settings: "Settings",
 
     about: "About",
 
+  },
+
+  observe: {
+    title: "Observe",
+    lead: "Monitor runs, live events, tool approvals, and memory candidates.",
+    session: "Session ID",
+    statsRuns: "Runs",
+    statsActive: "Active",
+    statsPending: "Pending",
+    statsEvents: "Buffered",
+    approvalsSection: "Tool approvals",
+    approvalsLead: "Sensitive tool calls from the agent appear here for review.",
+    eventsSection: "Live events",
+    memorySection: "Memory candidates",
+    runsSection: "Recent runs",
   },
 
   sidebar: {
@@ -192,6 +209,9 @@ export const en: MessageTree = {
       collapse: "Collapse",
       collapsedSummary: "{count} steps",
       tierSelected: "Model tier selected",
+      thinking: "Thinking",
+      loadingSkill: "Loading skill",
+      improvingSkill: "Improving skill",
       readingFile: "Reading file",
       searchingFile: "Searching files",
       patchingFile: "Editing file",
@@ -204,6 +224,15 @@ export const en: MessageTree = {
       awaitingApproval: "Awaiting approval…",
       approvalGranted: "Approved",
       approvalDenied: "Denied",
+    },
+
+    approval: {
+      title: "Tool approval required",
+      approve: "Approve",
+      reject: "Reject",
+      inbox: "Open inbox",
+      resolving: "Working…",
+      notificationTitle: "Loong tool approval",
     },
 
   },
@@ -447,6 +476,50 @@ export const en: MessageTree = {
     bootstrapSuccess: "Example organization created. You can refine the setup now.",
 
     bootstrapSkipped: "Organization already exists; nothing was changed.",
+
+    suite: {
+
+      importTitle: "Import Suite",
+
+      importHint: "Import a local suite workspace into Gateway and register its profile, employee, permissions, skills, and cron jobs.",
+
+      pathLabel: "Suite directory",
+
+      pathPlaceholder: "Choose a directory that contains suite.json",
+
+      browse: "Browse...",
+
+      browseTitle: "Choose Suite directory",
+
+      browseHint: "Browse local directories on the Gateway machine and choose the folder that contains suite.json.",
+
+      browseUp: "Up",
+
+      browseLoading: "Loading directories...",
+
+      browseEmpty: "No subfolders in this directory",
+
+      browseError: "Could not read this folder",
+
+      browseSelect: "Select this folder",
+
+      pathRequired: "Enter a local directory that contains suite.json.",
+
+      overwrite: "Overwrite an existing release with the same version",
+
+      importing: "Importing...",
+
+      importAction: "Import Suite",
+
+      importComplete: "Import complete",
+
+      skillsCopied: "Skills",
+
+      cronsImported: "Cron jobs",
+
+      warnings: "Warnings",
+
+    },
 
     capability: {
 

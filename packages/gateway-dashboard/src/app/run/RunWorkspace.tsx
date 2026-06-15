@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLoongEvents } from "../events/EventsContext.js";
 import { ChatTranscript } from "./components/ChatTranscript.js";
 import { Composer, type ComposerAttachment } from "./components/Composer.js";
+import { PendingApprovalPanel } from "./components/PendingApprovalPanel.js";
 import { ProfilePreview } from "./components/ProfilePreview.js";
 import { RecentRunsList } from "./components/RecentRunsList.js";
 import { RunInspector } from "./components/RunInspector.js";
@@ -128,6 +129,19 @@ export function RunWorkspace() {
       <div className={styles.layout}>
         <main className={styles.main}>
           <ChatTranscript turns={chat.chatTurns} />
+          <PendingApprovalPanel
+            approvals={chat.pendingApprovals}
+            title="Tool approval required"
+            approveLabel="Approve"
+            rejectLabel="Reject"
+            inboxLabel="Open inbox"
+            resolvingLabel="Working…"
+            onApprove={chat.approveApproval}
+            onReject={chat.rejectApproval}
+            onOpenInbox={() => {
+              globalThis.location.assign("/observe");
+            }}
+          />
           <Composer disabled={busy} onSend={handleSend} />
           <RunSettingsPanel
             settings={settings}

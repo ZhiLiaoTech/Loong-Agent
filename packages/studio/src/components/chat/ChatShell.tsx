@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { useNavigate } from "react-router-dom";
+import { notifyApprovalRequired } from "@loong/host";
 
-import { useLoongEvents } from "@dashboard/app/events/EventsContext.js";
-
-import { WarRoomPanel } from "@dashboard/app/observe/components/WarRoomPanel.js";
+import { PendingApprovalPanel } from "@dashboard/app/run/components/PendingApprovalPanel.js";
 
 import { useRunCatalog } from "@dashboard/app/run/useRunCatalog.js";
 
@@ -78,10 +76,6 @@ export function ChatShell() {
 
   const { t } = useI18n();
 
-  const navigate = useNavigate();
-
-  const { events } = useLoongEvents();
-
   const chatSessions = useChatSessions();
 
   const [settings, setSettings] = useState<RunSettings>(() => ({
@@ -93,9 +87,6 @@ export function ChatShell() {
   }));
 
   const [workspaceScope, setWorkspaceScope] = useState<WorkspaceScopeSelection>(() => loadWorkspaceScopeSelection());
-
-  const [warRoomOpen, setWarRoomOpen] = useState(false);
-  const [warRoomHighlightSequence, setWarRoomHighlightSequence] = useState<number | undefined>();
 
   const { connectionState, statusLabel } = useGatewayReadiness();
 
@@ -118,6 +109,14 @@ export function ChatShell() {
     translate: t,
     workspaceScope,
     ...(selectedProfile?.workspace ? { profileWorkspace: selectedProfile.workspace } : {}),
+    onApprovalQueued: item => {
+      void notifyApprovalRequired({
+        approvalId: item.id,
+        toolName: item.toolName,
+        reason: item.reason,
+        navigatePath: `/observe?approval=${encodeURIComponent(item.id)}`,
+      });
+    },
   });
 
   const busy = chat.sending || chat.expectingRun;
@@ -373,7 +372,7 @@ export function ChatShell() {
 
             type="button"
 
-            className={`${styles.settingsBtn}${chat.activityPreferences.showActivities ? ` ${styles.settingsBtnActive}` : ""}`}
+            className={`${styles.settingsBtn} loong-icon-tooltip${chat.activityPreferences.showActivities ? ` ${styles.settingsBtnActive}` : ""}`}
 
             onClick={() => chat.updateActivityPreferences({
 
@@ -383,7 +382,7 @@ export function ChatShell() {
 
             aria-label={t("chat.activity.toggle")}
 
-            title={t("chat.activity.toggle")}
+            data-tooltip={t("chat.activity.toggle")}
 
           >
 
@@ -405,123 +404,13 @@ export function ChatShell() {
 
           </button>
 
-          <button
-
-            type="button"
-
-            className={`${styles.settingsBtn}${warRoomOpen ? ` ${styles.settingsBtnActive}` : ""}`}
-
-            onClick={() => setWarRoomOpen(open => !open)}
-
-            aria-label={warRoomOpen ? t("chat.warRoomClose") : t("chat.warRoomOpen")}
-
-            title={warRoomOpen ? t("chat.warRoomClose") : t("chat.warRoomOpen")}
-
-          >
-
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-
-              <path
-
-                d="M4 6h16M4 12h10M4 18h16"
-
-                stroke="currentColor"
-
-                strokeWidth="1.75"
-
-                strokeLinecap="round"
-
-              />
-
-            </svg>
-
-          </button>
-
-          <button
-
-            type="button"
-
-            className={styles.settingsBtn}
-
-            onClick={() => navigate("/org")}
-
-            aria-label={t("nav.org")}
-
-            title={t("nav.org")}
-
-          >
-
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-
-              <path
-
-                d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"
-
-                stroke="currentColor"
-
-                strokeWidth="1.75"
-
-                strokeLinecap="round"
-
-                strokeLinejoin="round"
-
-              />
-
-            </svg>
-
-          </button>
-
-          <button
-
-            type="button"
-
-            className={styles.settingsBtn}
-
-            onClick={() => navigate("/settings")}
-
-            aria-label={t("chat.settings")}
-
-            title={t("chat.settings")}
-
-          >
-
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-
-              <path
-
-                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-
-                stroke="currentColor"
-
-                strokeWidth="1.75"
-
-              />
-
-              <path
-
-                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
-
-                stroke="currentColor"
-
-                strokeWidth="1.75"
-
-                strokeLinecap="round"
-
-                strokeLinejoin="round"
-
-              />
-
-            </svg>
-
-          </button>
-
         </div>
 
       </header>
 
 
 
-      <div className={`${styles.bodyRow}${warRoomOpen ? ` ${styles.bodyRowWithWarRoom}` : ""}`}>
+      <div className={styles.bodyRow}>
 
       <div className={styles.chatMain}>
 
@@ -555,13 +444,6 @@ export function ChatShell() {
             activityExpandLabel={t("chat.activity.expand")}
             activityCollapseLabel={t("chat.activity.collapse")}
             onToggleTurnActivities={chat.toggleTurnActivitiesExpanded}
-            onActivityStepClick={step => {
-              if (step.sequence === undefined) {
-                return;
-              }
-              setWarRoomOpen(true);
-              setWarRoomHighlightSequence(step.sequence);
-            }}
           />
 
         </div>
@@ -569,6 +451,17 @@ export function ChatShell() {
 
 
         <div className={styles.composerDock}>
+
+          <PendingApprovalPanel
+            approvals={chat.pendingApprovals}
+            title={t("chat.approval.title")}
+            approveLabel={t("chat.approval.approve")}
+            rejectLabel={t("chat.approval.reject")}
+            inboxLabel={t("chat.approval.inbox")}
+            resolvingLabel={t("chat.approval.resolving")}
+            onApprove={chat.approveApproval}
+            onReject={chat.rejectApproval}
+          />
 
           <ChatComposer
 
@@ -595,20 +488,6 @@ export function ChatShell() {
         </div>
 
       </div>
-
-      {warRoomOpen ? (
-        <aside className={styles.warRoomAside}>
-          <WarRoomPanel
-            title={t("chat.warRoom")}
-            emptyHint={t("chat.warRoomEmpty")}
-            waitingHint={t("chat.warRoomWaiting")}
-            activeRunId={chat.activeRunId || chat.timelineRunId}
-            events={events}
-            translate={t}
-            {...(warRoomHighlightSequence !== undefined ? { highlightSequence: warRoomHighlightSequence } : {})}
-          />
-        </aside>
-      ) : null}
 
       </div>
 

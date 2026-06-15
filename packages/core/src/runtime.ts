@@ -187,7 +187,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
   }
 
   /**
-   * Hot-swap the tier scheduling config. Takes effect on the NEXT turn ù?runs
+   * Hot-swap the tier scheduling config. Takes effect on the NEXT turn ??runs
    * already in flight see the previous decision. Pass `undefined` to disable
    * tier scheduling for subsequent turns.
    */
@@ -196,7 +196,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
   }
 
   /**
-   * Hot-swap the provider registry. Takes effect on the NEXT turn ù?runs already
+   * Hot-swap the provider registry. Takes effect on the NEXT turn ??runs already
    * in flight keep the previous registry.
    */
   setProviderRegistry(registry: ProviderRegistry): void {
@@ -278,7 +278,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
 
       const effectiveSystemPrompt = appendWorkspaceToolGuidance(
         activeInput.systemPrompt?.trim()
-          ? `${this.#systemPrompt}\n\n${activeInput.systemPrompt.trim()}`
+          ? `${activeInput.systemPrompt.trim()}\n\n${this.#systemPrompt}`
           : this.#systemPrompt,
         activeInput.workspace,
       );
@@ -329,7 +329,11 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
       ];
 
       const modelRefs = modelAttemptRefs(activeInput.model, this.#defaultModel, activeInput.modelFallbacks, this.#modelFallbacks);
+      let modelRound = 0;
+      this.#emitModelEvent(runId, "start", modelRound);
       let completion = await this.#completeModelWithPrep(modelRefs, modelMessages, activeInput, runId, turnMaxContextChars);
+      this.#emitModelEvent(runId, "end", modelRound, completion.response);
+      modelRound += 1;
       let providerResponse = augmentResponseWithTextToolCalls(completion.response, activeInput.toolsEnabled);
       let resolution = completion.resolution;
       let fallbackFailures = completion.failures;
@@ -338,7 +342,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
         this.#emit({
           type: "assistant_replace",
           runId,
-          text: cleaned.length > 0 ? `${cleaned}\n\n[????????ù]\n` : "[????????ù]\n",
+          text: cleaned.length > 0 ? `${cleaned}\n\n[?????????]\n` : "[?????????]\n",
         });
       }
 
@@ -374,7 +378,10 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
           throw new LoongCancelledError("Turn was cancelled.");
         }
 
+        this.#emitModelEvent(runId, "start", modelRound);
         completion = await this.#completeModelWithPrep(modelRefs, modelMessages, activeInput, runId, turnMaxContextChars);
+        this.#emitModelEvent(runId, "end", modelRound, completion.response);
+        modelRound += 1;
         providerResponse = augmentResponseWithTextToolCalls(completion.response, activeInput.toolsEnabled);
         resolution = completion.resolution;
         fallbackFailures = completion.failures;
@@ -717,13 +724,32 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
         pendingToolCalls: pendingCount,
       },
     });
-    return await this.#completeModelWithPrep(
+    this.#emitModelEvent(runId, "start", 9999);
+    const result = await this.#completeModelWithPrep(
       modelRefs,
       modelMessages,
       { ...input, toolsEnabled: false },
       runId,
       turnMaxContextChars,
     );
+    this.#emitModelEvent(runId, "end", 9999, result.response);
+    return result;
+  }
+
+  #emitModelEvent(
+    runId: string,
+    phase: "start" | "end",
+    round: number,
+    response?: ModelResponse,
+  ): void {
+    const payload: Record<string, unknown> = { round };
+    if (phase === "end" && response?.reasoningContent && response.reasoningContent.length > 0) {
+      payload.hasReasoning = true;
+      payload.reasoningPreview = response.reasoningContent.length > 120
+        ? `${response.reasoningContent.slice(0, 119)}?`
+        : response.reasoningContent;
+    }
+    this.#emit({ type: "model", phase, runId, payload });
   }
 
   async #completeModelWithPrep(
@@ -1095,7 +1121,7 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
     const preview = resultContent === undefined
       ? undefined
       : resultContent.length > 400
-        ? `${resultContent.slice(0, 400)}ù`
+        ? `${resultContent.slice(0, 400)}?`
         : resultContent;
     this.#emit({
       type: "tool",
@@ -1803,7 +1829,7 @@ async function resolveAttachments(attachments: readonly LoongAttachment[] | unde
         throw new Error(`Attachment ${index + 1} (${mime}) extraction failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (!extracted.trim()) {
-        extracted = `[empty document: ${safeName} (${mime}, ${buffer.byteLength} bytes) ù?no extractable text]`;
+        extracted = `[empty document: ${safeName} (${mime}, ${buffer.byteLength} bytes) ??no extractable text]`;
       }
       if (Buffer.byteLength(extracted, "utf8") > MAX_INLINED_TEXT_BYTES) {
         extracted = extracted.slice(0, MAX_INLINED_TEXT_BYTES) + `\n[document truncated: extracted text exceeds ${MAX_INLINED_TEXT_BYTES} bytes]`;
@@ -1852,7 +1878,7 @@ function buildUserMessageContent(
   }
   const combinedText = textPieces.join("\n\n");
   if (!hasImage) {
-    // No images ù?plain string is enough for any provider.
+    // No images ??plain string is enough for any provider.
     return combinedText;
   }
   // Multimodal: emit a text part (text + inlined file contents) followed by
@@ -1886,7 +1912,7 @@ function summarizeAttachments(attachments: ResolvedAttachment[]): Array<Record<s
 }
 
 // ---------------------------------------------------------------------------
-// Document text extractors (lazy-loaded). Each is best-effort ù?failures
+// Document text extractors (lazy-loaded). Each is best-effort ??failures
 // surface a clear error to the caller via resolveAttachments.
 // ---------------------------------------------------------------------------
 
@@ -1955,7 +1981,7 @@ async function extractPptxText(buffer: Buffer, _name: string): Promise<string> {
 }
 
 async function extractRtfText(buffer: Buffer, _name: string): Promise<string> {
-  // Minimal RTF stripper ù?good enough for most plain RTF files.
+  // Minimal RTF stripper ??good enough for most plain RTF files.
   const raw = buffer.toString("latin1");
   // Strip groups, control words, and binary content
   let out = raw

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { normalizeTierConfig, type LoongAgentRuntime, type ModelTierConfig } from "@loong/core";
 import { createCronRunner, createFileCronJobStore, createGatewayWebhookCronTarget } from "@loong/cron";
@@ -68,6 +69,7 @@ export interface ParsedGatewayArgs {
 export async function runGateway(args: string[]): Promise<void> {
   const parsed = await parseGatewayArgs(args);
   const dataRoot = resolveLoongDataRoot();
+  migrateLegacyOrgRoot(dataRoot);
   const modelConfigPath = configuredModelConfigPath();
   const agentConfigPath = configuredAgentConfigPath();
   const tierConfigPath = configuredTierConfigPath();
@@ -179,6 +181,32 @@ export async function runGateway(args: string[]): Promise<void> {
   }
 }
 
+function migrateLegacyOrgRoot(dataRoot: string): void {
+  const legacyRoot = path.resolve(process.cwd(), ".loong", "org");
+  const targetRoot = path.resolve(dataRoot, "org");
+  if (legacyRoot === targetRoot || !fs.existsSync(legacyRoot)) {
+    return;
+  }
+
+  copyIfMissing(path.join(legacyRoot, "org.json"), path.join(targetRoot, "org.json"));
+  copyIfMissing(path.join(legacyRoot, "employees.json"), path.join(targetRoot, "employees.json"));
+  copyIfMissing(
+    path.join(legacyRoot, "policies", "tool-policies.json"),
+    path.join(targetRoot, "policies", "tool-policies.json"),
+  );
+  copyIfMissing(path.join(legacyRoot, "approvals.json"), path.join(targetRoot, "approvals.json"));
+  copyIfMissing(path.join(legacyRoot, "tickets.json"), path.join(targetRoot, "tickets.json"));
+  copyIfMissing(path.join(legacyRoot, "kpi-templates.json"), path.join(targetRoot, "kpi-templates.json"));
+}
+
+function copyIfMissing(source: string, target: string): void {
+  if (!fs.existsSync(source) || fs.existsSync(target)) {
+    return;
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+}
+
 export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArgs> {
   const fileSettings = await loadGatewaySettingsFile();
   let modelTimeoutMsCli: number | undefined;
@@ -197,7 +225,7 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
     config.sharedSecret = envSecret;
   }
 
-  let allowWrite = false;
+  let allowWrite = process.env.LOONG_ALLOW_WRITE?.trim() !== "0";
   let allowExec = process.env.LOONG_ALLOW_EXEC?.trim() === "1";
   const dataRoot = resolveLoongDataRoot();
   let sessionDir = process.env.LOONG_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
@@ -213,6 +241,10 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
     const arg = args[index];
     if (arg === "--allow-write") {
       allowWrite = true;
+      continue;
+    }
+    if (arg === "--no-allow-write") {
+      allowWrite = false;
       continue;
     }
     if (arg === "--allow-exec") {

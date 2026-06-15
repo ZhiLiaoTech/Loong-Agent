@@ -134,6 +134,7 @@
 }
 
 .settingsBtn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -164,17 +165,6 @@
   min-height: 0;
   display: flex;
   min-width: 0;
-}
-
-.bodyRowWithWarRoom .chatMain {
-  min-width: 0;
-}
-
-.warRoomAside {
-  width: min(360px, 38vw);
-  flex-shrink: 0;
-  min-height: 0;
-  display: flex;
 }
 
 .chatMain {
