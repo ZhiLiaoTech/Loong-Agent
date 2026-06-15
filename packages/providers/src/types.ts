@@ -84,6 +84,15 @@ export interface ModelProvider {
   complete(request: ModelRequest): Promise<ModelResponse>;
 }
 
+export interface ProviderRetryOptions {
+  /** Total attempts for a retryable provider request. Set to 1 to disable retry. */
+  maxAttempts?: number;
+  /** First retry delay in milliseconds. Subsequent retries use exponential backoff. */
+  baseDelayMs?: number;
+  /** Maximum retry delay in milliseconds, including Retry-After delays. */
+  maxDelayMs?: number;
+}
+
 export interface ProviderResolution {
   provider: ModelProvider;
   model: string;

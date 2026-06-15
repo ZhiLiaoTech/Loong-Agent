@@ -11,6 +11,7 @@ export type {
   ModelToolCallFunction,
   ProviderRegistry,
   ProviderResolution,
+  ProviderRetryOptions,
 } from "./types.js";
 export type {
   LoongProviderModelCatalogEntry,

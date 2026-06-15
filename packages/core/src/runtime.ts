@@ -125,6 +125,10 @@ interface ModelAttemptFailure {
   retryable?: boolean;
   status?: number;
   code?: string;
+  attempts?: number;
+  causeName?: string;
+  causeCode?: string;
+  causeMessage?: string;
 }
 
 export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
@@ -1701,6 +1705,21 @@ function toModelAttemptFailure(resolution: ProviderResolution, error: unknown): 
     if (error.code !== undefined) {
       failure.code = error.code;
     }
+    if (error.attempts !== undefined) {
+      failure.attempts = error.attempts;
+    }
+    if (error.causeName !== undefined) {
+      failure.causeName = error.causeName;
+    }
+    if (error.causeCode !== undefined) {
+      failure.causeCode = error.causeCode;
+    }
+    if (error.causeMessage !== undefined) {
+      failure.causeMessage = redactSecretsInText(error.causeMessage, {
+        maxLength: 1200,
+        compactWhitespace: true,
+      });
+    }
   }
   return failure;
 }
@@ -2179,6 +2198,21 @@ function errorToDetails(error: unknown): ErrorDetails {
         compactWhitespace: true,
       });
     }
+    if (error.attempts !== undefined) {
+      metadata.attempts = error.attempts;
+    }
+    if (error.causeName !== undefined) {
+      metadata.causeName = error.causeName;
+    }
+    if (error.causeCode !== undefined) {
+      metadata.causeCode = error.causeCode;
+    }
+    if (error.causeMessage !== undefined) {
+      metadata.causeMessage = redactSecretsInText(error.causeMessage, {
+        maxLength: 1200,
+        compactWhitespace: true,
+      });
+    }
     return {
       message: error.message,
       metadata,
@@ -2240,7 +2274,15 @@ function formatModelFailure(failure: ModelAttemptFailure): string {
     failure.providerId,
     failure.model,
   ].filter(Boolean).join(":") || failure.requestedModel || "default";
-  return `${target}: ${failure.message}`;
+  const cause = [
+    failure.causeCode,
+    failure.causeName,
+  ].filter(Boolean).join("/");
+  const details = [
+    failure.attempts !== undefined ? `attempts=${failure.attempts}` : undefined,
+    cause || undefined,
+  ].filter(Boolean).join(", ");
+  return details ? `${target}: ${failure.message} (${details})` : `${target}: ${failure.message}`;
 }
 
 class LoongPersistenceError extends Error {

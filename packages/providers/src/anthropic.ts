@@ -1,7 +1,8 @@
 import { normalizeProviderModelEntries, type LoongProviderModelCatalogEntry } from "@loong/model-catalog";
 import { ProviderError, sanitizeProviderBody } from "./errors.js";
+import { fetchProviderWithRetry } from "./fetch.js";
 import { readServerSentEvents } from "./sse.js";
-import type { ModelMessage, ModelProvider, ModelRequest, ModelResponse, ModelToolCall } from "./types.js";
+import type { ModelMessage, ModelProvider, ModelRequest, ModelResponse, ModelToolCall, ProviderRetryOptions } from "./types.js";
 
 export interface AnthropicProviderOptions {
   id?: string;
@@ -15,6 +16,7 @@ export interface AnthropicProviderOptions {
   supportsToolCalling?: boolean;
   headers?: Record<string, string>;
   fetchImpl?: typeof fetch;
+  retry?: ProviderRetryOptions;
 }
 
 type AnthropicContentBlock =
@@ -116,7 +118,13 @@ export function createAnthropicProvider(options: AnthropicProviderOptions): Mode
         requestInit.signal = request.signal;
       }
 
-      const response = await fetchProvider(fetchImpl, `${baseUrl}/messages`, requestInit, id);
+      const response = await fetchProviderWithRetry(
+        fetchImpl,
+        `${baseUrl}/messages`,
+        requestInit,
+        id,
+        options.retry,
+      );
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         const errorOptions = {
@@ -545,29 +553,6 @@ async function parseProviderJson(response: Response, providerId: string): Promis
       status: response.status,
       code: "invalid_json",
       message: `Model provider "${providerId}" returned invalid JSON.`,
-    };
-    throw new ProviderError(
-      error instanceof Error
-        ? { ...errorOptions, responseBody: sanitizeProviderBody(error.message) }
-        : errorOptions,
-    );
-  }
-}
-
-async function fetchProvider(
-  fetchImpl: typeof fetch,
-  url: string,
-  requestInit: RequestInit,
-  providerId: string,
-): Promise<Response> {
-  try {
-    return await fetchImpl(url, requestInit);
-  } catch (error) {
-    const errorOptions = {
-      providerId,
-      code: "network_error",
-      retryable: true,
-      message: `Model provider "${providerId}" request failed.`,
     };
     throw new ProviderError(
       error instanceof Error

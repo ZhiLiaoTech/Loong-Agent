@@ -192,6 +192,132 @@ async function testRuntimeModelFallback(): Promise<void> {
   assert(failed.error?.includes("Primary provider rejected"), "runtime should preserve non-retryable provider error");
 }
 
+async function testProviderNetworkErrorCauseDetails(): Promise<void> {
+  const createFetchError = (): TypeError & { cause?: unknown } => {
+    const error = new TypeError("fetch failed") as TypeError & { cause?: unknown };
+    error.cause = Object.assign(new Error("Connect Timeout Error"), {
+      name: "ConnectTimeoutError",
+      code: "UND_ERR_CONNECT_TIMEOUT",
+    });
+    return error;
+  };
+  const provider = createOpenAICompatibleProvider({
+    apiKey: "test-key",
+    defaultModel: "network-test",
+    retry: { maxAttempts: 1 },
+    fetchImpl: async () => {
+      throw createFetchError();
+    },
+  });
+
+  let caught: unknown;
+  try {
+    await provider.complete({
+      model: "network-test",
+      messages: [{ role: "user", content: "hello" }],
+    });
+  } catch (error) {
+    caught = error;
+  }
+  assert(caught instanceof ProviderError, "provider network errors should be wrapped as ProviderError");
+  assert(caught.code === "network_error", "provider network errors should keep network_error code");
+  assert(caught.responseBody === "fetch failed", "provider network errors should preserve the top-level fetch error message");
+  assert(caught.attempts === 1, "provider network errors should report attempt count");
+  assert(caught.causeName === "ConnectTimeoutError", "provider network errors should capture fetch cause name");
+  assert(caught.causeCode === "UND_ERR_CONNECT_TIMEOUT", "provider network errors should capture fetch cause code");
+  assert(caught.causeMessage === "Connect Timeout Error", "provider network errors should capture fetch cause message");
+
+  const runtime = createLoongRuntime({
+    providers: [provider],
+    defaultModel: "openai:network-test",
+  });
+  const events: LoongEvent[] = [];
+  const unsubscribe = runtime.subscribe(event => events.push(event));
+  try {
+    const result = await runtime.runTurn({
+      sessionId: "network-cause",
+      source: "cli",
+      message: "hello",
+    });
+    assert(result.status === "error", "runtime should surface provider network failures");
+  } finally {
+    unsubscribe();
+  }
+  const errorEvent = events.find((event): event is Extract<LoongEvent, { type: "lifecycle" }> =>
+    event.type === "lifecycle" && event.phase === "error",
+  );
+  assert(readPath(errorEvent?.metadata, ["causeName"]) === "ConnectTimeoutError", "runtime error metadata should include fetch cause name");
+  assert(readPath(errorEvent?.metadata, ["causeCode"]) === "UND_ERR_CONNECT_TIMEOUT", "runtime error metadata should include fetch cause code");
+  assert(readPath(errorEvent?.metadata, ["causeMessage"]) === "Connect Timeout Error", "runtime error metadata should include fetch cause message");
+  assert(readPath(errorEvent?.metadata, ["attempts"]) === 1, "runtime error metadata should include attempt count");
+}
+
+async function testProviderRetriesTransientNetworkFailures(): Promise<void> {
+  let attempts = 0;
+  const provider = createOpenAICompatibleProvider({
+    apiKey: "test-key",
+    defaultModel: "retry-test",
+    retry: { maxAttempts: 3, baseDelayMs: 0 },
+    fetchImpl: async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        const error = new TypeError("fetch failed") as TypeError & { cause?: unknown };
+        error.cause = Object.assign(new Error("socket hang up"), {
+          name: "SocketError",
+          code: "ECONNRESET",
+        });
+        throw error;
+      }
+      return new Response(JSON.stringify({
+        id: "retry_ok",
+        choices: [{ message: { content: "retried-ok" } }],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const response = await provider.complete({
+    model: "retry-test",
+    messages: [{ role: "user", content: "hello" }],
+  });
+  assert(attempts === 3, `provider should retry transient network errors (got ${attempts} attempts)`);
+  assert(response.text === "retried-ok", "provider should return the successful retry response");
+
+  let rateLimitAttempts = 0;
+  const rateLimitProvider = createOpenAICompatibleProvider({
+    apiKey: "test-key",
+    defaultModel: "retry-429-test",
+    retry: { maxAttempts: 3, baseDelayMs: 0 },
+    fetchImpl: async () => {
+      rateLimitAttempts += 1;
+      if (rateLimitAttempts < 3) {
+        return new Response(JSON.stringify({ error: "Rate limit exceeded." }), {
+          status: 429,
+          headers: {
+            "content-type": "application/json",
+            "retry-after": "0",
+          },
+        });
+      }
+      return new Response(JSON.stringify({
+        id: "retry_429_ok",
+        choices: [{ message: { content: "rate-limit-retried-ok" } }],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  const rateLimitResponse = await rateLimitProvider.complete({
+    model: "retry-429-test",
+    messages: [{ role: "user", content: "hello" }],
+  });
+  assert(rateLimitAttempts === 3, `provider should retry HTTP 429 responses (got ${rateLimitAttempts} attempts)`);
+  assert(rateLimitResponse.text === "rate-limit-retried-ok", "provider should return the successful 429 retry response");
+}
+
 
 async function testTierClassifierHeuristic(): Promise<void> {
   // Short prompts with fast keywords → fast.
@@ -1114,6 +1240,8 @@ async function testRuntimeFailOnPermissionDeny(): Promise<void> {
 
 export const runtimeTestCases: TestCase[] = [
   ["runtime model fallback", testRuntimeModelFallback],
+  ["provider network error cause details", testProviderNetworkErrorCauseDetails],
+  ["provider retries transient network failures", testProviderRetriesTransientNetworkFailures],
   ["tier classifier heuristic", testTierClassifierHeuristic],
   ["runtime tier overrides", testRuntimeTierOverrides],
   ["text tool call extraction", testTextToolCallExtraction],
