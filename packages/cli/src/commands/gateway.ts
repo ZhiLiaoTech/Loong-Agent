@@ -95,6 +95,10 @@ export async function runGateway(args: string[]): Promise<void> {
     getEmployees: () => employeeStore.load(),
     ticketStore,
   });
+  const expiredApprovals = await approvalService.reconcileOrphanedPending();
+  if (expiredApprovals > 0) {
+    console.warn(`Expired ${expiredApprovals} orphaned approval request(s) from a previous gateway session.`);
+  }
   const kpiTemplateStore = createFileKpiTemplateStore(defaultKpiTemplateConfigPath());
   const runtimeBundle = await createRuntime({
     mode: "agent",
@@ -226,7 +230,7 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
   }
 
   let allowWrite = process.env.LOONG_ALLOW_WRITE?.trim() !== "0";
-  let allowExec = process.env.LOONG_ALLOW_EXEC?.trim() === "1";
+  let allowExec = process.env.LOONG_ALLOW_EXEC?.trim() !== "0";
   const dataRoot = resolveLoongDataRoot();
   let sessionDir = process.env.LOONG_SESSION_DIR?.trim() || path.join(dataRoot, "sessions");
   let memoryDir = process.env.LOONG_MEMORY_DIR?.trim() || path.join(dataRoot, "memory");

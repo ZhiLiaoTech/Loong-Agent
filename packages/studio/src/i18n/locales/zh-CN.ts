@@ -37,6 +37,12 @@ export const zhCN: MessageTree = {
     eventsSection: "实时事件",
     memorySection: "记忆候选",
     runsSection: "最近运行",
+    eventsEmpty: "暂无实时事件。",
+    memoryEmpty: "暂无待处理记忆候选。",
+    memoryPromote: "采纳",
+    memoryReject: "驳回",
+    runsEmpty: "暂无运行记录。",
+    runCancel: "取消",
   },
 
   sidebar: {
@@ -233,6 +239,21 @@ export const zhCN: MessageTree = {
       inbox: "打开收件箱",
       resolving: "处理中…",
       notificationTitle: "Loong 工具审批",
+    },
+
+    context: {
+      label: "上下文",
+      estimating: "估算中…",
+      detailsTitle: "上下文用量",
+      used: "消息列表 {used} / {limit} chars（{percent}%）",
+      injectedLimit: "注入上下文上限 {count} chars",
+      tier: "Tier {tier}",
+      modelWindow: "模型窗口 {count} tokens",
+      compaction: "本轮压缩",
+      truncatedTools: "工具输出截断 {count} 条",
+      truncatedAssistant: "Assistant 截断 {count} 条",
+      compactionRange: "压缩前 → 后  {before} → {after} chars",
+      nearLimit: "接近上限，较早的对话可能被压缩。",
     },
 
   },
@@ -459,6 +480,8 @@ export const zhCN: MessageTree = {
 
     tabIdentity: "组织身份",
 
+    tabPolicies: "工具策略",
+
     statusSaved: "已保存，对话将使用最新配置。",
 
     nameRequired: "请填写姓名。",
@@ -472,6 +495,36 @@ export const zhCN: MessageTree = {
     bootstrapSuccess: "示例组织已创建，请继续完善配置。",
 
     bootstrapSkipped: "组织已存在，未重复创建。",
+
+    policyEditor: {
+
+      lead: "编辑工具权限规则（allow / ask / deny / approval）。保存后写入 Gateway 组织目录；在「组织身份」Tab 为员工选择对应的权限方案。",
+
+      title: "工具策略 JSON",
+
+      hint: "编辑 policies 数组后保存。典型规则按 toolName（如 shell_run）或 capability（如 execute、write）匹配。deny 优先于 allow。",
+
+      reload: "重新加载",
+
+      save: "保存策略",
+
+      saving: "保存中…",
+
+      saved: "工具策略已保存。",
+
+      reloaded: "策略 JSON 已重新加载。",
+
+      invalidJson: "JSON 必须包含 policies 数组。",
+
+      syntaxError: "JSON 格式无效，请检查语法。",
+
+      discardConfirm: "工具策略有未保存的修改，放弃并继续？",
+
+      unsavedHint: "有未保存的修改。",
+
+      missingAssignedPolicy: "当前员工绑定的权限方案已不存在，请在「组织身份」中重新选择。",
+
+    },
 
     suite: {
 
@@ -563,7 +616,7 @@ export const zhCN: MessageTree = {
 
     contextTitle: "上下文压缩",
 
-    contextHint: "控制长对话进入模型前的压缩策略。AI 摘要默认关闭，失败会自动回退到硬截断。",
+    contextHint: "长对话仅在上下文用量达到 100% 时自动压缩；AI 摘要默认关闭，失败会回退到硬截断。如需每轮都压缩，在配置中设置 compactionPolicy: \"always\"。",
 
     aiSummarizationEnabled: "AI 摘要旧对话",
 

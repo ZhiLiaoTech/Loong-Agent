@@ -688,7 +688,7 @@ export class HttpLoongGateway implements LoongGateway {
         ? ["org.bootstrap.example"]
         : []),
       ...(this.#toolPolicyStore ? ["policy.tool.get", "policy.tool.save"] : []),
-      ...(this.#approvalService ? ["approval.list", "approval.approve", "approval.reject"] : []),
+      ...(this.#approvalService ? ["approval.list", "approval.approve", "approval.reject", "approval.dismiss"] : []),
       ...(this.#ticketStore ? ["ticket.list", "ticket.upsert"] : []),
       ...(this.#kpiTemplateStore ? ["kpi.template.list", "kpi.snapshot.get"] : []),
       ...(this.#tierConfigStore ? ["tier.config.get", "tier.config.save", "tier.classify"] : []),
@@ -735,6 +735,7 @@ export class HttpLoongGateway implements LoongGateway {
       listApprovals: params => this.#listApprovals(params as GatewayApprovalListParams | undefined),
       approveRequest: params => this.#approveRequest(params as GatewayApprovalResolveParams),
       rejectRequest: params => this.#rejectRequest(params as GatewayApprovalResolveParams),
+      dismissRequest: params => this.#dismissRequest(params as GatewayApprovalResolveParams),
       loadTickets: () => this.#loadTickets(),
       upsertTicket: params => this.#upsertTicket(params as OrgTicket),
       loadKpiTemplates: () => this.#loadKpiTemplates(),
@@ -1171,6 +1172,13 @@ export class HttpLoongGateway implements LoongGateway {
       throw new GatewayHttpError(404, "Approval service is not available.");
     }
     return await this.#approvalService.reject(params.id, params.resolvedBy, params.note);
+  }
+
+  async #dismissRequest(params: GatewayApprovalResolveParams): Promise<ApprovalRequest> {
+    if (!this.#approvalService) {
+      throw new GatewayHttpError(404, "Approval service is not available.");
+    }
+    return await this.#approvalService.dismiss(params.id, params.resolvedBy);
   }
 
   async #loadTickets(): Promise<TicketDocument> {

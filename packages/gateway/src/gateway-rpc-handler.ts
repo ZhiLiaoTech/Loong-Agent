@@ -24,6 +24,7 @@ export interface GatewayRpcHandlerDeps {
   listApprovals(params: unknown): Promise<unknown>;
   approveRequest(params: unknown): Promise<unknown>;
   rejectRequest(params: unknown): Promise<unknown>;
+  dismissRequest(params: unknown): Promise<unknown>;
   loadTickets(): Promise<unknown>;
   upsertTicket(params: unknown): Promise<unknown>;
   loadKpiTemplates(): Promise<unknown>;
@@ -135,6 +136,9 @@ export async function handleGatewayRpc(
       }
       if (request.type === "approval.reject") {
         return { type: "response", id: request.id, ok: true, payload: await deps.rejectRequest(request.params) };
+      }
+      if (request.type === "approval.dismiss") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.dismissRequest(request.params) };
       }
       if (request.type === "ticket.list") {
         return { type: "response", id: request.id, ok: true, payload: await deps.loadTickets() };

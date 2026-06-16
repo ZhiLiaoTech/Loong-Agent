@@ -22,10 +22,10 @@ import {
   EMPTY_ORG_EMPLOYEE_FORM,
   type OrgEmployeeFormState,
   type OrgPeerEmployee,
-  type OrgPolicyOption,
   type OrgPositionOption,
   type OrgUnitOption,
 } from "./types.js";
+import { useToolPolicyEditor } from "./useToolPolicyEditor.js";
 
 interface EmployeeListPayload {
   employees: Array<{
@@ -199,7 +199,6 @@ export function useOrgEmployeePage() {
   const [form, setForm] = useState<OrgEmployeeFormState>(EMPTY_ORG_EMPLOYEE_FORM);
   const [units, setUnits] = useState<readonly OrgUnitOption[]>([]);
   const [positions, setPositions] = useState<readonly OrgPositionOption[]>([]);
-  const [policies, setPolicies] = useState<readonly OrgPolicyOption[]>([]);
   const [peers, setPeers] = useState<readonly OrgPeerEmployee[]>([]);
   const [skills, setSkills] = useState<readonly SkillOption[]>([]);
   const [skillsAvailable, setSkillsAvailable] = useState(true);
@@ -211,7 +210,37 @@ export function useOrgEmployeePage() {
   const [saving, setSaving] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
 
+  const {
+    policyJsonText,
+    policyDirty,
+    policies,
+    savingPolicies,
+    setPolicyJsonText,
+    applyPoliciesFromServer,
+    confirmDiscardIfDirty,
+    reloadPolicies,
+    savePolicies: saveToolPolicies,
+  } = useToolPolicyEditor(client, {
+    messages: {
+      reloaded: t("org.policyEditor.reloaded"),
+      saved: t("org.policyEditor.saved"),
+      invalidJson: t("org.policyEditor.invalidJson"),
+      syntaxError: t("org.policyEditor.syntaxError"),
+      discardConfirm: t("org.policyEditor.discardConfirm"),
+      missingAssignedPolicy: t("org.policyEditor.missingAssignedPolicy"),
+    },
+    onStatus: setStatus,
+    onError: setError,
+  });
+
+  const savePolicies = useCallback(async () => {
+    await saveToolPolicies(form.toolPolicyId);
+  }, [form.toolPolicyId, saveToolPolicies]);
+
   const load = useCallback(async (options: LoadOrgEmployeeOptions = {}) => {
+    if (!confirmDiscardIfDirty()) {
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -259,13 +288,7 @@ export function useOrgEmployeePage() {
 
       setUnits(orgOptions.units);
       setPositions(orgOptions.positions);
-      setPolicies(
-        (policyPayload.policies ?? []).map(policy => ({
-          id: policy.id,
-          ...(policy.description ? { description: policy.description } : {}),
-          ruleCount: policy.rules?.length ?? 0,
-        })),
-      );
+      applyPoliciesFromServer(policyPayload.policies ?? []);
       setPeers(
         employees
           .filter(entry => entry.status === "active")
@@ -316,7 +339,7 @@ export function useOrgEmployeePage() {
     } finally {
       setLoading(false);
     }
-  }, [client, t]);
+  }, [applyPoliciesFromServer, client, confirmDiscardIfDirty, t]);
 
   useEffect(() => {
     void load();
@@ -441,13 +464,19 @@ export function useOrgEmployeePage() {
     positionName,
     policy,
     managerName,
+    policyJsonText,
+    policyDirty,
     status,
     error,
     loading,
     saving,
+    savingPolicies,
     bootstrapping,
     load,
     save,
+    setPolicyJsonText,
+    reloadPolicies,
+    savePolicies,
     applyPositionPreset,
     bootstrapExample,
   };

@@ -1,51 +1,127 @@
-.statsRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: flex-end;
+.commandBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: var(--space-4);
+  align-items: stretch;
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--soft) 58%, var(--surface));
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(96px, 1fr));
+  gap: var(--space-2);
 }
 
 .statChip {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 88px;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  min-width: 0;
+  min-height: 64px;
+  justify-content: center;
+  padding: 10px var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 
 .statLabel {
   font-size: var(--text-xs);
+  line-height: var(--line-height-tight);
   color: var(--muted);
 }
 
 .statValue {
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
+  line-height: var(--line-height-tight);
   font-weight: var(--font-weight-semibold);
   color: var(--text);
+}
+
+.commandControls {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.connectionPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: var(--line-height-tight);
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.connectionPill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.connection-live {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 32%, var(--line));
+  background: color-mix(in srgb, var(--ok) 8%, var(--surface));
+}
+
+.connection-live::before {
+  background: var(--ok);
+}
+
+.connection-connecting {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.connection-connecting::before {
+  background: var(--accent);
+}
+
+.connection-error {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--line));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+.connection-error::before {
+  background: var(--danger);
 }
 
 .sessionField {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-left: auto;
-  min-width: 220px;
+  gap: var(--space-1);
+  min-width: 0;
   font-size: var(--text-xs);
   color: var(--muted);
 }
 
 .sessionField input {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--line);
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   font: inherit;
   font-size: var(--text-sm);
+  line-height: var(--line-height-tight);
 }
 
 .section {
@@ -54,33 +130,46 @@
   gap: var(--space-3);
 }
 
-.sectionHead {
+.sectionHeadCompact {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }
 
-.grid {
+.signalGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.8fr);
   gap: var(--space-4);
   align-items: stretch;
 }
 
-.panel {
+.panelPrimary,
+.panelSecondary {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   min-width: 0;
 }
 
-@media (max-width: 960px) {
-  .grid {
+@media (max-width: 1120px) {
+  .commandBar {
     grid-template-columns: 1fr;
   }
 
-  .sessionField {
-    margin-left: 0;
-    width: 100%;
+  .commandControls {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .signalGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .statsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .commandControls {
+    grid-template-columns: 1fr;
   }
 }

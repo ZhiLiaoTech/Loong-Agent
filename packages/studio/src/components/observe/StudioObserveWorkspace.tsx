@@ -41,36 +41,44 @@ export function StudioObserveWorkspace() {
         </div>
       ) : null}
 
-      <div className={styles.statsRow}>
-        <div className={styles.statChip}>
-          <span className={styles.statLabel}>{t("observe.statsRuns")}</span>
-          <strong className={styles.statValue}>{page.runs.length}</strong>
+      <div className={styles.commandBar}>
+        <div className={styles.statsGrid}>
+          <div className={styles.statChip}>
+            <span className={styles.statLabel}>{t("observe.statsRuns")}</span>
+            <strong className={styles.statValue}>{page.runs.length}</strong>
+          </div>
+          <div className={styles.statChip}>
+            <span className={styles.statLabel}>{t("observe.statsActive")}</span>
+            <strong className={styles.statValue}>{page.activeRuns}</strong>
+          </div>
+          <div className={styles.statChip}>
+            <span className={styles.statLabel}>{t("observe.statsPending")}</span>
+            <strong className={styles.statValue}>{page.approvals.length}</strong>
+          </div>
+          <div className={styles.statChip}>
+            <span className={styles.statLabel}>{t("observe.statsEvents")}</span>
+            <strong className={styles.statValue}>{events.length}</strong>
+          </div>
         </div>
-        <div className={styles.statChip}>
-          <span className={styles.statLabel}>{t("observe.statsActive")}</span>
-          <strong className={styles.statValue}>{page.activeRuns}</strong>
+
+        <div className={styles.commandControls}>
+          <span className={`${styles.connectionPill} ${styles[`connection-${sseStatus}`] ?? ""}`}>
+            {sseStatus}
+          </span>
+          <label className={styles.sessionField}>
+            <span>{t("observe.session")}</span>
+            <input
+              value={page.sessionId}
+              onChange={event => page.setSessionId(event.target.value)}
+              onBlur={() => void page.refreshTrajectories()}
+              autoComplete="off"
+            />
+          </label>
         </div>
-        <div className={styles.statChip}>
-          <span className={styles.statLabel}>{t("observe.statsPending")}</span>
-          <strong className={styles.statValue}>{page.approvals.length}</strong>
-        </div>
-        <div className={styles.statChip}>
-          <span className={styles.statLabel}>{t("observe.statsEvents")}</span>
-          <strong className={styles.statValue}>{events.length}</strong>
-        </div>
-        <label className={styles.sessionField}>
-          <span>{t("observe.session")}</span>
-          <input
-            value={page.sessionId}
-            onChange={event => page.setSessionId(event.target.value)}
-            onBlur={() => void page.refreshTrajectories()}
-            autoComplete="off"
-          />
-        </label>
       </div>
 
       <section className={styles.section}>
-        <div className={styles.sectionHead}>
+        <div className={styles.sectionHeadCompact}>
           <h2 className={wb.sectionTitle}>{t("observe.approvalsSection")}</h2>
           <p className={wb.sectionLead}>{t("observe.approvalsLead")}</p>
         </div>
@@ -87,25 +95,32 @@ export function StudioObserveWorkspace() {
           onRefresh={() => void page.refreshApprovals()}
           onApprove={id => void page.approveRequest(id)}
           onReject={id => void page.rejectRequest(id)}
+          onDismiss={id => void page.dismissRequest(id)}
         />
       </section>
 
-      <div className={styles.grid}>
-        <section className={styles.panel}>
-          <div className={styles.sectionHead}>
-            <h2 className={wb.sectionTitle}>{t("observe.eventsSection")}</h2>
-          </div>
-          <EventsFeed events={events} sseStatus={sseStatus} onReconnect={reconnect} />
+      <div className={styles.signalGrid}>
+        <section className={styles.panelPrimary}>
+          <EventsFeed
+            events={events}
+            sseStatus={sseStatus}
+            onReconnect={reconnect}
+            title={t("observe.eventsSection")}
+            reconnectLabel={t("common.refresh")}
+            emptyLabel={t("observe.eventsEmpty")}
+          />
         </section>
-        <section className={styles.panel}>
-          <div className={styles.sectionHead}>
-            <h2 className={wb.sectionTitle}>{t("observe.memorySection")}</h2>
-          </div>
+        <section className={styles.panelSecondary}>
           <MemoryCandidatesPanel
             candidates={page.memoryCandidates}
             review={page.memoryReview}
             result={page.memoryResult}
             loading={page.loading}
+            title={t("observe.memorySection")}
+            refreshLabel={t("common.refresh")}
+            emptyLabel={t("observe.memoryEmpty")}
+            promoteLabel={t("observe.memoryPromote")}
+            rejectLabel={t("observe.memoryReject")}
             onRefresh={() => void page.refreshMemory()}
             onPromote={id => void page.promoteMemory(id)}
             onReject={id => void page.rejectMemory(id)}
@@ -114,12 +129,13 @@ export function StudioObserveWorkspace() {
       </div>
 
       <section className={styles.section}>
-        <div className={styles.sectionHead}>
-          <h2 className={wb.sectionTitle}>{t("observe.runsSection")}</h2>
-        </div>
         <RunsObserveTable
           runs={page.runs}
           loading={page.loading}
+          title={t("observe.runsSection")}
+          refreshLabel={t("common.refresh")}
+          emptyLabel={t("observe.runsEmpty")}
+          cancelLabel={t("observe.runCancel")}
           onRefresh={() => void page.refreshRuns()}
           onCancel={runId => void page.cancelRun(runId)}
         />

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LoongEvent } from "../../api/index.js";
 import type { GatewayEventEnvelope } from "../../api/index.js";
+import { GatewayApiError } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
+import { isStaleApprovalError } from "../observe/approvalErrors.js";
 
 export interface PendingApprovalItem {
   id: string;
@@ -23,6 +25,7 @@ interface ApprovalApiItem {
   reason: string;
   createdAt: string;
   inputSummary?: string;
+  awaitingLiveRun?: boolean;
 }
 
 function readString(value: unknown): string | undefined {
@@ -84,7 +87,9 @@ export function usePendingApprovals(options: {
         params.sessionId = options.sessionId.trim();
       }
       const payload = await client.rpc<{ requests: ApprovalApiItem[] }>("approval.list", params);
-      const mapped = (payload.requests ?? []).map(mapFromApi);
+      const mapped = (payload.requests ?? [])
+        .filter(item => item.awaitingLiveRun !== false)
+        .map(mapFromApi);
       setPendingApprovals(mapped);
       for (const item of mapped) {
         if (!notifiedIdsRef.current.has(item.id)) {
@@ -198,19 +203,42 @@ export function usePendingApprovals(options: {
     pollingRef.current.clear();
   }, []);
 
-  const approveApproval = useCallback(async (id: string) => {
-    await client.rpc("approval.approve", { id, resolvedBy: "dashboard" });
+  const dismissApproval = useCallback(async (id: string) => {
+    await client.rpc("approval.dismiss", { id, resolvedBy: "dashboard" });
     setPendingApprovals(current => current.filter(entry => entry.id !== id));
   }, [client]);
 
+  const approveApproval = useCallback(async (id: string) => {
+    try {
+      await client.rpc("approval.approve", { id, resolvedBy: "dashboard" });
+      setPendingApprovals(current => current.filter(entry => entry.id !== id));
+    } catch (error) {
+      const message = error instanceof GatewayApiError ? error.message : String(error);
+      if (isStaleApprovalError(message)) {
+        await dismissApproval(id);
+        return;
+      }
+      throw error;
+    }
+  }, [client, dismissApproval]);
+
   const rejectApproval = useCallback(async (id: string) => {
-    await client.rpc("approval.reject", {
-      id,
-      resolvedBy: "dashboard",
-      note: "Rejected from chat.",
-    });
-    setPendingApprovals(current => current.filter(entry => entry.id !== id));
-  }, [client]);
+    try {
+      await client.rpc("approval.reject", {
+        id,
+        resolvedBy: "dashboard",
+        note: "Rejected from chat.",
+      });
+      setPendingApprovals(current => current.filter(entry => entry.id !== id));
+    } catch (error) {
+      const message = error instanceof GatewayApiError ? error.message : String(error);
+      if (isStaleApprovalError(message)) {
+        await dismissApproval(id);
+        return;
+      }
+      throw error;
+    }
+  }, [client, dismissApproval]);
 
   return {
     pendingApprovals,

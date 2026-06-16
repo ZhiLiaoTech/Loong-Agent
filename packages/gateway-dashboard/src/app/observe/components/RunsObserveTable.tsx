@@ -7,22 +7,30 @@ export function RunsObserveTable({
   loading,
   onRefresh,
   onCancel,
+  title = "Runs",
+  refreshLabel = "Refresh",
+  emptyLabel = "No runs yet.",
+  cancelLabel = "Cancel",
 }: {
   runs: readonly GatewayRunRecord[];
   loading: boolean;
   onRefresh: () => void;
   onCancel: (runId: string) => void;
+  title?: string;
+  refreshLabel?: string;
+  emptyLabel?: string;
+  cancelLabel?: string;
 }) {
   return (
     <section className={styles.card}>
       <div className={styles.head}>
-        <h3 className={styles.title}>Runs ({runs.length})</h3>
+        <h3 className={styles.title}>{title} ({runs.length})</h3>
         <button type="button" className={styles.refresh} onClick={onRefresh} disabled={loading}>
-          Refresh
+          {refreshLabel}
         </button>
       </div>
       {!runs.length ? (
-        <p className={styles.empty}>No runs yet.</p>
+        <p className={styles.empty}>{emptyLabel}</p>
       ) : (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
@@ -58,7 +66,7 @@ export function RunsObserveTable({
                           className={styles.danger}
                           onClick={() => void onCancel(run.runId)}
                         >
-                          Cancel
+                          {cancelLabel}
                         </button>
                       ) : null}
                     </td>

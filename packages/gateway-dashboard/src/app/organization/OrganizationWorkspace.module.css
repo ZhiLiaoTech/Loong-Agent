@@ -53,6 +53,17 @@
   color: var(--text);
 }
 
+.policyEditorTextarea {
+  min-height: 420px;
+}
+
+.policyDirtyHint {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--line-height-normal);
+  color: var(--warning, #b45309);
+}
+
 .skillsPlaceholder {
   margin: 0;
   font-size: var(--text-sm);

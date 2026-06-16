@@ -11,6 +11,7 @@ import type {
   MemoryReviewState,
   TrajectorySummary,
 } from "./types.js";
+import { isStaleApprovalError } from "./approvalErrors.js";
 
 const DEFAULT_SESSION = "dashboard";
 
@@ -249,6 +250,18 @@ export function useObservePage() {
     }
   }, [client, refreshMemory]);
 
+  const dismissRequest = useCallback(async (id: string) => {
+    setApprovalResult("Clearing stale approval…");
+    try {
+      await client.rpc("approval.dismiss", { id, resolvedBy: "dashboard" });
+      setApprovalResult("Stale approval cleared.");
+      await refreshApprovals();
+    } catch (caught) {
+      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      setApprovalResult(message);
+    }
+  }, [client, refreshApprovals]);
+
   const approveRequest = useCallback(async (id: string) => {
     setApprovalResult("Approving…");
     try {
@@ -257,9 +270,14 @@ export function useObservePage() {
       await refreshApprovals();
     } catch (caught) {
       const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      if (isStaleApprovalError(message)) {
+        await dismissRequest(id);
+        setApprovalResult("该审批已过期（运行已结束或 Gateway 重启），已自动清除。");
+        return;
+      }
       setApprovalResult(message);
     }
-  }, [client, refreshApprovals]);
+  }, [client, dismissRequest, refreshApprovals]);
 
   const rejectRequest = useCallback(async (id: string) => {
     setApprovalResult("Rejecting…");
@@ -269,9 +287,14 @@ export function useObservePage() {
       await refreshApprovals();
     } catch (caught) {
       const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      if (isStaleApprovalError(message)) {
+        await dismissRequest(id);
+        setApprovalResult("该审批已过期（运行已结束或 Gateway 重启），已自动清除。");
+        return;
+      }
       setApprovalResult(message);
     }
-  }, [client, refreshApprovals]);
+  }, [client, dismissRequest, refreshApprovals]);
 
   const rejectMemory = useCallback(async (id: string) => {
     setMemoryResult("Rejecting…");
@@ -328,5 +351,6 @@ export function useObservePage() {
     rejectMemory,
     approveRequest,
     rejectRequest,
+    dismissRequest,
   };
 }

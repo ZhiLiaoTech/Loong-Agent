@@ -2,7 +2,8 @@ import type { ModelContentPart, ModelMessage } from "@loong/providers";
 
 const DEFAULT_TOOL_RESULT_MAX_CHARS = 8_000;
 const DEFAULT_ASSISTANT_CONTENT_MAX_CHARS = 16_000;
-const TOTAL_BUDGET_MULTIPLIER = 8;
+export const TURN_MESSAGE_BUDGET_MULTIPLIER = 8;
+export const MIN_TURN_MESSAGE_BUDGET_CHARS = 32_000;
 const TRUNCATED_TOOL_SUFFIX = "\n\n[Loong: tool output truncated for context budget]";
 const TRUNCATED_ASSISTANT_SUFFIX = "\n\n[Loong: assistant text truncated for context budget]";
 
@@ -26,12 +27,45 @@ export interface TurnPrepReport {
   aggressive: boolean;
 }
 
+export function computeTurnMessageBudgetChars(turnMaxContextChars: number): number {
+  const base = Math.floor(turnMaxContextChars);
+  if (!Number.isFinite(base) || base <= 0) {
+    return MIN_TURN_MESSAGE_BUDGET_CHARS;
+  }
+  return Math.max(base * TURN_MESSAGE_BUDGET_MULTIPLIER, MIN_TURN_MESSAGE_BUDGET_CHARS);
+}
+
+export type TurnPrepCompactionPolicy = "always" | "whenOverBudget";
+
+export function shouldCompactForContextBudget(
+  estimatedChars: number,
+  turnMaxContextChars: number,
+  policy: TurnPrepCompactionPolicy = "whenOverBudget",
+): boolean {
+  if (policy === "always") {
+    return true;
+  }
+  return estimatedChars >= computeTurnMessageBudgetChars(turnMaxContextChars);
+}
+
+export function buildSkippedTurnPrepReport(messages: readonly ModelMessage[]): TurnPrepReport {
+  const estimated = estimateModelMessagesChars(messages);
+  return {
+    truncatedToolResults: 0,
+    truncatedAssistantMessages: 0,
+    strippedReasoningMessages: 0,
+    estimatedCharsBefore: estimated,
+    estimatedCharsAfter: estimated,
+    aggressive: false,
+  };
+}
+
 export function buildTurnPrepOptions(
   turnMaxContextChars: number,
   overrides: Partial<Pick<TurnPrepOptions, "toolResultMaxChars" | "assistantContentMaxChars" | "totalEstimatedMaxChars">> = {},
   aggressive = false,
 ): TurnPrepOptions {
-  const baseBudget = Math.max(turnMaxContextChars * TOTAL_BUDGET_MULTIPLIER, 32_000);
+  const baseBudget = computeTurnMessageBudgetChars(turnMaxContextChars);
   return {
     toolResultMaxChars: overrides.toolResultMaxChars ?? DEFAULT_TOOL_RESULT_MAX_CHARS,
     assistantContentMaxChars: overrides.assistantContentMaxChars ?? DEFAULT_ASSISTANT_CONTENT_MAX_CHARS,

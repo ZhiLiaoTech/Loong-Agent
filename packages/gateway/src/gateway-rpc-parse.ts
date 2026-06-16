@@ -183,6 +183,13 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
       params: parseApprovalResolveParams(value.params),
     };
   }
+  if (value.type === "approval.dismiss") {
+    return {
+      type: "approval.dismiss",
+      id: value.id,
+      params: parseApprovalResolveParams(value.params),
+    };
+  }
   if (value.type === "ticket.list") {
     return { type: "ticket.list", id: value.id };
   }

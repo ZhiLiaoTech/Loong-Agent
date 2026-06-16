@@ -29,7 +29,7 @@ export function OrgWorkspace() {
           >
             {page.savingEmployees ? "保存中…" : "保存员工"}
           </button>
-          <button type="button" className={styles.refresh} onClick={() => void page.reload()} disabled={page.loading}>
+          <button type="button" className={styles.refresh} onClick={() => void page.reload()} disabled={page.loading || page.savingPolicies}>
             刷新
           </button>
         </div>

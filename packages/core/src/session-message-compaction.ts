@@ -4,11 +4,15 @@ const DEFAULT_KEEP_RECENT_TURNS = 4;
 const DEFAULT_OLDER_TOOL_MAX_CHARS = 400;
 const COMPACTED_TOOL_SUFFIX = "\n\n[Loong: older tool output compacted for context budget]";
 
+export type SessionCompactionPolicy = "always" | "whenOverBudget";
+
 export interface SessionMessageCompactionOptions {
   /** Full user-assistant-tool turns kept without turn-level compaction (default 4). */
   keepRecentTurns?: number;
   /** Max chars per tool message in older turns (default 400). */
   olderToolMaxChars?: number;
+  /** When "whenOverBudget" (default), compaction runs only at 100% message budget. */
+  compactionPolicy?: SessionCompactionPolicy;
 }
 
 export interface SessionMessageCompactionReport {

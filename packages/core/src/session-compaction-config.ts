@@ -24,6 +24,9 @@ export function parseSessionCompactionValue(
   if (typeof record.olderToolMaxChars === "number" && Number.isFinite(record.olderToolMaxChars)) {
     compaction.olderToolMaxChars = Math.max(64, Math.min(8_000, Math.floor(record.olderToolMaxChars)));
   }
+  if (record.compactionPolicy === "always" || record.compactionPolicy === "whenOverBudget") {
+    compaction.compactionPolicy = record.compactionPolicy;
+  }
   return compaction;
 }
 

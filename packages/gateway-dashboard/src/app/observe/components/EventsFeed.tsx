@@ -11,24 +11,30 @@ export function EventsFeed({
   events,
   sseStatus,
   onReconnect,
+  title = "Events",
+  reconnectLabel = "Reconnect",
+  emptyLabel = "No events yet.",
 }: {
   events: readonly GatewayEventEnvelope[];
   sseStatus: SseConnectionStatus;
   onReconnect: () => void;
+  title?: string;
+  reconnectLabel?: string;
+  emptyLabel?: string;
 }) {
   return (
     <section className={styles.card}>
       <div className={styles.head}>
-        <h3 className={styles.title}>Events ({events.length})</h3>
+        <h3 className={styles.title}>{title} ({events.length})</h3>
         <div className={styles.actions}>
           <span className={`${styles.status} ${styles[`status-${sseStatus}`] ?? ""}`}>{sseStatus}</span>
           <button type="button" className={styles.refresh} onClick={onReconnect}>
-            Reconnect
+            {reconnectLabel}
           </button>
         </div>
       </div>
       {!events.length ? (
-        <p className={styles.empty}>No events yet.</p>
+        <p className={styles.empty}>{emptyLabel}</p>
       ) : (
         <ul className={styles.list}>
           {events.map(envelope => {

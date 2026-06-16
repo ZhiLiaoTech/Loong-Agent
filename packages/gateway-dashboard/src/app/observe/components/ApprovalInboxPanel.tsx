@@ -16,6 +16,7 @@ export function ApprovalInboxPanel({
   onRefresh,
   onApprove,
   onReject,
+  onDismiss,
 }: {
   approvals: readonly ApprovalInboxItem[];
   result: string | null;
@@ -29,6 +30,7 @@ export function ApprovalInboxPanel({
   onRefresh: () => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onDismiss: (id: string) => void;
 }) {
   const highlightRef = useRef<HTMLLIElement | null>(null);
 
@@ -77,6 +79,7 @@ export function ApprovalInboxPanel({
       ) : (
         <ul className={styles.list}>
           {approvals.map(item => {
+            const stale = item.awaitingLiveRun === false;
             const meta = [
               item.employeeDisplayName || item.employeeId || "",
               item.assignedApproverDisplayName
@@ -93,19 +96,32 @@ export function ApprovalInboxPanel({
               <li
                 key={item.id}
                 ref={item.id === highlightApprovalId ? highlightRef : undefined}
-                className={`${styles.item}${item.id === highlightApprovalId ? ` ${styles.itemHighlight}` : ""}`}
+                className={`${styles.item}${item.id === highlightApprovalId ? ` ${styles.itemHighlight}` : ""}${stale ? ` ${styles.itemStale}` : ""}`}
               >
                 <strong className={styles.tool}>{item.toolName}</strong>
                 {meta ? <p className={styles.meta}>{meta}</p> : null}
+                {stale ? (
+                  <p className={styles.staleNotice}>
+                    该审批对应的 Agent 运行已结束或 Gateway 已重启，无法批准或拒绝。
+                  </p>
+                ) : null}
                 {item.reason ? <p className={styles.reason}>{item.reason}</p> : null}
                 {item.inputSummary ? <pre className={styles.input}>{item.inputSummary}</pre> : null}
                 <div className={styles.actions}>
-                  <button type="button" className={styles.primary} onClick={() => void onApprove(item.id)}>
-                    批准
-                  </button>
-                  <button type="button" className={styles.danger} onClick={() => void onReject(item.id)}>
-                    拒绝
-                  </button>
+                  {stale ? (
+                    <button type="button" className={styles.secondary} onClick={() => void onDismiss(item.id)}>
+                      清除
+                    </button>
+                  ) : (
+                    <>
+                      <button type="button" className={styles.primary} onClick={() => void onApprove(item.id)}>
+                        批准
+                      </button>
+                      <button type="button" className={styles.danger} onClick={() => void onReject(item.id)}>
+                        拒绝
+                      </button>
+                    </>
+                  )}
                 </div>
               </li>
             );

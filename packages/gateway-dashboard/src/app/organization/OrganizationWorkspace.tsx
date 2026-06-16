@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { CapabilityTab } from "./components/CapabilityTab.js";
 import { OrganizationIdentityTab } from "./components/OrganizationIdentityTab.js";
+import { ToolPolicyTab } from "./components/ToolPolicyTab.js";
 import { useWorkbenchT } from "../i18n/WorkbenchI18nContext.js";
 import wb from "../workbench.module.css";
 import modelStyles from "../models/ModelsWorkspace.module.css";
@@ -9,7 +10,7 @@ import { CronTasksTab } from "./components/CronTasksTab.js";
 import { SuiteImportTab } from "./components/SuiteImportTab.js";
 import { useEmployeeCronJobs } from "./useEmployeeCronJobs.js";
 
-type OrganizationTab = "capability" | "identity" | "suite" | "cron";
+type OrganizationTab = "capability" | "identity" | "suite" | "cron" | "policies";
 
 export function OrganizationWorkspace() {
   const t = useWorkbenchT();
@@ -52,7 +53,7 @@ export function OrganizationWorkspace() {
             type="button"
             className={wb.btnSecondary}
             onClick={() => void page.load()}
-            disabled={page.loading || page.saving}
+            disabled={page.loading || page.saving || page.savingPolicies}
           >
             {t("common.refresh")}
           </button>
@@ -88,6 +89,16 @@ export function OrganizationWorkspace() {
         <button
           type="button"
           role="tab"
+          aria-selected={activeTab === "policies"}
+          className={activeTab === "policies" ? `${modelStyles.tab} ${modelStyles.tabActive}` : modelStyles.tab}
+          onClick={() => setActiveTab("policies")}
+        >
+          {t("org.tabPolicies")}
+          {page.policyDirty ? " *" : ""}
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={activeTab === "cron"}
           className={activeTab === "cron" ? `${modelStyles.tab} ${modelStyles.tabActive}` : modelStyles.tab}
           onClick={() => setActiveTab("cron")}
@@ -118,6 +129,16 @@ export function OrganizationWorkspace() {
             onChange={patch => page.updateForm(patch)}
             onApplyPositionPreset={() => page.applyPositionPreset()}
             onSave={() => void handleSave()}
+          />
+        ) : activeTab === "policies" ? (
+          <ToolPolicyTab
+            jsonText={page.policyJsonText}
+            dirty={page.policyDirty}
+            loading={page.loading}
+            saving={page.savingPolicies}
+            onChange={page.setPolicyJsonText}
+            onReload={() => void page.reloadPolicies()}
+            onSave={() => void page.savePolicies()}
           />
         ) : activeTab === "cron" ? (
           <CronTasksTab

@@ -29,8 +29,13 @@ import {
 import {
   applyTurnPrep,
   buildTurnPrepOptions,
+  buildSkippedTurnPrepReport,
+  computeTurnMessageBudgetChars,
+  estimateModelMessagesChars,
   isLikelyContextOverflowError,
+  shouldCompactForContextBudget,
   type TurnPrepReport,
+  type TurnPrepCompactionPolicy,
 } from "./turn-prep.js";
 import {
   appendToolIterationLimitFinalizeMessages,
@@ -296,7 +301,10 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
         rawHistory,
         turnMaxContextChars,
         resolveSessionCompactionForTurn(this.#sessionCompaction, activeInput),
-        aiSummarizationOptions ? { aiSummarization: aiSummarizationOptions } : {},
+        {
+          ...(aiSummarizationOptions ? { aiSummarization: aiSummarizationOptions } : {}),
+          compactionPolicy: this.#compactionPolicy(resolveSessionCompactionForTurn(this.#sessionCompaction, activeInput)),
+        },
       );
       if (sessionHistoryPrep.report.sessionCompaction?.compactedToolMessages) {
         this.#emit({
@@ -767,32 +775,60 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
       return await this.#completeModelWithFallback(modelRefs, messages, input, runId);
     }
 
+    const compactionPolicy = this.#compactionPolicy(
+      resolveSessionCompactionForTurn(this.#sessionCompaction, input),
+    );
+    const estimated = estimateModelMessagesChars(messages);
+    const shouldCompact = shouldCompactForContextBudget(estimated, turnMaxContextChars, compactionPolicy);
+
+    const runWithMessages = async (prepared: ModelMessage[]) =>
+      this.#completeModelWithFallback(modelRefs, prepared, input, runId);
+
+    const retryAfterOverflow = async (sourceMessages: ModelMessage[]) => {
+      const aggressive = applyTurnPrep(sourceMessages, buildTurnPrepOptions(turnMaxContextChars, {}, true));
+      this.#emitTurnPrep(runId, aggressive.report, turnMaxContextChars, { reactive: true });
+      return runWithMessages(aggressive.messages);
+    };
+
+    if (!shouldCompact) {
+      const skipped = buildSkippedTurnPrepReport(messages);
+      this.#emitTurnPrep(runId, skipped, turnMaxContextChars, { skipped: true });
+      try {
+        return await runWithMessages(messages);
+      } catch (error) {
+        if (input.signal?.aborted || !isLikelyContextOverflowError(error)) {
+          throw error;
+        }
+        return retryAfterOverflow(messages);
+      }
+    }
+
     const standard = applyTurnPrep(messages, buildTurnPrepOptions(turnMaxContextChars));
-    this.#emitTurnPrep(runId, standard.report);
+    this.#emitTurnPrep(runId, standard.report, turnMaxContextChars);
     try {
-      return await this.#completeModelWithFallback(modelRefs, standard.messages, input, runId);
+      return await runWithMessages(standard.messages);
     } catch (error) {
       if (input.signal?.aborted || !isLikelyContextOverflowError(error)) {
         throw error;
       }
-      const aggressive = applyTurnPrep(messages, buildTurnPrepOptions(turnMaxContextChars, {}, true));
-      this.#emitTurnPrep(runId, aggressive.report, { reactive: true });
-      return await this.#completeModelWithFallback(modelRefs, aggressive.messages, input, runId);
+      return retryAfterOverflow(messages);
     }
+  }
+
+  #compactionPolicy(compaction: SessionMessageCompactionOptions | false): TurnPrepCompactionPolicy {
+    if (compaction === false) {
+      return "whenOverBudget";
+    }
+    return compaction.compactionPolicy ?? "whenOverBudget";
   }
 
   #emitTurnPrep(
     runId: string,
     report: TurnPrepReport,
-    options: { reactive?: boolean } = {},
+    turnMaxContextChars: number,
+    options: { reactive?: boolean; skipped?: boolean } = {},
   ): void {
-    const changed = report.estimatedCharsBefore !== report.estimatedCharsAfter
-      || report.truncatedToolResults > 0
-      || report.truncatedAssistantMessages > 0
-      || report.strippedReasoningMessages > 0;
-    if (!changed && options.reactive !== true) {
-      return;
-    }
+    const prepOptions = buildTurnPrepOptions(turnMaxContextChars, {}, report.aggressive === true);
     this.#emit({
       type: "context",
       runId,
@@ -801,12 +837,15 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
       payload: {
         ok: true,
         reactive: options.reactive === true,
+        compactionSkipped: options.skipped === true,
         aggressive: report.aggressive,
         truncatedToolResults: report.truncatedToolResults,
         truncatedAssistantMessages: report.truncatedAssistantMessages,
         strippedReasoningMessages: report.strippedReasoningMessages,
         estimatedCharsBefore: report.estimatedCharsBefore,
         estimatedCharsAfter: report.estimatedCharsAfter,
+        tierMaxContextChars: turnMaxContextChars,
+        totalEstimatedMaxChars: prepOptions.totalEstimatedMaxChars,
       },
     });
   }
@@ -1264,6 +1303,7 @@ function toLifecycleMetadata(
     metadata.tierReason = tierDecision.reason;
     if (maxContextChars !== undefined) {
       metadata.tierMaxContextChars = maxContextChars;
+      metadata.tierMessageBudgetChars = computeTurnMessageBudgetChars(maxContextChars);
     }
     if (input.thinking !== undefined) metadata.tierThinking = input.thinking;
     if (input.toolsEnabled !== undefined) metadata.tierToolsEnabled = input.toolsEnabled;

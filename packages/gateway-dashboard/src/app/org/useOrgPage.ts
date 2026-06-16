@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { GatewayApiError } from "../../api/index.js";
 import { useGatewayClient } from "../auth/useGatewayClient.js";
+import {
+  mapToolPolicyOptions,
+  type RawToolPolicy,
+  useToolPolicyEditor,
+} from "../organization/useToolPolicyEditor.js";
 import type { DigitalEmployeeSummary } from "../run/types.js";
 import { EMPTY_EMPLOYEE_FORM, type EmployeeFormState, type OrgEmployeeRecord } from "./types.js";
 
@@ -127,15 +132,30 @@ export function useOrgPage() {
   const [draftEmployees, setDraftEmployees] = useState<readonly OrgEmployeeRecord[]>([]);
   const [draftDefaultEmployeeId, setDraftDefaultEmployeeId] = useState<string | undefined>(undefined);
   const [employeeForm, setEmployeeForm] = useState<EmployeeFormState>(EMPTY_EMPLOYEE_FORM);
-  const [policyJsonText, setPolicyJsonText] = useState('{\n  "policies": []\n}');
   const [profileIds, setProfileIds] = useState<readonly string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingEmployees, setSavingEmployees] = useState(false);
-  const [savingPolicies, setSavingPolicies] = useState(false);
+
+  const {
+    policyJsonText,
+    policyDirty,
+    savingPolicies,
+    setPolicyJsonText,
+    applyPoliciesFromServer,
+    confirmDiscardIfDirty,
+    reloadPolicies,
+    savePolicies: saveToolPolicies,
+  } = useToolPolicyEditor(client, {
+    onStatus: setStatus,
+    onError: setError,
+  });
 
   const load = useCallback(async () => {
+    if (!confirmDiscardIfDirty()) {
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -177,7 +197,8 @@ export function useOrgPage() {
 
       setDraftEmployees(draft);
       setDraftDefaultEmployeeId(defaultId);
-      setPolicyJsonText(JSON.stringify({ policies: policyPayload.policies ?? [] }, null, 2));
+      const rawPolicies = (policyPayload.policies ?? []) as RawToolPolicy[];
+      applyPoliciesFromServer(rawPolicies);
       setProfileIds((agentPayload.profiles ?? []).map(profile => profile.id));
 
       setState({
@@ -185,15 +206,7 @@ export function useOrgPage() {
         positions: orgPayload.positions ?? [],
         approvalChains: orgPayload.approvalChains ?? [],
         employeeRouting: orgPayload.employeeRouting ?? [],
-        toolPolicies: ((policyPayload.policies ?? []) as Array<{
-          id: string;
-          description?: string;
-          rules?: unknown[];
-        }>).map(policy => ({
-          id: policy.id,
-          ...(policy.description ? { description: policy.description } : {}),
-          ruleCount: policy.rules?.length ?? 0,
-        })),
+        toolPolicies: mapToolPolicyOptions(rawPolicies),
         employees: employees.filter(entry => entry.status === "active"),
         ...(defaultId ? { defaultEmployeeId: defaultId } : {}),
       });
@@ -203,11 +216,18 @@ export function useOrgPage() {
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, [applyPoliciesFromServer, client, confirmDiscardIfDirty]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const savePolicies = useCallback(async () => {
+    const saved = await saveToolPolicies(employeeForm.toolPolicyId);
+    if (saved) {
+      await load();
+    }
+  }, [employeeForm.toolPolicyId, load, saveToolPolicies]);
 
   const patchForm = useCallback((patch: Partial<EmployeeFormState>) => {
     setEmployeeForm(current => ({ ...current, ...patch }));
@@ -276,38 +296,6 @@ export function useOrgPage() {
     }
   }, [client, draftDefaultEmployeeId, draftEmployees, load]);
 
-  const reloadPolicies = useCallback(async () => {
-    setError(null);
-    try {
-      const payload = await client.rpc<{ policies: unknown[] }>("policy.tool.get");
-      setPolicyJsonText(JSON.stringify({ policies: payload.policies ?? [] }, null, 2));
-      setStatus("策略 JSON 已重新加载。");
-    } catch (caught) {
-      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
-      setError(message);
-    }
-  }, [client]);
-
-  const savePolicies = useCallback(async () => {
-    setSavingPolicies(true);
-    setStatus(null);
-    setError(null);
-    try {
-      const parsed = JSON.parse(policyJsonText) as { policies?: unknown[] };
-      if (!Array.isArray(parsed.policies)) {
-        throw new Error("JSON 必须包含 policies 数组。");
-      }
-      await client.rpc("policy.tool.save", { policies: parsed.policies });
-      setStatus("工具策略已保存。");
-      await load();
-    } catch (caught) {
-      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
-      setError(message);
-    } finally {
-      setSavingPolicies(false);
-    }
-  }, [client, load, policyJsonText]);
-
   const policyIds = state.toolPolicies.map(policy => policy.id);
 
   return {
@@ -316,6 +304,7 @@ export function useOrgPage() {
     draftDefaultEmployeeId,
     employeeForm,
     policyJsonText,
+    policyDirty,
     profileIds,
     policyIds,
     error,

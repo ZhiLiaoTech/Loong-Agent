@@ -74,8 +74,14 @@ export {
 export {
   applyTurnPrep,
   buildTurnPrepOptions,
+  buildSkippedTurnPrepReport,
+  computeTurnMessageBudgetChars,
   estimateModelMessagesChars,
   isLikelyContextOverflowError,
+  shouldCompactForContextBudget,
+  MIN_TURN_MESSAGE_BUDGET_CHARS,
+  TURN_MESSAGE_BUDGET_MULTIPLIER,
+  type TurnPrepCompactionPolicy,
   type TurnPrepOptions,
   type TurnPrepReport,
 } from "./turn-prep.js";
@@ -101,6 +107,7 @@ export {
 export {
   compactSessionMessagesByTurn,
   splitModelMessagesIntoTurns,
+  type SessionCompactionPolicy,
   type SessionMessageCompactionOptions,
   type SessionMessageCompactionReport,
 } from "./session-message-compaction.js";

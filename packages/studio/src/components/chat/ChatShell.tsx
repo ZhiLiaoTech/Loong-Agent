@@ -19,7 +19,9 @@ import { useChatSessions } from "../../hooks/useChatSessions.js";
 import { useI18n } from "../../i18n/I18nContext.js";
 
 import { ChatComposer } from "./ChatComposer.js";
+import { ContextMeter } from "./ContextMeter.js";
 import type { WorkspaceScopeSelection } from "@dashboard/app/run/workspaceScope.js";
+import { resolveModelContextWindow, computeTurnMessageBudgetChars } from "@dashboard/app/run/contextUsage.js";
 import {
   loadWorkspaceScopeSelection,
   resolveEffectiveWorkspace,
@@ -130,6 +132,33 @@ export function ChatShell() {
     [catalog.providers],
 
   );
+
+  const contextUsage = useMemo(() => {
+    const base = chat.contextUsage;
+    const injectedContextLimitChars = base?.injectedContextLimitChars ?? chat.lastTier?.maxContextChars;
+    const limitChars = base?.limitChars ?? (
+      injectedContextLimitChars !== undefined
+        ? computeTurnMessageBudgetChars(injectedContextLimitChars)
+        : undefined
+    );
+    const tier = base?.tier ?? chat.lastTier?.tier;
+    const modelContextWindow = resolveModelContextWindow(settings.model, catalog.providers);
+    if (
+      !base
+      && limitChars === undefined
+      && tier === undefined
+      && modelContextWindow === undefined
+    ) {
+      return null;
+    }
+    return {
+      ...(base ?? {}),
+      ...(limitChars !== undefined ? { limitChars } : {}),
+      ...(injectedContextLimitChars !== undefined ? { injectedContextLimitChars } : {}),
+      ...(tier !== undefined ? { tier } : {}),
+      ...(modelContextWindow !== undefined ? { modelContextWindow } : {}),
+    };
+  }, [catalog.providers, chat.contextUsage, chat.lastTier, settings.model]);
 
 
 
@@ -463,8 +492,12 @@ export function ChatShell() {
             onReject={chat.rejectApproval}
           />
 
-          <ChatComposer
+          <ContextMeter
+            usage={contextUsage ?? {}}
+            running={chat.contextUsageRunning}
+          />
 
+          <ChatComposer
             disabled={busy || connectionState !== "online"}
 
             workspaceScope={workspaceScope}

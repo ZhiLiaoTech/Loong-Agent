@@ -1006,6 +1006,29 @@ async function testSessionHistoryPrep(): Promise<void> {
 }
 
 
+async function testSessionHistoryPrepSkipsWhenUnderBudget(): Promise<void> {
+  const history: ModelMessage[] = [
+    { role: "user", content: "hello" },
+    { role: "assistant", content: "short reply" },
+  ];
+  const { messages, report } = await prepareSessionHistoryForModel(history, 16_000);
+  assert(report.compactionSkipped === true, "under-budget history should skip compaction");
+  assert(report.truncatedToolResults === 0, "skipped prep should not truncate tools");
+  assert(messages.length === history.length, "skipped prep should preserve message count");
+  assert(messages[1]?.content === "short reply", "skipped prep should preserve message content");
+}
+
+
+async function testSessionHistoryPrepAlwaysPolicy(): Promise<void> {
+  const history: ModelMessage[] = [
+    { role: "user", content: "hello" },
+    { role: "assistant", content: "short reply" },
+  ];
+  const { report } = await prepareSessionHistoryForModel(history, 16_000, {}, { compactionPolicy: "always" });
+  assert(report.compactionSkipped !== true, "always policy should run prep even when under budget");
+}
+
+
 async function testSessionMessageCompactionByTurn(): Promise<void> {
   const history: ModelMessage[] = [];
   for (let turn = 0; turn < 20; turn += 1) {
@@ -1255,6 +1278,8 @@ export const runtimeTestCases: TestCase[] = [
   ["turn cancel protocol", testTurnCancelProtocol],
   ["runtime turn cancel during tool", testRuntimeTurnCancelDuringTool],
   ["session history prep", testSessionHistoryPrep],
+  ["session history prep skips when under budget", testSessionHistoryPrepSkipsWhenUnderBudget],
+  ["session history prep always policy", testSessionHistoryPrepAlwaysPolicy],
   ["session message compaction by turn", testSessionMessageCompactionByTurn],
   ["ai summarization enabled", testAiSummarizationEnabled],
   ["ai summarization fallback", testAiSummarizationFallback],

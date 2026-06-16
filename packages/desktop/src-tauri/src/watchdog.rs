@@ -373,6 +373,9 @@ impl GatewayWatchdog {
         let node_origin = describe_node_origin(&node_binary, runtime_root);
 
         let data_root = resolve_loong_data_root();
+        let allow_exec = std::env::var("LOONG_ALLOW_EXEC")
+            .map(|value| value.trim() != "0")
+            .unwrap_or(true);
         let mut command = Command::new(&node_binary);
         command
             .arg(&cli_entry)
@@ -384,6 +387,12 @@ impl GatewayWatchdog {
             .env("LOONG_DATA_ROOT", &data_root)
             .stdout(Stdio::null())
             .stderr(Stdio::null());
+        if allow_exec {
+            command
+                .arg("--allow-exec")
+                .env("LOONG_ALLOW_EXEC", "1")
+                .env("LOONG_RELAX_SHELL_ALLOWLIST", "1");
+        }
 
         let mut child = command
             .spawn()

@@ -10,6 +10,11 @@ export function MemoryCandidatesPanel({
   onRefresh,
   onPromote,
   onReject,
+  title = "Memory",
+  refreshLabel = "Refresh",
+  emptyLabel = "No pending memory candidates.",
+  promoteLabel = "Promote",
+  rejectLabel = "Reject",
 }: {
   candidates: readonly MemoryCandidate[];
   review: MemoryReviewState;
@@ -18,17 +23,22 @@ export function MemoryCandidatesPanel({
   onRefresh: () => void;
   onPromote: (id: string) => void;
   onReject: (id: string) => void;
+  title?: string;
+  refreshLabel?: string;
+  emptyLabel?: string;
+  promoteLabel?: string;
+  rejectLabel?: string;
 }) {
   return (
     <section className={styles.card}>
       <div className={styles.head}>
-        <h3 className={styles.title}>Memory ({candidates.length})</h3>
+        <h3 className={styles.title}>{title} ({candidates.length})</h3>
         <button type="button" className={styles.refresh} onClick={onRefresh} disabled={loading}>
-          Refresh
+          {refreshLabel}
         </button>
       </div>
       {!candidates.length ? (
-        <p className={styles.empty}>No pending memory candidates.</p>
+        <p className={styles.empty}>{emptyLabel}</p>
       ) : (
         <ul className={styles.list}>
           {candidates.map(candidate => {
@@ -51,7 +61,7 @@ export function MemoryCandidatesPanel({
                     title={review.canPromote ? undefined : "Requires write permission"}
                     onClick={() => void onPromote(candidate.id)}
                   >
-                    Promote
+                    {promoteLabel}
                   </button>
                   <button
                     type="button"
@@ -60,7 +70,7 @@ export function MemoryCandidatesPanel({
                     title={review.canReject ? undefined : "Requires write permission"}
                     onClick={() => void onReject(candidate.id)}
                   >
-                    Reject
+                    {rejectLabel}
                   </button>
                 </div>
               </li>

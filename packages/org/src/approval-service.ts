@@ -33,6 +33,8 @@ export interface GatewayApprovalService {
   list(filter?: ApprovalListFilter): Promise<ApprovalRegistry>;
   approve(id: string, resolvedBy?: string, note?: string): Promise<ApprovalRequest>;
   reject(id: string, resolvedBy?: string, note?: string): Promise<ApprovalRequest>;
+  dismiss(id: string, resolvedBy?: string): Promise<ApprovalRequest>;
+  reconcileOrphanedPending(): Promise<number>;
   attachEventPublisher(publish: (event: LoongEvent) => void): void;
 }
 
@@ -143,15 +145,69 @@ export function createGatewayApprovalService(
     });
   };
 
-  async function expireApproval(id: string): Promise<void> {
+  async function expireApproval(id: string): Promise<ApprovalRequest | undefined> {
     const registry = await options.store.load();
     const now = new Date().toISOString();
-    const requests = registry.requests.map(entry =>
-      entry.id === id && entry.status === "pending"
-        ? { ...entry, status: "expired" as const, updatedAt: now, resolvedAt: now }
-        : entry,
-    );
+    let updated: ApprovalRequest | undefined;
+    const requests = registry.requests.map(entry => {
+      if (entry.id !== id || entry.status !== "pending") {
+        return entry;
+      }
+      updated = { ...entry, status: "expired" as const, updatedAt: now, resolvedAt: now };
+      return updated;
+    });
+    if (!updated) {
+      return undefined;
+    }
     await options.store.save({ requests });
+    return updated;
+  }
+
+  async function dismissApproval(id: string, resolvedBy?: string): Promise<ApprovalRequest> {
+    const registry = await options.store.load();
+    const existing = registry.requests.find(request => request.id === id);
+    if (!existing) {
+      throw new Error(`Approval request "${id}" was not found.`);
+    }
+    if (existing.status !== "pending") {
+      throw new Error(`Approval request "${id}" is already ${existing.status}.`);
+    }
+    if (pending.has(id)) {
+      throw new Error(`Approval request "${id}" is still awaiting a live run. Approve or reject it instead.`);
+    }
+    const now = new Date().toISOString();
+    const updated: ApprovalRequest = {
+      ...existing,
+      status: "expired",
+      updatedAt: now,
+      resolvedAt: now,
+      ...(resolvedBy?.trim() ? { resolvedBy: resolvedBy.trim() } : {}),
+      resolutionNote: "Dismissed stale approval request.",
+    };
+    await options.store.save({
+      requests: registry.requests.map(request => (request.id === id ? updated : request)),
+    });
+    return updated;
+  }
+
+  async function reconcileOrphanedPending(): Promise<number> {
+    const registry = await options.store.load();
+    const orphaned = registry.requests.filter(
+      request => request.status === "pending" && !pending.has(request.id),
+    );
+    if (!orphaned.length) {
+      return 0;
+    }
+    const now = new Date().toISOString();
+    const orphanedIds = new Set(orphaned.map(request => request.id));
+    await options.store.save({
+      requests: registry.requests.map(request =>
+        orphanedIds.has(request.id)
+          ? { ...request, status: "expired" as const, updatedAt: now, resolvedAt: now }
+          : request,
+      ),
+    });
+    return orphaned.length;
   }
 
   async function resolveApproval(
@@ -232,13 +288,26 @@ export function createGatewayApprovalService(
       if (filter?.sessionId) {
         requests = requests.filter(request => request.sessionId === filter.sessionId);
       }
-      return { ...registry, requests };
+      return {
+        ...registry,
+        requests: requests.map(request =>
+          request.status === "pending"
+            ? { ...request, awaitingLiveRun: pending.has(request.id) }
+            : request,
+        ),
+      };
     },
     approve(id, resolvedBy, note) {
       return resolveApproval(id, "approved", "allow", resolvedBy, note);
     },
     reject(id, resolvedBy, note) {
       return resolveApproval(id, "rejected", "deny", resolvedBy, note);
+    },
+    dismiss(id, resolvedBy) {
+      return dismissApproval(id, resolvedBy);
+    },
+    reconcileOrphanedPending() {
+      return reconcileOrphanedPending();
     },
   };
 }

@@ -49,6 +49,7 @@ export type GatewayRequest =
   | { type: "approval.list"; id: string; params?: GatewayApprovalListParams }
   | { type: "approval.approve"; id: string; params: GatewayApprovalResolveParams }
   | { type: "approval.reject"; id: string; params: GatewayApprovalResolveParams }
+  | { type: "approval.dismiss"; id: string; params: GatewayApprovalResolveParams }
   | { type: "ticket.list"; id: string }
   | { type: "ticket.upsert"; id: string; params: GatewayTicketUpsertParams }
   | { type: "kpi.template.list"; id: string }

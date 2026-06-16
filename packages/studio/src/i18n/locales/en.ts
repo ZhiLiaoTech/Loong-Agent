@@ -37,6 +37,12 @@ export const en: MessageTree = {
     eventsSection: "Live events",
     memorySection: "Memory candidates",
     runsSection: "Recent runs",
+    eventsEmpty: "No live events yet.",
+    memoryEmpty: "No pending memory candidates.",
+    memoryPromote: "Promote",
+    memoryReject: "Reject",
+    runsEmpty: "No runs yet.",
+    runCancel: "Cancel",
   },
 
   sidebar: {
@@ -233,6 +239,21 @@ export const en: MessageTree = {
       inbox: "Open inbox",
       resolving: "Working…",
       notificationTitle: "Loong tool approval",
+    },
+
+    context: {
+      label: "Context",
+      estimating: "Estimating…",
+      detailsTitle: "Context usage",
+      used: "Messages {used} / {limit} chars ({percent}%)",
+      injectedLimit: "Injected context cap {count} chars",
+      tier: "Tier {tier}",
+      modelWindow: "Model window {count} tokens",
+      compaction: "This turn",
+      truncatedTools: "Truncated {count} tool outputs",
+      truncatedAssistant: "Truncated {count} assistant messages",
+      compactionRange: "Before → after  {before} → {after} chars",
+      nearLimit: "Near the limit — older turns may be compacted.",
     },
 
   },
@@ -463,6 +484,8 @@ export const en: MessageTree = {
 
     tabIdentity: "Organization",
 
+    tabPolicies: "Tool policies",
+
     statusSaved: "Saved. Chat will use the latest configuration.",
 
     nameRequired: "Please enter a name.",
@@ -476,6 +499,36 @@ export const en: MessageTree = {
     bootstrapSuccess: "Example organization created. You can refine the setup now.",
 
     bootstrapSkipped: "Organization already exists; nothing was changed.",
+
+    policyEditor: {
+
+      lead: "Edit tool permission rules (allow / ask / deny / approval). Changes are saved to the Gateway org store; assign a policy to each employee on the Organization tab.",
+
+      title: "Tool policy JSON",
+
+      hint: "Edit the policies array and save. Rules typically match toolName (e.g. shell_run) or capability (e.g. execute, write). deny wins over allow.",
+
+      reload: "Reload",
+
+      save: "Save policies",
+
+      saving: "Saving…",
+
+      saved: "Tool policies saved.",
+
+      reloaded: "Policy JSON reloaded.",
+
+      invalidJson: "JSON must include a policies array.",
+
+      syntaxError: "Invalid JSON syntax. Check the document and try again.",
+
+      discardConfirm: "Tool policy has unsaved changes. Discard them and continue?",
+
+      unsavedHint: "Unsaved changes.",
+
+      missingAssignedPolicy: "The assigned permission policy no longer exists. Choose a new one on the Organization tab.",
+
+    },
 
     suite: {
 
@@ -567,7 +620,7 @@ export const en: MessageTree = {
 
       contextTitle: "Context compression",
 
-      contextHint: "Controls how long conversations are compacted before each model call. AI summarization is off by default and falls back to hard truncation on failure.",
+      contextHint: "Long chats are compacted only when context usage hits 100%. AI summarization stays off by default. Set compactionPolicy: \"always\" in config to compact every turn.",
 
       aiSummarizationEnabled: "AI-summarize older turns",
 

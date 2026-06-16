@@ -147,6 +147,8 @@ export interface ApprovalRequest {
   resolvedAt?: string;
   resolvedBy?: string;
   resolutionNote?: string;
+  /** Present on approval.list responses when status is pending. */
+  awaitingLiveRun?: boolean;
 }
 
 export interface ApprovalRegistry {

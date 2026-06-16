@@ -1,19 +1,21 @@
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  border-radius: var(--radius-sm);
   display: flex;
   flex-direction: column;
-  min-height: 280px;
+  min-height: 300px;
+  overflow: hidden;
 }
 
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: color-mix(in srgb, var(--soft) 58%, var(--surface));
 }
 
 .filters {
@@ -21,24 +23,39 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 64%, transparent);
+  background: color-mix(in srgb, var(--surface) 78%, var(--soft));
   font-size: var(--text-xs);
 }
 
 .filterCheck {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  min-height: 32px;
+  color: var(--text);
+}
+
+.filterCheck input {
+  accent-color: var(--accent);
 }
 
 .filterSelect {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
+  color: var(--muted);
 }
 
 .filterSelect select {
   min-width: 180px;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
   font-size: var(--text-xs);
 }
 
@@ -49,13 +66,19 @@
 }
 
 .refresh {
-  border: 1px solid var(--line);
+  min-height: 28px;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
   background: var(--soft);
   color: var(--text);
   border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-3);
+  padding: 0 var(--space-3);
   font-size: var(--text-xs);
   cursor: pointer;
+}
+
+.refresh:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--soft));
 }
 
 .refresh:disabled {
@@ -65,24 +88,31 @@
 
 .empty {
   margin: 0;
+  padding: var(--space-5) var(--space-4);
   color: var(--muted);
   font-size: var(--text-sm);
+  text-align: center;
 }
 
 .list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: var(--space-3);
   overflow: auto;
   flex: 1;
-  max-height: 360px;
+  max-height: 420px;
 }
 
 .item {
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
   border-radius: var(--radius-sm);
   padding: var(--space-3);
   margin-bottom: var(--space-2);
+  background: color-mix(in srgb, var(--soft) 30%, var(--surface));
+}
+
+.item:last-child {
+  margin-bottom: 0;
 }
 
 .itemHighlight {
@@ -91,9 +121,22 @@
   background: color-mix(in srgb, var(--warn) 10%, var(--surface));
 }
 
+.itemStale {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--line));
+  background: color-mix(in srgb, var(--danger) 5%, var(--surface));
+}
+
+.staleNotice {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
 .tool {
   display: block;
   font-size: var(--text-sm);
+  line-height: var(--line-height-tight);
+  overflow-wrap: anywhere;
 }
 
 .meta,
@@ -111,6 +154,7 @@
   background: var(--soft);
   padding: var(--space-2);
   border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
   overflow: auto;
 }
 
@@ -121,9 +165,11 @@
 }
 
 .primary,
-.danger {
+.danger,
+.secondary {
   border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-3);
+  min-height: 30px;
+  padding: 0 var(--space-3);
   font-size: var(--text-xs);
   cursor: pointer;
 }
@@ -136,12 +182,34 @@
 
 .danger {
   border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
-  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
   color: var(--danger);
 }
 
+.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.danger:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.secondary {
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  background: var(--soft);
+  color: var(--text);
+}
+
+.secondary:hover {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--soft));
+}
+
 .result {
-  margin: var(--space-3) 0 0;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid color-mix(in srgb, var(--line) 64%, transparent);
   font-size: var(--text-xs);
   color: var(--muted);
 }

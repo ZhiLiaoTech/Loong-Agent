@@ -78,6 +78,7 @@ export function ObserveWorkspace() {
           onRefresh={() => void page.refreshApprovals()}
           onApprove={id => void page.approveRequest(id)}
           onReject={id => void page.rejectRequest(id)}
+          onDismiss={id => void page.dismissRequest(id)}
         />
         <MemoryCandidatesPanel
           candidates={page.memoryCandidates}

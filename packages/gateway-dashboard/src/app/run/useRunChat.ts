@@ -24,6 +24,14 @@ import type { AgentProfile, AgentRunResult, ChatActivityStep, ChatTurn, RunSetti
 import type { WorkspaceScopeSelection } from "./workspaceScope.js";
 import { resolveEffectiveWorkspace } from "./workspaceScope.js";
 import { usePendingApprovals, type PendingApprovalItem } from "./usePendingApprovals.js";
+import {
+  type ContextUsageSnapshot,
+  computeTurnMessageBudgetChars,
+  readContextPayloadNumber,
+  resetContextUsageForNewRun,
+} from "./contextUsage.js";
+
+export type { ContextUsageSnapshot } from "./contextUsage.js";
 
 // Module-level cache so chat state survives RunWorkspace unmount when the user
 // navigates to Models/Agents/etc. and returns. Full page refresh restores from
@@ -42,6 +50,7 @@ interface CachedChatState {
   activeRunId: string;
   lastResult: AgentRunResult | null;
   lastTier: LastTierInfo | null;
+  contextUsage: ContextUsageSnapshot | null;
   hydrated: boolean;
 }
 
@@ -50,6 +59,7 @@ const emptyCache = (): CachedChatState => ({
   activeRunId: "",
   lastResult: null,
   lastTier: null,
+  contextUsage: null,
   hydrated: false,
 });
 
@@ -111,6 +121,8 @@ export function useRunChat(
   const [expectingRun, setExpectingRun] = useState(false);
   const [lastResult, setLastResult] = useState<AgentRunResult | null>(chatStateCache.lastResult);
   const [lastTier, setLastTier] = useState<LastTierInfo | null>(chatStateCache.lastTier);
+  const [contextUsage, setContextUsage] = useState<ContextUsageSnapshot | null>(chatStateCache.contextUsage);
+  const [contextUsageRunning, setContextUsageRunning] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [activityPreferences, setActivityPreferences] = useState(loadChatActivityPreferences);
@@ -130,7 +142,8 @@ export function useRunChat(
     chatStateCache.activeRunId = activeRunId;
     chatStateCache.lastResult = lastResult;
     chatStateCache.lastTier = lastTier;
-  }, [chatTurns, activeRunId, lastResult, lastTier, chatStateCache]);
+    chatStateCache.contextUsage = contextUsage;
+  }, [chatTurns, activeRunId, lastResult, lastTier, contextUsage, chatStateCache]);
 
   useEffect(() => {
     const persistable = chatTurns
@@ -154,6 +167,8 @@ export function useRunChat(
     setActiveRunId(cache.activeRunId);
     setLastResult(cache.lastResult);
     setLastTier(cache.lastTier);
+    setContextUsage(cache.contextUsage);
+    setContextUsageRunning(false);
     setSending(false);
     setExpectingRun(false);
     setTimelineRunId("");
@@ -377,6 +392,7 @@ export function useRunChat(
     setActiveRunId("");
     expectingRunRef.current = false;
     setExpectingRun(false);
+    setContextUsageRunning(false);
     streamBufferRef.current = "";
     receivedStreamDeltaRef.current = false;
     lifecycleEndedRef.current = false;
@@ -471,6 +487,8 @@ export function useRunChat(
     runId?: string;
     text?: string;
     message?: string;
+    providerName?: string;
+    payload?: unknown;
     metadata?: Record<string, unknown>;
   }) => {
     if (event.type === "lifecycle" && event.phase === "start" && expectingRunRef.current && event.runId) {
@@ -510,9 +528,63 @@ export function useRunChat(
           info.thinking = meta.tierThinking;
         }
         setLastTier(info);
+        setContextUsage(current => {
+          const next: ContextUsageSnapshot = { ...(current ?? {}), tier: tierRaw };
+          if (info.maxContextChars !== undefined) {
+            next.injectedContextLimitChars = info.maxContextChars;
+            next.limitChars = computeTurnMessageBudgetChars(info.maxContextChars);
+          } else {
+            const messageBudget = readContextPayloadNumber(meta, "tierMessageBudgetChars");
+            if (messageBudget !== undefined) {
+              next.limitChars = messageBudget;
+            }
+          }
+          if (event.runId) {
+            next.runId = event.runId;
+          }
+          return next;
+        });
       } else {
         setLastTier(null);
       }
+      setContextUsageRunning(true);
+    }
+    if (
+      event.type === "context"
+      && event.providerName === "turn_prep"
+      && event.phase === "end"
+      && event.runId
+      && (event.runId === activeRunIdRef.current || expectingRunRef.current)
+    ) {
+      const after = readContextPayloadNumber(event.payload, "estimatedCharsAfter");
+      const before = readContextPayloadNumber(event.payload, "estimatedCharsBefore");
+      const truncatedToolResults = readContextPayloadNumber(event.payload, "truncatedToolResults");
+      const truncatedAssistant = readContextPayloadNumber(event.payload, "truncatedAssistantMessages");
+      const totalBudget = readContextPayloadNumber(event.payload, "totalEstimatedMaxChars");
+      const injectedLimit = readContextPayloadNumber(event.payload, "tierMaxContextChars");
+      setContextUsage(current => {
+        const next: ContextUsageSnapshot = { ...(current ?? {}) };
+        if (after !== undefined) {
+          next.usedChars = after;
+        }
+        if (before !== undefined) {
+          next.estimatedCharsBefore = before;
+        }
+        if (truncatedToolResults !== undefined) {
+          next.truncatedToolResults = truncatedToolResults;
+        }
+        if (truncatedAssistant !== undefined) {
+          next.truncatedAssistant = truncatedAssistant;
+        }
+        if (totalBudget !== undefined) {
+          next.limitChars = totalBudget;
+        }
+        if (injectedLimit !== undefined) {
+          next.injectedContextLimitChars = injectedLimit;
+        }
+        next.runId = event.runId!;
+        return next;
+      });
     }
     if (
       event.type === "assistant_delta"
@@ -550,6 +622,7 @@ export function useRunChat(
         pendingRunFailureRef.current = null;
       }
       lifecycleEndedRef.current = true;
+      setContextUsageRunning(false);
       tryFinalizeRun(failure);
     }
   }, [activityPreferences.showActivities, appendDelta, replaceAssistant, tryFinalizeRun]);
@@ -590,6 +663,8 @@ export function useRunChat(
     runFinalizedRef.current = false;
     activitiesRef.current = [];
     pendingSegmentTextRef.current = "";
+    setContextUsage(current => resetContextUsageForNewRun(current));
+    setContextUsageRunning(true);
     clearActivityCollapseTimer();
 
     const attachmentSummary = attachments.length > 0
@@ -800,6 +875,8 @@ export function useRunChat(
     timelineRunId,
     lastResult,
     lastTier,
+    contextUsage,
+    contextUsageRunning,
     showRaw,
     setShowRaw,
     cancelError,

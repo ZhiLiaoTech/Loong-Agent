@@ -44,6 +44,7 @@ export interface ApprovalInboxItem {
   assignedApproverDisplayName?: string;
   chainName?: string;
   inputSummary?: string;
+  awaitingLiveRun?: boolean;
 }
 
 export interface OrgTicketView {

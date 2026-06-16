@@ -187,6 +187,12 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
                   { toolName: "memory_candidate_reject", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
                 ]
               : []),
+            ...(options.allowExec
+              ? [
+                  { toolName: "shell_run", decision: "allow" as const, reason: "CLI agent shell_run enabled." },
+                  { capability: "execute" as const, decision: "allow" as const, reason: "CLI agent execute enabled." },
+                ]
+              : []),
           ],
         })
       : undefined;
@@ -240,8 +246,8 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
               "Use file_search with regex:true for pattern-based code search when a plain substring is not enough.",
               "Use web_search to look up information on the web when configured (SearXNG, Tavily, or Brave).",
               options.allowExec
-                ? "Use shell_run to execute arbitrary commands (build, test, install, scripts) inside the workspace; each call requires approval. Prefer the read-only shell_exec/sandbox_exec for inspection."
-                : undefined,
+                ? "Use shell_run for arbitrary commands (build, test, install, scripts, python, bat) inside the workspace. shell_exec and sandbox_exec also accept common commands when LOONG_RELAX_SHELL_ALLOWLIST=1. Do not ask the user to configure a ClawWorks sandbox whitelist — Loong has no such UI."
+                : "Only shell_exec and sandbox_exec are available; they use a conservative read-only allowlist (git, rg, version checks). For python, bat, or tasklist, enable shell_run via LOONG_ALLOW_EXEC=1.",
               "You may use file_patch for exact text replacements, file_write to create or overwrite files, and skill_create/skill_improve for reviewable skill updates when requested.",
               "Summarize findings clearly and mention any tool errors.",
             ].filter(Boolean).join("\n"),
