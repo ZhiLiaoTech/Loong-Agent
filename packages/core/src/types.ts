@@ -32,6 +32,21 @@ export interface LoongAttachment {
 
 export type LoongTierHint = "fast" | "standard" | "deep";
 
+/**
+ * Trustworthy caller identity for user-level memory isolation
+ * (docs/ONTOLOGY_MEMORY_REQUIREMENTS.md §4.1 "身份先于本体").
+ *
+ * Every user-scope memory write, query, review, and delete must carry this
+ * identity. When no trustworthy identity is available, session memory may
+ * still work, but user-scope writes must be refused and no other user's
+ * data may be touched.
+ */
+export interface MemoryIdentity {
+  tenantId: string;
+  userId: string;
+  agentInstanceId?: string;
+}
+
 export interface LoongTurnInput {
   sessionId: string;
   message: string;
@@ -58,6 +73,13 @@ export interface LoongTurnInput {
   queryLoop?: boolean;
   signal?: AbortSignal;
   metadata?: Record<string, unknown>;
+  /**
+   * Optional trustworthy identity for user-level memory isolation
+   * (ontology memory Phase 1). When absent the turn behaves exactly as
+   * before: providers and hooks that require an identity must skip
+   * user-scope work rather than fall back to another user's data.
+   */
+  identity?: MemoryIdentity;
 }
 
 export interface LoongMessage {
@@ -134,6 +156,8 @@ export interface LoongContextRequest {
   history: LoongMessage[];
   runId: string;
   createdAt: string;
+  /** Mirror of `input.identity` for providers that only need the identity. */
+  identity?: MemoryIdentity;
 }
 
 export interface LoongContextProvider {
@@ -158,6 +182,8 @@ export interface LoongLifecycleHookRequest {
   error?: string;
   usage?: LoongUsage;
   metadata?: Record<string, unknown>;
+  /** Identity carried by the originating turn input, when present. */
+  identity?: MemoryIdentity;
 }
 
 export interface LoongLifecycleHook {

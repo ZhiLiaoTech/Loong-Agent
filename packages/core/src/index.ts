@@ -24,6 +24,7 @@ export type {
   LoongTurnInput,
   LoongTurnResult,
   LoongUsage,
+  MemoryIdentity,
 } from "./types.js";
 export {
   DefaultLoongAgentRuntime,

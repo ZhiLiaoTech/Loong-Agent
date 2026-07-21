@@ -572,7 +572,13 @@ export class DefaultLoongAgentRuntime implements LoongAgentRuntime {
         phase: "start",
       });
       try {
-        const providerItems = await provider.buildContext({ input, history, runId, createdAt });
+        const providerItems = await provider.buildContext({
+          input,
+          history,
+          runId,
+          createdAt,
+          ...(input.identity !== undefined ? { identity: input.identity } : {}),
+        });
         items.push(...providerItems);
         this.#emit({
           type: "context",
@@ -1352,6 +1358,9 @@ function toLifecycleHookRequest(
   }
   if (input.metadata !== undefined) {
     request.metadata = input.metadata;
+  }
+  if (input.identity !== undefined) {
+    request.identity = input.identity;
   }
   return request;
 }
@@ -2138,6 +2147,7 @@ const MEMORY_CONTEXT_PROVIDER_NAMES = new Set([
   "memory_recall",
   "markdown_memory",
   "session_compaction",
+  "ontology_recall",
 ]);
 
 function isMemoryContextProvider(name: string): boolean {

@@ -54,12 +54,18 @@ import {
   createHttpGateway,
   createModelCatalogFromProviderSummaries,
   FilePairingStore,
+  GATEWAY_DEFAULT_TENANT_ID,
+  parseGatewayAgentParams,
+  toTurnInput,
 } from "@loong/gateway";
 import {
   createFileMemoryStore,
   createFileTrajectoryStore,
   createMemoryCandidateLifecycleHook,
   createMemoryCandidateTools,
+  createOntologyCandidateTools,
+  createSqliteOntologyStore,
+  ONTOLOGY_SELF_ENTITY_NAME,
   type MemoryCandidateListInput,
   type MemoryCandidateListOutput,
   type MemoryCandidatePromoteInput,
@@ -975,6 +981,195 @@ async function testGatewayMemoryCandidateRpc(): Promise<void> {
 }
 
 
+async function testGatewayOntologyUserControlRpc(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-gateway-ontology-"));
+  const store = createSqliteOntologyStore({ databasePath: path.join(root, "ontology.db") });
+  const alice = { tenantId: GATEWAY_DEFAULT_TENANT_ID, userId: "alice" };
+
+  // Seed alice's ontology directly through the store: one active explicit fact,
+  // one disputed fact, one pending candidate.
+  const self = await store.insertEntity(alice, { type: "Person", canonicalName: ONTOLOGY_SELF_ENTITY_NAME });
+  const cursor = await store.insertEntity(alice, { type: "Tool", canonicalName: "Cursor" });
+  const evidence = await store.insertEvidence(alice, { source: "p5-gateway-test", excerpt: "我用 Cursor 写代码" });
+  const active = await store.insertAssertion(alice, {
+    subjectId: self.id,
+    predicate: "usesTool",
+    objectEntityId: cursor.id,
+    confidence: 0.9,
+    sourceType: "explicit",
+    status: "active",
+    evidenceIds: [evidence.id],
+  });
+  const disputedEvidence = await store.insertEvidence(alice, { source: "p5-gateway-test", excerpt: "也许不喜欢开会" });
+  await store.insertAssertion(alice, {
+    subjectId: self.id,
+    predicate: "avoids",
+    objectValue: "开会",
+    confidence: 0.6,
+    sourceType: "observed",
+    status: "disputed",
+    evidenceIds: [disputedEvidence.id],
+  });
+  const candidateEvidence = await store.insertEvidence(alice, { source: "p5-gateway-test", excerpt: "想学会 Rust" });
+  const candidate = await store.insertAssertion(alice, {
+    subjectId: self.id,
+    predicate: "hasGoal",
+    objectValue: "学会 Rust",
+    confidence: 0.8,
+    sourceType: "explicit",
+    status: "candidate",
+    evidenceIds: [candidateEvidence.id],
+  });
+
+  const tools = createOntologyCandidateTools({ store });
+  try {
+    const readOnlyGateway = createHttpGateway({
+      runtime: createNoopRuntime(),
+      ontologyStore: store,
+      tools,
+      permissionEngine: createToolPermissionEngine({
+        defaultDecision: "ask",
+        rules: [
+          { toolName: "ontology_candidates_list", decision: "allow", reason: "test list allow" },
+        ],
+      }),
+    });
+    await readOnlyGateway.start({ host: "127.0.0.1", port: 0 });
+    const readOnlyAddress = readOnlyGateway.address();
+    assert(readOnlyAddress !== undefined, "Read-only ontology gateway did not start");
+    try {
+      const connect = await rpc(readOnlyAddress.url, "connect", undefined, "");
+      const capabilities = readArray(connect.json.payload, "capabilities");
+      assert(capabilities.includes("ontology.knowledge.list"), "connect should advertise ontology knowledge list");
+      assert(capabilities.includes("ontology.export"), "connect should advertise ontology export");
+      assert(capabilities.includes("ontology.candidates.list"), "connect should advertise ontology candidate review");
+
+      const missingUser = await rpc(readOnlyAddress.url, "ontology.knowledge.list", {}, "");
+      assert(missingUser.status === 400 && missingUser.json.ok === false, "knowledge.list without userId should fail");
+
+      const listed = await rpc(readOnlyAddress.url, "ontology.knowledge.list", { userId: "alice" }, "");
+      assert(listed.status === 200 && listed.json.ok === true, "ontology.knowledge.list should succeed");
+      assert(readPath(listed.json, ["payload", "activeCount"]) === 1, "alice should have one active fact");
+      assert(readPath(listed.json, ["payload", "disputedCount"]) === 1, "alice should have one disputed fact");
+      assert(readPath(listed.json, ["payload", "permissions", "canWrite"]) === false, "read-only gateway should report canWrite=false");
+
+      const crossUser = await rpc(readOnlyAddress.url, "ontology.knowledge.list", { userId: "bob" }, "");
+      assert(crossUser.status === 200 && readPath(crossUser.json, ["payload", "activeCount"]) === 0, "bob must not see alice's knowledge");
+
+      const crossExplain = await rpc(readOnlyAddress.url, "ontology.assertion.explain", { userId: "bob", assertionId: active.id }, "");
+      assert(crossExplain.status === 400 && crossExplain.json.ok === false, "bob must not explain alice's assertion");
+
+      const explained = await rpc(readOnlyAddress.url, "ontology.assertion.explain", { userId: "alice", assertionId: active.id }, "");
+      assert(explained.status === 200 && explained.json.ok === true, "assertion.explain should succeed for the owner");
+
+      const conflicts = await rpc(readOnlyAddress.url, "ontology.conflicts.list", { userId: "alice" }, "");
+      assert(conflicts.status === 200 && conflicts.json.ok === true, "conflicts.list should succeed");
+
+      const deniedCorrect = await rpc(readOnlyAddress.url, "ontology.assertion.correct", {
+        userId: "alice",
+        assertionId: active.id,
+        correction: { objectValue: "VS Code", excerpt: "我其实改用 VS Code 了" },
+      }, "");
+      assert(deniedCorrect.status === 400 && deniedCorrect.json.ok === false, "correct should require write permission");
+      assert(String(deniedCorrect.json.error).includes("ontology_user_control_write"), "correct denial should name the write probe");
+
+      const deniedDeleteAll = await rpc(readOnlyAddress.url, "ontology.deleteAll", { userId: "alice" }, "");
+      assert(deniedDeleteAll.status === 400 && deniedDeleteAll.json.ok === false, "deleteAll should require write permission");
+
+      const deniedSensitiveExport = await rpc(readOnlyAddress.url, "ontology.export", { userId: "alice", includeSensitiveEvidence: true }, "");
+      assert(deniedSensitiveExport.status === 400 && deniedSensitiveExport.json.ok === false, "sensitive export should require write permission");
+
+      const exportAllowed = await rpc(readOnlyAddress.url, "ontology.export", { userId: "alice" }, "");
+      assert(exportAllowed.status === 200 && exportAllowed.json.ok === true, "non-sensitive export should be read-allowed");
+
+      const candidatesListed = await rpc(readOnlyAddress.url, "ontology.candidates.list", { userId: "alice" }, "");
+      assert(candidatesListed.status === 200 && candidatesListed.json.ok === true, "ontology.candidates.list should succeed");
+      assert(readPath(candidatesListed.json, ["payload", "review", "canPromote"]) === false, "read-only gateway should not allow promote");
+      assert(readPath(candidatesListed.json, ["payload", "review", "canReject"]) === false, "read-only gateway should not allow reject");
+      const readOnlyCandidates = readRecordArrayAt(candidatesListed.json, ["payload", "output", "candidates"]);
+      assert(readOnlyCandidates.length === 1, `expected one pending ontology candidate, got ${readOnlyCandidates.length}`);
+
+      const deniedPromote = await rpc(readOnlyAddress.url, "ontology.candidate.promote", { userId: "alice", id: candidate.id }, "");
+      assert(deniedPromote.status === 400 && deniedPromote.json.ok === false, "ontology promote should require write permission");
+      assert(String(deniedPromote.json.error).includes("Tool permission ask"), "promote denial should mention permission ask");
+    } finally {
+      await readOnlyGateway.stop();
+    }
+
+    const writeGateway = createHttpGateway({
+      runtime: createNoopRuntime(),
+      ontologyStore: store,
+      tools,
+      permissionEngine: createToolPermissionEngine({
+        defaultDecision: "ask",
+        rules: [
+          { toolName: "ontology_candidates_list", decision: "allow", reason: "test list allow" },
+          { toolName: "ontology_candidate_promote", decision: "allow", reason: "test promote allow" },
+          { toolName: "ontology_candidate_reject", decision: "allow", reason: "test reject allow" },
+          { toolName: "ontology_user_control_write", decision: "allow", reason: "test ontology write allow" },
+        ],
+      }),
+    });
+    await writeGateway.start({ host: "127.0.0.1", port: 0 });
+    const writeAddress = writeGateway.address();
+    assert(writeAddress !== undefined, "Write ontology gateway did not start");
+    try {
+      const listed = await rpc(writeAddress.url, "ontology.knowledge.list", { userId: "alice" }, "");
+      assert(readPath(listed.json, ["payload", "permissions", "canWrite"]) === true, "write gateway should report canWrite=true");
+
+      const candidatesListed = await rpc(writeAddress.url, "ontology.candidates.list", { userId: "alice" }, "");
+      assert(readPath(candidatesListed.json, ["payload", "review", "canPromote"]) === true, "write gateway should allow promote");
+      assert(readPath(candidatesListed.json, ["payload", "review", "canReject"]) === true, "write gateway should allow reject");
+      const writeCandidates = readRecordArrayAt(candidatesListed.json, ["payload", "output", "candidates"]);
+      assert(writeCandidates.length === 1, "one pending candidate should be listed on the write gateway");
+
+      const promoted = await rpc(writeAddress.url, "ontology.candidate.promote", { userId: "alice", id: candidate.id }, "");
+      assert(promoted.status === 200 && promoted.json.ok === true, "ontology.candidate.promote should succeed");
+
+      const corrected = await rpc(writeAddress.url, "ontology.assertion.correct", {
+        userId: "alice",
+        assertionId: active.id,
+        correction: { objectValue: "VS Code", excerpt: "我其实改用 VS Code 了" },
+        reason: "user correction via RPC",
+      }, "");
+      assert(corrected.status === 200 && corrected.json.ok === true, "ontology.assertion.correct should succeed");
+      assert(readPath(corrected.json, ["payload", "corrected", "status"]) === "active", "corrected fact should be active");
+      assert(readPath(corrected.json, ["payload", "corrected", "objectValue"]) === "VS Code", "corrected fact should carry the new value");
+      const supersededEntries = readRecordArrayAt(corrected.json, ["payload", "superseded"]);
+      const supersededPrevious = supersededEntries.find(entry => entry.id === active.id);
+      assert(supersededPrevious?.status === "superseded", "previous fact should be superseded by the correction");
+
+      const correctedId = String(readPath(corrected.json, ["payload", "corrected", "id"]) ?? "");
+      assert(correctedId.length > 0, "corrected assertion id should be present");
+      const retracted = await rpc(writeAddress.url, "ontology.assertion.retract", {
+        userId: "alice",
+        assertionId: correctedId,
+        reason: "no longer relevant",
+      }, "");
+      assert(retracted.status === 200 && retracted.json.ok === true, "ontology.assertion.retract should succeed");
+      assert(readPath(retracted.json, ["payload", "status"]) === "retracted", "retracted fact should report retracted status");
+
+      const sensitiveExport = await rpc(writeAddress.url, "ontology.export", { userId: "alice", includeSensitiveEvidence: true }, "");
+      assert(sensitiveExport.status === 200 && sensitiveExport.json.ok === true, "sensitive export should succeed with write permission");
+
+      const regenerated = await rpc(writeAddress.url, "ontology.snapshot.regenerate", { userId: "alice" }, "");
+      assert(regenerated.status === 200 && regenerated.json.ok === true, "snapshot.regenerate should succeed");
+
+      const deleted = await rpc(writeAddress.url, "ontology.deleteAll", { userId: "alice", reason: "test wipe" }, "");
+      assert(deleted.status === 200 && deleted.json.ok === true, "ontology.deleteAll should succeed");
+      const wiped = await rpc(writeAddress.url, "ontology.knowledge.list", { userId: "alice" }, "");
+      assert(readPath(wiped.json, ["payload", "activeCount"]) === 0, "deleteAll should remove all active facts");
+      assert(readPath(wiped.json, ["payload", "candidateCount"]) === 0, "deleteAll should remove all candidates");
+    } finally {
+      await writeGateway.stop();
+    }
+  } finally {
+    store.close?.();
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+
 async function testTrajectoryPersistenceAndGatewayRpc(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "loong-trajectories-"));
   const trajectoryStore = createFileTrajectoryStore({ rootDir: root });
@@ -1293,6 +1488,81 @@ async function testGatewaySkillsListRpc(): Promise<void> {
 }
 
 
+/** FR-01: gateway builds a MemoryIdentity on the turn input from the channel user id. */
+async function testGatewayTurnIdentityPassthrough(): Promise<void> {
+  // Unit level: toTurnInput builds identity from userId or metadata.channelUserId.
+  const fromUserId = toTurnInput({ sessionId: "s1", message: "hello", userId: "alice" });
+  assert(fromUserId.identity?.tenantId === GATEWAY_DEFAULT_TENANT_ID, "identity should use the default tenant");
+  assert(fromUserId.identity?.userId === "alice", "identity should carry the explicit userId");
+
+  const fromMetadata = toTurnInput({ sessionId: "s1", message: "hello", metadata: { channelUserId: "bob" } });
+  assert(fromMetadata.identity?.userId === "bob", "identity should fall back to metadata.channelUserId");
+
+  const explicitWins = toTurnInput({
+    sessionId: "s1",
+    message: "hello",
+    userId: "alice",
+    metadata: { channelUserId: "bob" },
+  });
+  assert(explicitWins.identity?.userId === "alice", "explicit userId should win over metadata.channelUserId");
+
+  const anonymous = toTurnInput({ sessionId: "s1", message: "hello" });
+  assert(anonymous.identity === undefined, "turn without user id must stay anonymous (backward compatible)");
+
+  const parsed = parseGatewayAgentParams({ sessionId: "s1", message: "hello", userId: "carol" });
+  assert(parsed.userId === "carol", "parseGatewayAgentParams should accept userId");
+  assert(toTurnInput(parsed).identity?.userId === "carol", "parsed userId should flow into the turn identity");
+
+  // End to end: webhook userId lands on the LoongTurnInput identity.
+  let capturedInput: LoongTurnInput | undefined;
+  const listeners = new Set<(event: LoongEvent) => void>();
+  const runtime: LoongAgentRuntime = {
+    async runTurn(input) {
+      capturedInput = input;
+      const runId = "identity-run-1";
+      for (const listener of listeners) {
+        listener({ type: "lifecycle", runId, phase: "start", metadata: { sessionId: input.sessionId } });
+      }
+      return {
+        runId,
+        status: "ok",
+        messages: [
+          { id: "user-1", role: "user", content: input.message, createdAt: new Date().toISOString() },
+          { id: "assistant-1", role: "assistant", content: "identity-ok", createdAt: new Date().toISOString() },
+        ],
+      };
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+  const gateway = createHttpGateway({ runtime });
+  await gateway.start({ host: "127.0.0.1", port: 0, authMode: "shared-secret", sharedSecret: "secret" });
+  const address = gateway.address();
+  assert(address !== undefined, "identity gateway did not start");
+  try {
+    const delivered = await postJson(`${address.url}/channels/webhook`, {
+      sessionId: "identity-session",
+      message: "hello with identity",
+      channel: "telegram",
+      userId: "user-1",
+    });
+    assert(delivered.status === 200 && delivered.json.ok === true, "webhook delivery should succeed");
+    assert(capturedInput?.identity?.userId === "user-1", "webhook userId should reach the turn identity");
+    assert(
+      capturedInput?.identity?.tenantId === GATEWAY_DEFAULT_TENANT_ID,
+      "webhook identity should use the default tenant",
+    );
+    assert(capturedInput?.metadata?.channelUserId === "user-1", "webhook should still annotate channel metadata");
+  } finally {
+    await gateway.stop();
+  }
+}
+
+
 export const gatewayTestCases: TestCase[] = [
   ["gateway direct tool RPC", testGatewayDirectToolRpc],
   ["gateway pairing RPC", testGatewayPairingRpc],
@@ -1300,10 +1570,12 @@ export const gatewayTestCases: TestCase[] = [
   ["gateway production config guards", testGatewayProductionConfigGuards],
   ["gateway websocket RPC and events", testGatewayWebSocket],
   ["gateway webhook channel", testGatewayWebhookChannel],
+  ["gateway turn identity passthrough", testGatewayTurnIdentityPassthrough],
   ["gateway cron RPC", testGatewayCronRpc],
   ["channels serve bridge", testChannelsServeBridge],
   ["channel adapters", testChannelAdapters],
   ["gateway memory candidate review RPC", testGatewayMemoryCandidateRpc],
+  ["gateway ontology user-control RPC", testGatewayOntologyUserControlRpc],
   ["trajectory persistence and gateway RPC", testTrajectoryPersistenceAndGatewayRpc],
   ["gateway tier RPC", testGatewayTierRpc],
   ["gateway session turn queue", testGatewaySessionTurnQueue],
