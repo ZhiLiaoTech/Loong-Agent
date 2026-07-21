@@ -9,6 +9,7 @@ import type {
   OrgTicketView,
   MemoryCandidate,
   MemoryReviewState,
+  OntologyKnowledgeView,
   TrajectorySummary,
 } from "./types.js";
 import { isStaleApprovalError } from "./approvalErrors.js";
@@ -27,6 +28,11 @@ export function useObservePage() {
     canReject: false,
   });
   const [memoryResult, setMemoryResult] = useState<string | null>(null);
+  const [ontologyUserId, setOntologyUserId] = useState("");
+  const [ontologyKnowledge, setOntologyKnowledge] = useState<OntologyKnowledgeView | null>(null);
+  const [ontologyCanWrite, setOntologyCanWrite] = useState(false);
+  const [ontologySupported, setOntologySupported] = useState(true);
+  const [ontologyResult, setOntologyResult] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<readonly ApprovalInboxItem[]>([]);
   const [approvalResult, setApprovalResult] = useState<string | null>(null);
   const [tickets, setTickets] = useState<readonly OrgTicketView[]>([]);
@@ -131,6 +137,39 @@ export function useObservePage() {
     setMemoryReview(payload.review ?? { canPromote: false, canReject: false });
   }, [client]);
 
+  // Phase 5 (FR-12/13/14): ontology user-control surface. Degrades silently
+  // when the gateway predates the ontology RPC family.
+  const refreshOntology = useCallback(async () => {
+    const userId = ontologyUserId.trim();
+    if (!userId) {
+      setOntologyKnowledge(null);
+      setOntologyCanWrite(false);
+      return;
+    }
+    try {
+      const payload = await client.rpc<OntologyKnowledgeView & { permissions?: { canWrite?: boolean } }>(
+        "ontology.knowledge.list",
+        { userId },
+      );
+      setOntologySupported(true);
+      setOntologyKnowledge({
+        groups: payload.groups ?? [],
+        activeCount: payload.activeCount ?? 0,
+        candidateCount: payload.candidateCount ?? 0,
+        disputedCount: payload.disputedCount ?? 0,
+        inferredActiveCount: payload.inferredActiveCount ?? 0,
+      });
+      setOntologyCanWrite(payload.permissions?.canWrite === true);
+    } catch (caught) {
+      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      if (message.includes("Unknown Gateway RPC type")) {
+        setOntologySupported(false);
+      }
+      setOntologyKnowledge(null);
+      setOntologyCanWrite(false);
+    }
+  }, [client, ontologyUserId]);
+
   const refreshAll = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -139,6 +178,7 @@ export function useObservePage() {
         refreshRuns(),
         refreshTrajectories(),
         refreshMemory(),
+        refreshOntology(),
         refreshEmployeeOptions(),
         refreshApprovals(),
         refreshKpi(),
@@ -167,6 +207,7 @@ export function useObservePage() {
     refreshEmployeeOptions,
     refreshKpi,
     refreshMemory,
+    refreshOntology,
     refreshRuns,
     refreshTickets,
     refreshTrajectories,
@@ -311,6 +352,108 @@ export function useObservePage() {
     }
   }, [client, refreshMemory]);
 
+  const explainOntologyFact = useCallback(async (assertionId: string) => {
+    const userId = ontologyUserId.trim();
+    if (!userId) {
+      return;
+    }
+    setOntologyResult("Loading explanation…");
+    try {
+      const payload = await client.rpc("ontology.assertion.explain", { userId, assertionId });
+      setOntologyResult(JSON.stringify(payload, null, 2));
+    } catch (caught) {
+      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      setOntologyResult(message);
+    }
+  }, [client, ontologyUserId]);
+
+  const correctOntologyFact = useCallback(async (assertionId: string) => {
+    const userId = ontologyUserId.trim();
+    if (!userId) {
+      return;
+    }
+    const objectValue = window.prompt("纠正后的新值：");
+    if (objectValue === null || !objectValue.trim()) {
+      return;
+    }
+    const excerpt = window.prompt("你的原话（作为纠正的证据记录）：");
+    if (excerpt === null || !excerpt.trim()) {
+      return;
+    }
+    setOntologyResult("Correcting…");
+    try {
+      const payload = await client.rpc("ontology.assertion.correct", {
+        userId,
+        assertionId,
+        correction: { objectValue: objectValue.trim(), excerpt: excerpt.trim() },
+        reason: "Corrected from dashboard.",
+      });
+      setOntologyResult(JSON.stringify(payload, null, 2));
+      await refreshOntology();
+    } catch (caught) {
+      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      setOntologyResult(message);
+    }
+  }, [client, ontologyUserId, refreshOntology]);
+
+  const retractOntologyFact = useCallback(async (assertionId: string) => {
+    const userId = ontologyUserId.trim();
+    if (!userId || !window.confirm("撤回这条事实？它将不再被召回。")) {
+      return;
+    }
+    setOntologyResult("Retracting…");
+    try {
+      const payload = await client.rpc("ontology.assertion.retract", {
+        userId,
+        assertionId,
+        reason: "Retracted from dashboard.",
+      });
+      setOntologyResult(JSON.stringify(payload, null, 2));
+      await refreshOntology();
+    } catch (caught) {
+      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      setOntologyResult(message);
+    }
+  }, [client, ontologyUserId, refreshOntology]);
+
+  const deleteAllOntology = useCallback(async () => {
+    const userId = ontologyUserId.trim();
+    if (!userId || !window.confirm(`确定删除 ${userId} 的全部本体记忆？此操作不可恢复（审计日志会保留）。`)) {
+      return;
+    }
+    setOntologyResult("Deleting all…");
+    try {
+      const payload = await client.rpc("ontology.deleteAll", { userId, reason: "Deleted from dashboard." });
+      setOntologyResult(JSON.stringify(payload, null, 2));
+      await refreshOntology();
+    } catch (caught) {
+      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      setOntologyResult(message);
+    }
+  }, [client, ontologyUserId, refreshOntology]);
+
+  const exportOntology = useCallback(async () => {
+    const userId = ontologyUserId.trim();
+    if (!userId) {
+      return;
+    }
+    setOntologyResult("Exporting…");
+    try {
+      const payload = await client.rpc("ontology.export", { userId });
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `ontology-export-${userId}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setOntologyResult("导出完成。");
+    } catch (caught) {
+      const message = caught instanceof GatewayApiError ? caught.message : String(caught);
+      setOntologyResult(message);
+    }
+  }, [client, ontologyUserId]);
+
   const activeRuns = runs.filter(
     run => run.state === "running" || run.state === "cancelling",
   ).length;
@@ -323,6 +466,12 @@ export function useObservePage() {
     memoryCandidates,
     memoryReview,
     memoryResult,
+    ontologyUserId,
+    setOntologyUserId,
+    ontologyKnowledge,
+    ontologyCanWrite,
+    ontologySupported,
+    ontologyResult,
     approvals,
     approvalResult,
     approvalMineOnly,
@@ -342,6 +491,7 @@ export function useObservePage() {
     refreshRuns,
     refreshTrajectories,
     refreshMemory,
+    refreshOntology,
     refreshApprovals,
     refreshKpi,
     refreshTickets,
@@ -349,6 +499,11 @@ export function useObservePage() {
     loadTrajectory,
     promoteMemory,
     rejectMemory,
+    explainOntologyFact,
+    correctOntologyFact,
+    retractOntologyFact,
+    deleteAllOntology,
+    exportOntology,
     approveRequest,
     rejectRequest,
     dismissRequest,

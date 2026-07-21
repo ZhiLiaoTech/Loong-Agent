@@ -11,6 +11,22 @@ import type {
   GatewayMemoryCandidateListParams,
   GatewayMemoryCandidatePromoteParams,
   GatewayMemoryCandidateRejectParams,
+  GatewayOntologyAssertionCorrectParams,
+  GatewayOntologyAssertionExplainParams,
+  GatewayOntologyAssertionRetractParams,
+  GatewayOntologyCandidateListParams,
+  GatewayOntologyCandidatePromoteParams,
+  GatewayOntologyCandidateRejectParams,
+  GatewayOntologyCategoryDeleteParams,
+  GatewayOntologyConflictsListParams,
+  GatewayOntologyDeleteAllParams,
+  GatewayOntologyEntityDeleteParams,
+  GatewayOntologyEntityUnmergeParams,
+  GatewayOntologyEvidenceDeleteParams,
+  GatewayOntologyExportParams,
+  GatewayOntologyImportParams,
+  GatewayOntologyKnowledgeListParams,
+  GatewayOntologySnapshotRegenerateParams,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -71,6 +87,22 @@ export type GatewayRequest =
   | { type: "memory.candidates.list"; id: string; params?: GatewayMemoryCandidateListParams }
   | { type: "memory.candidate.promote"; id: string; params: GatewayMemoryCandidatePromoteParams }
   | { type: "memory.candidate.reject"; id: string; params: GatewayMemoryCandidateRejectParams }
+  | { type: "ontology.knowledge.list"; id: string; params: GatewayOntologyKnowledgeListParams }
+  | { type: "ontology.assertion.explain"; id: string; params: GatewayOntologyAssertionExplainParams }
+  | { type: "ontology.conflicts.list"; id: string; params: GatewayOntologyConflictsListParams }
+  | { type: "ontology.candidates.list"; id: string; params: GatewayOntologyCandidateListParams }
+  | { type: "ontology.candidate.promote"; id: string; params: GatewayOntologyCandidatePromoteParams }
+  | { type: "ontology.candidate.reject"; id: string; params: GatewayOntologyCandidateRejectParams }
+  | { type: "ontology.assertion.correct"; id: string; params: GatewayOntologyAssertionCorrectParams }
+  | { type: "ontology.assertion.retract"; id: string; params: GatewayOntologyAssertionRetractParams }
+  | { type: "ontology.evidence.delete"; id: string; params: GatewayOntologyEvidenceDeleteParams }
+  | { type: "ontology.entity.delete"; id: string; params: GatewayOntologyEntityDeleteParams }
+  | { type: "ontology.category.delete"; id: string; params: GatewayOntologyCategoryDeleteParams }
+  | { type: "ontology.deleteAll"; id: string; params: GatewayOntologyDeleteAllParams }
+  | { type: "ontology.entity.unmerge"; id: string; params: GatewayOntologyEntityUnmergeParams }
+  | { type: "ontology.snapshot.regenerate"; id: string; params: GatewayOntologySnapshotRegenerateParams }
+  | { type: "ontology.export"; id: string; params: GatewayOntologyExportParams }
+  | { type: "ontology.import"; id: string; params: GatewayOntologyImportParams }
   | { type: "trajectory.list"; id: string; params: GatewayTrajectoryListParams }
   | { type: "trajectory.get"; id: string; params: GatewayTrajectoryGetParams }
   | { type: "cron.jobs.list"; id: string }

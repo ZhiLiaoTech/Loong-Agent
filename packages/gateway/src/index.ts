@@ -52,6 +52,7 @@ import {
   type LoongSuiteReleaseMaterialization,
 } from "@loong/suite";
 import {
+  GATEWAY_DEFAULT_TENANT_ID,
   parseGatewayAgentParams,
   parseGatewayWebhookParams,
   resolveAgentParamsWithProfile,
@@ -88,7 +89,14 @@ import type {
   LoongTrajectoryRecord,
   LoongTurnInput,
   LoongTurnResult,
+  MemoryIdentity,
 } from "@loong/core";
+import {
+  createOntologyUserControlService,
+  type OntologyCorrectionInput,
+  type OntologyStore,
+  type OntologyUserControlService,
+} from "@loong/memory";
 import { parseCronSchedule, type LoongCronJob, type LoongCronJobStore, type LoongCronRunner } from "@loong/cron";
 import {
   buildKpiSnapshot,
@@ -141,6 +149,22 @@ export type {
   GatewayModelConfigSaveParams,
   GatewayModelProviderConfig,
   GatewayModelProviderType,
+  GatewayOntologyAssertionCorrectParams,
+  GatewayOntologyAssertionExplainParams,
+  GatewayOntologyAssertionRetractParams,
+  GatewayOntologyCandidateListParams,
+  GatewayOntologyCandidatePromoteParams,
+  GatewayOntologyCandidateRejectParams,
+  GatewayOntologyCategoryDeleteParams,
+  GatewayOntologyConflictsListParams,
+  GatewayOntologyDeleteAllParams,
+  GatewayOntologyEntityDeleteParams,
+  GatewayOntologyEntityUnmergeParams,
+  GatewayOntologyEvidenceDeleteParams,
+  GatewayOntologyExportParams,
+  GatewayOntologyImportParams,
+  GatewayOntologyKnowledgeListParams,
+  GatewayOntologySnapshotRegenerateParams,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -166,6 +190,22 @@ import type {
   GatewayMemoryCandidateRejectParams,
   GatewayModelConfigSaveParams,
   GatewayModelProviderConfig,
+  GatewayOntologyAssertionCorrectParams,
+  GatewayOntologyAssertionExplainParams,
+  GatewayOntologyAssertionRetractParams,
+  GatewayOntologyCandidateListParams,
+  GatewayOntologyCandidatePromoteParams,
+  GatewayOntologyCandidateRejectParams,
+  GatewayOntologyCategoryDeleteParams,
+  GatewayOntologyConflictsListParams,
+  GatewayOntologyDeleteAllParams,
+  GatewayOntologyEntityDeleteParams,
+  GatewayOntologyEntityUnmergeParams,
+  GatewayOntologyEvidenceDeleteParams,
+  GatewayOntologyExportParams,
+  GatewayOntologyImportParams,
+  GatewayOntologyKnowledgeListParams,
+  GatewayOntologySnapshotRegenerateParams,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -376,6 +416,14 @@ export interface HttpLoongGatewayOptions {
   tools?: readonly ToolDefinition[];
   toolRegistry?: ToolRegistry;
   permissionEngine?: ToolPermissionEngine;
+  /**
+   * Phase 5 (FR-12/13/14): ontology user-control store. When present the
+   * gateway exposes the ontology.knowledge/assertion/entity/export/import RPC
+   * family backed by an OntologyUserControlService constructed over this
+   * store. Candidate review RPCs additionally require the ontology candidate
+   * tools in the tool registry.
+   */
+  ontologyStore?: OntologyStore;
   directToolNames?: readonly string[];
   skillRoots?: readonly string[];
   pluginRoots?: readonly string[];
@@ -391,6 +439,8 @@ const MAX_DIRECT_TOOL_RESULT_BYTES = 256_000;
 const MAX_DIRECT_TOOL_PREVIEW_BYTES = 64_000;
 const DEFAULT_TOOL_SESSION_ID = "gateway-tools";
 const DEFAULT_MEMORY_REVIEW_SESSION_ID = "gateway-memory-review";
+const ONTOLOGY_USER_CONTROL_WRITE_TOOL = "ontology_user_control_write";
+const ONTOLOGY_RPC_OPERATOR = "gateway-rpc";
 export function createHttpGateway(options: HttpLoongGatewayOptions): LoongGateway {
   return new HttpLoongGateway(options);
 }
@@ -417,6 +467,7 @@ export class HttpLoongGateway implements LoongGateway {
   readonly #onModelConfigChange: ((config: GatewayModelConfig) => void | Promise<void>) | undefined;
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
+  readonly #ontology: OntologyUserControlService | undefined;
   #directToolNames: Set<string>;
   readonly #skillRoots: readonly string[];
   readonly #suiteDataDir: string | undefined;
@@ -460,6 +511,9 @@ export class HttpLoongGateway implements LoongGateway {
     this.#onModelConfigChange = options.onModelConfigChange;
     this.#toolRegistry = options.toolRegistry ?? createToolRegistry([...(options.tools ?? [])]);
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
+    this.#ontology = options.ontologyStore
+      ? createOntologyUserControlService({ store: options.ontologyStore })
+      : undefined;
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
     this.#skillRoots = [...(options.skillRoots ?? [])];
     this.#suiteDataDir = options.suiteDataDir !== undefined ? path.resolve(options.suiteDataDir) : undefined;
@@ -704,6 +758,26 @@ export class HttpLoongGateway implements LoongGateway {
       ...(this.#toolRegistry.has("memory_candidates_list") ? ["memory.candidates.list"] : []),
       ...(this.#toolRegistry.has("memory_candidate_promote") ? ["memory.candidate.promote"] : []),
       ...(this.#toolRegistry.has("memory_candidate_reject") ? ["memory.candidate.reject"] : []),
+      ...(this.#ontology
+        ? [
+            "ontology.knowledge.list",
+            "ontology.assertion.explain",
+            "ontology.conflicts.list",
+            "ontology.assertion.correct",
+            "ontology.assertion.retract",
+            "ontology.evidence.delete",
+            "ontology.entity.delete",
+            "ontology.category.delete",
+            "ontology.deleteAll",
+            "ontology.entity.unmerge",
+            "ontology.snapshot.regenerate",
+            "ontology.export",
+            "ontology.import",
+          ]
+        : []),
+      ...(this.#toolRegistry.has("ontology_candidates_list") ? ["ontology.candidates.list"] : []),
+      ...(this.#toolRegistry.has("ontology_candidate_promote") ? ["ontology.candidate.promote"] : []),
+      ...(this.#toolRegistry.has("ontology_candidate_reject") ? ["ontology.candidate.reject"] : []),
       ...(this.#trajectoryStore ? ["trajectory.list", "trajectory.get"] : []),
       ...(this.#cronStore ? ["cron.jobs.list", "cron.job.upsert", "cron.job.remove"] : []),
       ...(this.#cronRunner ? ["cron.tick"] : []),
@@ -757,6 +831,22 @@ export class HttpLoongGateway implements LoongGateway {
       listMemoryCandidates: params => this.#listMemoryCandidates(params as GatewayMemoryCandidateListParams | undefined),
       promoteMemoryCandidate: params => this.#promoteMemoryCandidate(params as GatewayMemoryCandidatePromoteParams),
       rejectMemoryCandidate: params => this.#rejectMemoryCandidate(params as GatewayMemoryCandidateRejectParams),
+      listOntologyKnowledge: params => this.#listOntologyKnowledge(params as GatewayOntologyKnowledgeListParams),
+      explainOntologyAssertion: params => this.#explainOntologyAssertion(params as GatewayOntologyAssertionExplainParams),
+      listOntologyConflicts: params => this.#listOntologyConflicts(params as GatewayOntologyConflictsListParams),
+      listOntologyCandidates: params => this.#listOntologyCandidates(params as GatewayOntologyCandidateListParams),
+      promoteOntologyCandidate: params => this.#promoteOntologyCandidate(params as GatewayOntologyCandidatePromoteParams),
+      rejectOntologyCandidate: params => this.#rejectOntologyCandidate(params as GatewayOntologyCandidateRejectParams),
+      correctOntologyAssertion: params => this.#correctOntologyAssertion(params as GatewayOntologyAssertionCorrectParams),
+      retractOntologyAssertion: params => this.#retractOntologyAssertion(params as GatewayOntologyAssertionRetractParams),
+      deleteOntologyEvidence: params => this.#deleteOntologyEvidence(params as GatewayOntologyEvidenceDeleteParams),
+      deleteOntologyEntity: params => this.#deleteOntologyEntity(params as GatewayOntologyEntityDeleteParams),
+      deleteOntologyCategory: params => this.#deleteOntologyCategory(params as GatewayOntologyCategoryDeleteParams),
+      deleteAllOntology: params => this.#deleteAllOntology(params as GatewayOntologyDeleteAllParams),
+      unmergeOntologyEntity: params => this.#unmergeOntologyEntity(params as GatewayOntologyEntityUnmergeParams),
+      regenerateOntologySnapshot: params => this.#regenerateOntologySnapshot(params as GatewayOntologySnapshotRegenerateParams),
+      exportOntology: params => this.#exportOntology(params as GatewayOntologyExportParams),
+      importOntology: params => this.#importOntology(params as GatewayOntologyImportParams),
       listTrajectories: params => this.#listTrajectories(params as GatewayTrajectoryListParams),
       getTrajectory: params => this.#getTrajectory(params as GatewayTrajectoryGetParams),
       listCronJobs: () => this.#listCronJobs(),
@@ -1602,6 +1692,292 @@ export class HttpLoongGateway implements LoongGateway {
     });
     return permission.decision === "allow";
   }
+
+  // ---------------------------------------------------------------------
+  // Phase 5 (FR-12/13/14, §10/§11): ontology user-control RPC handlers.
+  //
+  // Identity is resolved from the explicit `userId` param to the
+  // gateway-scoped tenant, exactly like turn identity resolution. Read RPCs
+  // are ungated (same posture as the `allow`-level candidate list tools).
+  // Writes go through a synthetic `ontology_user_control_write` permission
+  // probe so operators keep a single switch (--allow-write / permission
+  // rules) over every ontology mutation; candidate promote/reject keep
+  // their real tool probes, mirroring the memory candidate flow.
+  // ---------------------------------------------------------------------
+
+  #requireOntologyService(): OntologyUserControlService {
+    const service = this.#ontology;
+    if (!service) {
+      throw new Error("Ontology user control is not configured for this gateway.");
+    }
+    return service;
+  }
+
+  #requireOntologyIdentity(params: { userId?: unknown } | undefined): MemoryIdentity {
+    const userId = typeof params?.userId === "string" ? params.userId.trim() : "";
+    if (!userId) {
+      throw new Error("Ontology RPCs require a non-empty userId string.");
+    }
+    return { tenantId: GATEWAY_DEFAULT_TENANT_ID, userId };
+  }
+
+  #requireOntologyId(value: unknown, field: string): string {
+    const id = typeof value === "string" ? value.trim() : "";
+    if (!id) {
+      throw new Error(`Ontology RPCs require a non-empty ${field} string.`);
+    }
+    return id;
+  }
+
+  #ontologyWriteProbe(): ToolDefinition {
+    return {
+      name: ONTOLOGY_USER_CONTROL_WRITE_TOOL,
+      description:
+        "Synthetic permission probe gating ontology user-control write RPCs (correct/retract/delete/unmerge/regenerate/import).",
+      inputSchema: { type: "object" },
+      capabilities: ["write", "memory"],
+      permission: "ask",
+      invoke: async () => ({ id: "", ok: false, error: "probe only" }),
+    };
+  }
+
+  #assertOntologyWriteAllowed(operation: string): void {
+    const probe = this.#ontologyWriteProbe();
+    const permission = this.#permissionEngine.decide(probe, {
+      id: randomUUID(),
+      name: probe.name,
+      input: { operation },
+      sessionId: DEFAULT_MEMORY_REVIEW_SESSION_ID,
+    });
+    if (permission.decision !== "allow") {
+      throw new Error(
+        `Tool permission ${permission.decision} for ${probe.name} (${operation}): ${permission.reason}` +
+          " Restart loong gateway with --allow-write (or configure a permissionEngine that allows this tool) to enable ontology user-control write RPCs.",
+      );
+    }
+  }
+
+  #ontologyControlPermissions(): { canWrite: boolean } {
+    const probe = this.#ontologyWriteProbe();
+    const permission = this.#permissionEngine.decide(probe, {
+      id: randomUUID(),
+      name: probe.name,
+      input: { operation: "permission-probe" },
+      sessionId: DEFAULT_MEMORY_REVIEW_SESSION_ID,
+    });
+    return { canWrite: permission.decision === "allow" };
+  }
+
+  async #invokeOntologyCandidateTool(toolName: string, input: unknown, identity: MemoryIdentity): Promise<unknown> {
+    const tool = this.#toolRegistry.get(toolName);
+    if (!tool) {
+      throw new Error(`Ontology candidate tool is unavailable: ${toolName}`);
+    }
+    const invocation: ToolInvocation = {
+      id: randomUUID(),
+      name: tool.name,
+      input,
+      sessionId: DEFAULT_MEMORY_REVIEW_SESSION_ID,
+      metadata: { identity },
+    };
+    const permission = this.#permissionEngine.decide(tool, invocation);
+    if (permission.decision !== "allow") {
+      const isWriteTool = toolName === "ontology_candidate_promote" || toolName === "ontology_candidate_reject";
+      const hint = isWriteTool
+        ? " Restart loong gateway with --allow-write (or configure a permissionEngine that allows this tool) to enable ontology candidate write RPCs."
+        : "";
+      throw new Error(`Tool permission ${permission.decision} for ${toolName}: ${permission.reason}${hint}`);
+    }
+    const result = await tool.invoke(invocation);
+    return sanitizeToolOutput(result, permission);
+  }
+
+  #ontologyCandidateReviewPermissions(): { canPromote: boolean; canReject: boolean } {
+    return {
+      canPromote: this.#canInvokeOntologyCandidateTool("ontology_candidate_promote"),
+      canReject: this.#canInvokeOntologyCandidateTool("ontology_candidate_reject"),
+    };
+  }
+
+  #canInvokeOntologyCandidateTool(toolName: string): boolean {
+    const tool = this.#toolRegistry.get(toolName);
+    if (!tool) {
+      return false;
+    }
+    const permission = this.#permissionEngine.decide(tool, {
+      id: randomUUID(),
+      name: tool.name,
+      input: { id: "permission-probe" },
+      sessionId: DEFAULT_MEMORY_REVIEW_SESSION_ID,
+    });
+    return permission.decision === "allow";
+  }
+
+  async #listOntologyKnowledge(params: GatewayOntologyKnowledgeListParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const explanation = await this.#requireOntologyService().explainUserKnowledge(identity);
+    return {
+      ...explanation,
+      permissions: this.#ontologyControlPermissions(),
+    };
+  }
+
+  async #explainOntologyAssertion(params: GatewayOntologyAssertionExplainParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const assertionId = this.#requireOntologyId(params?.assertionId, "assertionId");
+    return await this.#requireOntologyService().explainAssertion(identity, assertionId);
+  }
+
+  async #listOntologyConflicts(params: GatewayOntologyConflictsListParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const service = this.#requireOntologyService();
+    const [conflicts, inferred] = await Promise.all([
+      service.listConflicts(identity),
+      service.listInferred(identity),
+    ]);
+    return { conflicts, inferred };
+  }
+
+  async #listOntologyCandidates(params: GatewayOntologyCandidateListParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const input: Record<string, unknown> = {};
+    if (params?.status !== undefined) {
+      input.status = params.status;
+    }
+    if (params?.limit !== undefined) {
+      input.limit = params.limit;
+    }
+    const payload = await this.#invokeOntologyCandidateTool("ontology_candidates_list", input, identity);
+    if (!isRecord(payload)) {
+      return payload;
+    }
+    return {
+      ...payload,
+      review: this.#ontologyCandidateReviewPermissions(),
+    };
+  }
+
+  async #promoteOntologyCandidate(params: GatewayOntologyCandidatePromoteParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const id = this.#requireOntologyId(params?.id, "id");
+    return await this.#invokeOntologyCandidateTool("ontology_candidate_promote", { id }, identity);
+  }
+
+  async #rejectOntologyCandidate(params: GatewayOntologyCandidateRejectParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const id = this.#requireOntologyId(params?.id, "id");
+    const input: Record<string, unknown> = { id };
+    if (params?.reason !== undefined) {
+      input.reason = params.reason;
+    }
+    if (params?.dontAskAgain !== undefined) {
+      input.dontAskAgain = params.dontAskAgain;
+    }
+    return await this.#invokeOntologyCandidateTool("ontology_candidate_reject", input, identity);
+  }
+
+  async #correctOntologyAssertion(params: GatewayOntologyAssertionCorrectParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const assertionId = this.#requireOntologyId(params?.assertionId, "assertionId");
+    this.#assertOntologyWriteAllowed("ontology.assertion.correct");
+    if (!isRecord(params?.correction)) {
+      throw new Error("ontology.assertion.correct requires a correction object.");
+    }
+    return await this.#requireOntologyService().correctAssertion(
+      identity,
+      assertionId,
+      params.correction as OntologyCorrectionInput,
+      { operator: ONTOLOGY_RPC_OPERATOR },
+    );
+  }
+
+  async #retractOntologyAssertion(params: GatewayOntologyAssertionRetractParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const assertionId = this.#requireOntologyId(params?.assertionId, "assertionId");
+    this.#assertOntologyWriteAllowed("ontology.assertion.retract");
+    return await this.#requireOntologyService().retractAssertion(identity, assertionId, params?.reason, {
+      operator: ONTOLOGY_RPC_OPERATOR,
+    });
+  }
+
+  async #deleteOntologyEvidence(params: GatewayOntologyEvidenceDeleteParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const evidenceId = this.#requireOntologyId(params?.evidenceId, "evidenceId");
+    this.#assertOntologyWriteAllowed("ontology.evidence.delete");
+    return await this.#requireOntologyService().deleteEvidence(identity, evidenceId, params?.reason, {
+      operator: ONTOLOGY_RPC_OPERATOR,
+    });
+  }
+
+  async #deleteOntologyEntity(params: GatewayOntologyEntityDeleteParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const entityId = this.#requireOntologyId(params?.entityId, "entityId");
+    this.#assertOntologyWriteAllowed("ontology.entity.delete");
+    return await this.#requireOntologyService().deleteEntity(identity, entityId, params?.reason, {
+      operator: ONTOLOGY_RPC_OPERATOR,
+    });
+  }
+
+  async #deleteOntologyCategory(params: GatewayOntologyCategoryDeleteParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    this.#assertOntologyWriteAllowed("ontology.category.delete");
+    const filter: { predicate?: string; sourceType?: "explicit" | "observed" | "inferred" | "imported"; entityType?: string } = {};
+    if (params?.predicate !== undefined) {
+      filter.predicate = params.predicate;
+    }
+    if (params?.sourceType !== undefined) {
+      filter.sourceType = params.sourceType;
+    }
+    if (params?.entityType !== undefined) {
+      filter.entityType = params.entityType;
+    }
+    return await this.#requireOntologyService().deleteCategory(identity, filter, params?.reason, {
+      operator: ONTOLOGY_RPC_OPERATOR,
+    });
+  }
+
+  async #deleteAllOntology(params: GatewayOntologyDeleteAllParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    this.#assertOntologyWriteAllowed("ontology.deleteAll");
+    return await this.#requireOntologyService().deleteAllUserOntology(identity, params?.reason, {
+      operator: ONTOLOGY_RPC_OPERATOR,
+    });
+  }
+
+  async #unmergeOntologyEntity(params: GatewayOntologyEntityUnmergeParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const entityId = this.#requireOntologyId(params?.entityId, "entityId");
+    this.#assertOntologyWriteAllowed("ontology.entity.unmerge");
+    return await this.#requireOntologyService().unmergeEntity(identity, entityId, { operator: ONTOLOGY_RPC_OPERATOR });
+  }
+
+  async #regenerateOntologySnapshot(params: GatewayOntologySnapshotRegenerateParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    this.#assertOntologyWriteAllowed("ontology.snapshot.regenerate");
+    return await this.#requireOntologyService().regenerateSnapshot(identity, { operator: ONTOLOGY_RPC_OPERATOR });
+  }
+
+  async #exportOntology(params: GatewayOntologyExportParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    const includeSensitiveEvidence = params?.includeSensitiveEvidence === true;
+    if (includeSensitiveEvidence) {
+      // FR-14: sensitive evidence excerpts leave the store only behind the
+      // same write gate as mutations.
+      this.#assertOntologyWriteAllowed("ontology.export.includeSensitiveEvidence");
+    }
+    return await this.#requireOntologyService().exportUserOntology(identity, { includeSensitiveEvidence });
+  }
+
+  async #importOntology(params: GatewayOntologyImportParams): Promise<unknown> {
+    const identity = this.#requireOntologyIdentity(params);
+    this.#assertOntologyWriteAllowed("ontology.import");
+    if (params?.payload === undefined || params.payload === null) {
+      throw new Error("ontology.import requires a payload.");
+    }
+    return await this.#requireOntologyService().importUserOntology(identity, params.payload, {
+      operator: ONTOLOGY_RPC_OPERATOR,
+    });
+  }
 }
 
 function resultStatusToRunState(status: LoongTurnResult["status"]): GatewayRunState {
@@ -2298,9 +2674,11 @@ export {
   shouldContinueQueryLoop,
 } from "./query-loop.js";
 export {
+  GATEWAY_DEFAULT_TENANT_ID,
   parseGatewayAgentParams,
   parseGatewayWebhookParams,
   resolveAgentParamsWithProfile,
+  resolveGatewayTurnIdentity,
   toTurnInput,
 } from "./agent-params.js";
 export {

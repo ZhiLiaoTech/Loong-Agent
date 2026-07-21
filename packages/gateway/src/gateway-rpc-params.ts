@@ -227,3 +227,105 @@ export interface GatewayCronJobUpsertParams extends LoongCronJob {
 export interface GatewayCronJobRemoveParams {
   id: string;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5 (FR-12/13/14): ontology user-control RPC params.
+// Every ontology RPC carries an explicit `userId`; the gateway resolves it to
+// the gateway-scoped identity ({ tenantId: GATEWAY_DEFAULT_TENANT_ID, userId })
+// exactly like turn identity resolution — identity is never free-form and the
+// ontology store enforces tenant/user isolation on every query (§10).
+// ---------------------------------------------------------------------------
+
+export interface GatewayOntologyKnowledgeListParams {
+  userId: string;
+}
+
+export interface GatewayOntologyAssertionExplainParams {
+  userId: string;
+  assertionId: string;
+}
+
+export interface GatewayOntologyConflictsListParams {
+  userId: string;
+}
+
+export interface GatewayOntologyCandidateListParams {
+  userId: string;
+  status?: "candidate" | "active" | "disputed" | "superseded" | "retracted" | "all";
+  limit?: number;
+}
+
+export interface GatewayOntologyCandidatePromoteParams {
+  userId: string;
+  id: string;
+}
+
+export interface GatewayOntologyCandidateRejectParams {
+  userId: string;
+  id: string;
+  reason?: string;
+  dontAskAgain?: boolean;
+}
+
+export interface GatewayOntologyAssertionCorrectParams {
+  userId: string;
+  assertionId: string;
+  correction: {
+    objectEntity?: { type: string; name: string; aliases?: string[] };
+    objectValue?: string | number | boolean;
+    excerpt: string;
+    confidence?: number;
+  };
+  reason?: string;
+}
+
+export interface GatewayOntologyAssertionRetractParams {
+  userId: string;
+  assertionId: string;
+  reason?: string;
+}
+
+export interface GatewayOntologyEvidenceDeleteParams {
+  userId: string;
+  evidenceId: string;
+  reason?: string;
+}
+
+export interface GatewayOntologyEntityDeleteParams {
+  userId: string;
+  entityId: string;
+  reason?: string;
+}
+
+export interface GatewayOntologyCategoryDeleteParams {
+  userId: string;
+  predicate?: string;
+  sourceType?: "explicit" | "observed" | "inferred" | "imported";
+  entityType?: string;
+  reason?: string;
+}
+
+export interface GatewayOntologyDeleteAllParams {
+  userId: string;
+  reason?: string;
+}
+
+export interface GatewayOntologyEntityUnmergeParams {
+  userId: string;
+  entityId: string;
+}
+
+export interface GatewayOntologySnapshotRegenerateParams {
+  userId: string;
+}
+
+export interface GatewayOntologyExportParams {
+  userId: string;
+  /** 敏感 Evidence 原文导出需用户单独确认 (FR-14); also requires write permission. */
+  includeSensitiveEvidence?: boolean;
+}
+
+export interface GatewayOntologyImportParams {
+  userId: string;
+  payload: unknown;
+}

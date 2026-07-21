@@ -46,6 +46,22 @@ export interface GatewayRpcHandlerDeps {
   listMemoryCandidates(params: unknown): Promise<unknown>;
   promoteMemoryCandidate(params: unknown): Promise<unknown>;
   rejectMemoryCandidate(params: unknown): Promise<unknown>;
+  listOntologyKnowledge(params: unknown): Promise<unknown>;
+  explainOntologyAssertion(params: unknown): Promise<unknown>;
+  listOntologyConflicts(params: unknown): Promise<unknown>;
+  listOntologyCandidates(params: unknown): Promise<unknown>;
+  promoteOntologyCandidate(params: unknown): Promise<unknown>;
+  rejectOntologyCandidate(params: unknown): Promise<unknown>;
+  correctOntologyAssertion(params: unknown): Promise<unknown>;
+  retractOntologyAssertion(params: unknown): Promise<unknown>;
+  deleteOntologyEvidence(params: unknown): Promise<unknown>;
+  deleteOntologyEntity(params: unknown): Promise<unknown>;
+  deleteOntologyCategory(params: unknown): Promise<unknown>;
+  deleteAllOntology(params: unknown): Promise<unknown>;
+  unmergeOntologyEntity(params: unknown): Promise<unknown>;
+  regenerateOntologySnapshot(params: unknown): Promise<unknown>;
+  exportOntology(params: unknown): Promise<unknown>;
+  importOntology(params: unknown): Promise<unknown>;
   listTrajectories(params: unknown): Promise<unknown>;
   getTrajectory(params: unknown): Promise<unknown>;
   listCronJobs(): Promise<unknown>;
@@ -211,6 +227,54 @@ export async function handleGatewayRpc(
       }
       if (request.type === "memory.candidate.reject") {
         return { type: "response", id: request.id, ok: true, payload: await deps.rejectMemoryCandidate(request.params) };
+      }
+      if (request.type === "ontology.knowledge.list") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.listOntologyKnowledge(request.params) };
+      }
+      if (request.type === "ontology.assertion.explain") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.explainOntologyAssertion(request.params) };
+      }
+      if (request.type === "ontology.conflicts.list") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.listOntologyConflicts(request.params) };
+      }
+      if (request.type === "ontology.candidates.list") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.listOntologyCandidates(request.params) };
+      }
+      if (request.type === "ontology.candidate.promote") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.promoteOntologyCandidate(request.params) };
+      }
+      if (request.type === "ontology.candidate.reject") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.rejectOntologyCandidate(request.params) };
+      }
+      if (request.type === "ontology.assertion.correct") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.correctOntologyAssertion(request.params) };
+      }
+      if (request.type === "ontology.assertion.retract") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.retractOntologyAssertion(request.params) };
+      }
+      if (request.type === "ontology.evidence.delete") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.deleteOntologyEvidence(request.params) };
+      }
+      if (request.type === "ontology.entity.delete") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.deleteOntologyEntity(request.params) };
+      }
+      if (request.type === "ontology.category.delete") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.deleteOntologyCategory(request.params) };
+      }
+      if (request.type === "ontology.deleteAll") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.deleteAllOntology(request.params) };
+      }
+      if (request.type === "ontology.entity.unmerge") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.unmergeOntologyEntity(request.params) };
+      }
+      if (request.type === "ontology.snapshot.regenerate") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.regenerateOntologySnapshot(request.params) };
+      }
+      if (request.type === "ontology.export") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.exportOntology(request.params) };
+      }
+      if (request.type === "ontology.import") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.importOntology(request.params) };
       }
       if (request.type === "trajectory.list") {
         return { type: "response", id: request.id, ok: true, payload: await deps.listTrajectories(request.params) };

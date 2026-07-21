@@ -21,6 +21,7 @@
     "@loong/studio": "workspace:*",
     "@loong/core": "workspace:*",
     "@loong/cron": "workspace:*",
+    "@loong/memory": "workspace:*",
     "@loong/model-catalog": "workspace:*",
     "@loong/org": "workspace:*",
     "@loong/suite": "workspace:*",

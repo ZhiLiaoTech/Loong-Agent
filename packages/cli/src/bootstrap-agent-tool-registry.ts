@@ -22,8 +22,10 @@ import { createRuntimeDelegationTool } from "@loong/delegation";
 import {
   createMemoryCandidateTools,
   createMemoryTools,
+  createOntologyCandidateTools,
   createTrajectoryTools,
   type MemoryStore,
+  type OntologyStore,
   type TrajectoryStore,
 } from "@loong/memory";
 import { createFileSkillRuntime, createSkillTools } from "@loong/skills";
@@ -33,6 +35,8 @@ export interface BootstrapAgentToolRegistryOptions {
   memoryStore: MemoryStore;
   memoryDir: string;
   trajectoryStore?: TrajectoryStore;
+  /** Phase 5: when present, register the ontology candidate review tools. */
+  ontologyStore?: OntologyStore;
   runtime?: (() => LoongAgentRuntime | undefined);
   /** When true, register the arbitrary-command shell_run tool. Default false. */
   allowExec?: boolean;
@@ -78,6 +82,9 @@ export function createAgentToolDefinitions(options: BootstrapAgentToolRegistryOp
   }
   if (options.trajectoryStore) {
     tools.push(...createTrajectoryTools(options.trajectoryStore));
+  }
+  if (options.ontologyStore) {
+    tools.push(...createOntologyCandidateTools({ store: options.ontologyStore }));
   }
   if (options.skillRoots.length > 0) {
     tools.push(...createSkillTools(createFileSkillRuntime({ roots: [...options.skillRoots] })));

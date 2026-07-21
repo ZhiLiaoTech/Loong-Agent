@@ -158,6 +158,7 @@ export async function runGateway(args: string[]): Promise<void> {
       });
     },
     toolRegistry: runtimeBundle.toolRegistry,
+    ...(runtimeBundle.ontologyStore ? { ontologyStore: runtimeBundle.ontologyStore } : {}),
     skillRoots: parsed.skillRoots,
     pluginRoots: parsed.pluginRoots,
     suiteDataDir: parsed.suiteDataDir,

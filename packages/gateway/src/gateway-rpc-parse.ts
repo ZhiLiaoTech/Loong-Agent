@@ -24,6 +24,22 @@ import type {
   GatewayModelConfigSaveParams,
   GatewayModelProviderConfig,
   GatewayModelProviderType,
+  GatewayOntologyAssertionCorrectParams,
+  GatewayOntologyAssertionExplainParams,
+  GatewayOntologyAssertionRetractParams,
+  GatewayOntologyCandidateListParams,
+  GatewayOntologyCandidatePromoteParams,
+  GatewayOntologyCandidateRejectParams,
+  GatewayOntologyCategoryDeleteParams,
+  GatewayOntologyConflictsListParams,
+  GatewayOntologyDeleteAllParams,
+  GatewayOntologyEntityDeleteParams,
+  GatewayOntologyEntityUnmergeParams,
+  GatewayOntologyEvidenceDeleteParams,
+  GatewayOntologyExportParams,
+  GatewayOntologyImportParams,
+  GatewayOntologyKnowledgeListParams,
+  GatewayOntologySnapshotRegenerateParams,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -323,6 +339,118 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
       type: "memory.candidate.reject",
       id: value.id,
       params: parseMemoryCandidateRejectParams(value.params),
+    };
+  }
+  if (value.type === "ontology.knowledge.list") {
+    return {
+      type: "ontology.knowledge.list",
+      id: value.id,
+      params: parseOntologyKnowledgeListParams(value.params),
+    };
+  }
+  if (value.type === "ontology.assertion.explain") {
+    return {
+      type: "ontology.assertion.explain",
+      id: value.id,
+      params: parseOntologyAssertionExplainParams(value.params),
+    };
+  }
+  if (value.type === "ontology.conflicts.list") {
+    return {
+      type: "ontology.conflicts.list",
+      id: value.id,
+      params: parseOntologyConflictsListParams(value.params),
+    };
+  }
+  if (value.type === "ontology.candidates.list") {
+    return {
+      type: "ontology.candidates.list",
+      id: value.id,
+      params: parseOntologyCandidateListParams(value.params),
+    };
+  }
+  if (value.type === "ontology.candidate.promote") {
+    return {
+      type: "ontology.candidate.promote",
+      id: value.id,
+      params: parseOntologyCandidatePromoteParams(value.params),
+    };
+  }
+  if (value.type === "ontology.candidate.reject") {
+    return {
+      type: "ontology.candidate.reject",
+      id: value.id,
+      params: parseOntologyCandidateRejectParams(value.params),
+    };
+  }
+  if (value.type === "ontology.assertion.correct") {
+    return {
+      type: "ontology.assertion.correct",
+      id: value.id,
+      params: parseOntologyAssertionCorrectParams(value.params),
+    };
+  }
+  if (value.type === "ontology.assertion.retract") {
+    return {
+      type: "ontology.assertion.retract",
+      id: value.id,
+      params: parseOntologyAssertionRetractParams(value.params),
+    };
+  }
+  if (value.type === "ontology.evidence.delete") {
+    return {
+      type: "ontology.evidence.delete",
+      id: value.id,
+      params: parseOntologyEvidenceDeleteParams(value.params),
+    };
+  }
+  if (value.type === "ontology.entity.delete") {
+    return {
+      type: "ontology.entity.delete",
+      id: value.id,
+      params: parseOntologyEntityDeleteParams(value.params),
+    };
+  }
+  if (value.type === "ontology.category.delete") {
+    return {
+      type: "ontology.category.delete",
+      id: value.id,
+      params: parseOntologyCategoryDeleteParams(value.params),
+    };
+  }
+  if (value.type === "ontology.deleteAll") {
+    return {
+      type: "ontology.deleteAll",
+      id: value.id,
+      params: parseOntologyDeleteAllParams(value.params),
+    };
+  }
+  if (value.type === "ontology.entity.unmerge") {
+    return {
+      type: "ontology.entity.unmerge",
+      id: value.id,
+      params: parseOntologyEntityUnmergeParams(value.params),
+    };
+  }
+  if (value.type === "ontology.snapshot.regenerate") {
+    return {
+      type: "ontology.snapshot.regenerate",
+      id: value.id,
+      params: parseOntologySnapshotRegenerateParams(value.params),
+    };
+  }
+  if (value.type === "ontology.export") {
+    return {
+      type: "ontology.export",
+      id: value.id,
+      params: parseOntologyExportParams(value.params),
+    };
+  }
+  if (value.type === "ontology.import") {
+    return {
+      type: "ontology.import",
+      id: value.id,
+      params: parseOntologyImportParams(value.params),
     };
   }
   if (value.type === "trajectory.list") {
@@ -1035,6 +1163,284 @@ function parseMemoryCandidateRejectParams(value: unknown): GatewayMemoryCandidat
     params.reason = normalizeBoundedText(value.reason, "reason", 1000);
   }
   return params;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 (FR-12/13/14, §10/§11): ontology user-control RPC params.
+// Every parser requires an explicit non-empty `userId`; the gateway resolves
+// it to the gateway-scoped identity and the store enforces tenant/user
+// isolation on every query.
+// ---------------------------------------------------------------------------
+
+function parseOntologyUserId(value: unknown, rpcName: string): string {
+  if (!isRecord(value)) {
+    badRequest(`${rpcName} params must be an object.`);
+  }
+  if (typeof value.userId !== "string" || !value.userId.trim()) {
+    badRequest(`${rpcName} requires params.userId.`);
+  }
+  return normalizeShortText(value.userId, "userId", 200);
+}
+
+function parseOntologyOptionalReason(value: Record<string, unknown>, rpcName: string): string | undefined {
+  if (value.reason === undefined) {
+    return undefined;
+  }
+  if (typeof value.reason !== "string" || !value.reason.trim()) {
+    badRequest(`${rpcName} reason must be a non-empty string.`);
+  }
+  return normalizeBoundedText(value.reason, "reason", 1000);
+}
+
+function parseOntologyRequiredId(value: Record<string, unknown>, field: string, rpcName: string): string {
+  if (typeof value[field] !== "string" || !(value[field] as string).trim()) {
+    badRequest(`${rpcName} requires params.${field}.`);
+  }
+  return normalizeShortText(value[field] as string, field, 200);
+}
+
+function parseOntologyKnowledgeListParams(value: unknown): GatewayOntologyKnowledgeListParams {
+  return { userId: parseOntologyUserId(value, "ontology.knowledge.list") };
+}
+
+function parseOntologyAssertionExplainParams(value: unknown): GatewayOntologyAssertionExplainParams {
+  const userId = parseOntologyUserId(value, "ontology.assertion.explain");
+  return { userId, assertionId: parseOntologyRequiredId(value as Record<string, unknown>, "assertionId", "ontology.assertion.explain") };
+}
+
+function parseOntologyConflictsListParams(value: unknown): GatewayOntologyConflictsListParams {
+  return { userId: parseOntologyUserId(value, "ontology.conflicts.list") };
+}
+
+function parseOntologyCandidateListParams(value: unknown): GatewayOntologyCandidateListParams {
+  const userId = parseOntologyUserId(value, "ontology.candidates.list");
+  const record = value as Record<string, unknown>;
+  const params: GatewayOntologyCandidateListParams = { userId };
+  if (record.status !== undefined) {
+    if (!isOntologyAssertionStatusFilter(record.status)) {
+      badRequest("ontology.candidates.list status is invalid.");
+    }
+    params.status = record.status;
+  }
+  if (record.limit !== undefined) {
+    if (typeof record.limit !== "number" || !Number.isFinite(record.limit)) {
+      badRequest("ontology.candidates.list limit must be a number.");
+    }
+    params.limit = Math.min(Math.max(1, Math.floor(record.limit)), 100);
+  }
+  return params;
+}
+
+function parseOntologyCandidatePromoteParams(value: unknown): GatewayOntologyCandidatePromoteParams {
+  const userId = parseOntologyUserId(value, "ontology.candidate.promote");
+  return { userId, id: parseOntologyRequiredId(value as Record<string, unknown>, "id", "ontology.candidate.promote") };
+}
+
+function parseOntologyCandidateRejectParams(value: unknown): GatewayOntologyCandidateRejectParams {
+  const userId = parseOntologyUserId(value, "ontology.candidate.reject");
+  const record = value as Record<string, unknown>;
+  const params: GatewayOntologyCandidateRejectParams = {
+    userId,
+    id: parseOntologyRequiredId(record, "id", "ontology.candidate.reject"),
+  };
+  const reason = parseOntologyOptionalReason(record, "ontology.candidate.reject");
+  if (reason !== undefined) {
+    params.reason = reason;
+  }
+  if (record.dontAskAgain !== undefined) {
+    if (typeof record.dontAskAgain !== "boolean") {
+      badRequest("ontology.candidate.reject dontAskAgain must be a boolean.");
+    }
+    params.dontAskAgain = record.dontAskAgain;
+  }
+  return params;
+}
+
+function parseOntologyAssertionCorrectParams(value: unknown): GatewayOntologyAssertionCorrectParams {
+  const userId = parseOntologyUserId(value, "ontology.assertion.correct");
+  const record = value as Record<string, unknown>;
+  const params: GatewayOntologyAssertionCorrectParams = {
+    userId,
+    assertionId: parseOntologyRequiredId(record, "assertionId", "ontology.assertion.correct"),
+    correction: parseOntologyCorrection(record.correction),
+  };
+  const reason = parseOntologyOptionalReason(record, "ontology.assertion.correct");
+  if (reason !== undefined) {
+    params.reason = reason;
+  }
+  return params;
+}
+
+function parseOntologyCorrection(value: unknown): GatewayOntologyAssertionCorrectParams["correction"] {
+  if (!isRecord(value)) {
+    badRequest("ontology.assertion.correct requires a correction object.");
+  }
+  const hasObjectEntity = value.objectEntity !== undefined;
+  const hasObjectValue = value.objectValue !== undefined;
+  if (hasObjectEntity === hasObjectValue) {
+    badRequest("ontology.assertion.correct correction requires exactly one of objectEntity or objectValue.");
+  }
+  const correction: GatewayOntologyAssertionCorrectParams["correction"] = {
+    excerpt: "",
+  };
+  if (hasObjectEntity) {
+    if (!isRecord(value.objectEntity)
+      || typeof value.objectEntity.type !== "string" || !value.objectEntity.type.trim()
+      || typeof value.objectEntity.name !== "string" || !value.objectEntity.name.trim()) {
+      badRequest("ontology.assertion.correct correction.objectEntity requires non-empty type and name.");
+    }
+    const objectEntity: { type: string; name: string; aliases?: string[] } = {
+      type: normalizeShortText(value.objectEntity.type, "objectEntity.type", 120),
+      name: normalizeShortText(value.objectEntity.name, "objectEntity.name", 240),
+    };
+    if (value.objectEntity.aliases !== undefined) {
+      if (!Array.isArray(value.objectEntity.aliases)
+        || value.objectEntity.aliases.some(alias => typeof alias !== "string" || !alias.trim())) {
+        badRequest("ontology.assertion.correct correction.objectEntity.aliases must be an array of non-empty strings.");
+      }
+      objectEntity.aliases = value.objectEntity.aliases.map(alias => normalizeShortText(alias as string, "alias", 240));
+    }
+    correction.objectEntity = objectEntity;
+  }
+  if (hasObjectValue) {
+    if (typeof value.objectValue !== "string" && typeof value.objectValue !== "number" && typeof value.objectValue !== "boolean") {
+      badRequest("ontology.assertion.correct correction.objectValue must be a string, number, or boolean.");
+    }
+    correction.objectValue = typeof value.objectValue === "string"
+      ? normalizeBoundedText(value.objectValue, "objectValue", 4000)
+      : value.objectValue;
+  }
+  if (typeof value.excerpt !== "string" || !value.excerpt.trim()) {
+    badRequest("ontology.assertion.correct correction requires a non-empty excerpt (the user's own words).");
+  }
+  correction.excerpt = normalizeBoundedText(value.excerpt, "excerpt", 4000);
+  if (value.confidence !== undefined) {
+    if (typeof value.confidence !== "number" || !Number.isFinite(value.confidence) || value.confidence < 0 || value.confidence > 1) {
+      badRequest("ontology.assertion.correct correction.confidence must be a number between 0 and 1.");
+    }
+    correction.confidence = value.confidence;
+  }
+  return correction;
+}
+
+function parseOntologyAssertionRetractParams(value: unknown): GatewayOntologyAssertionRetractParams {
+  const userId = parseOntologyUserId(value, "ontology.assertion.retract");
+  const record = value as Record<string, unknown>;
+  const params: GatewayOntologyAssertionRetractParams = {
+    userId,
+    assertionId: parseOntologyRequiredId(record, "assertionId", "ontology.assertion.retract"),
+  };
+  const reason = parseOntologyOptionalReason(record, "ontology.assertion.retract");
+  if (reason !== undefined) {
+    params.reason = reason;
+  }
+  return params;
+}
+
+function parseOntologyEvidenceDeleteParams(value: unknown): GatewayOntologyEvidenceDeleteParams {
+  const userId = parseOntologyUserId(value, "ontology.evidence.delete");
+  const record = value as Record<string, unknown>;
+  const params: GatewayOntologyEvidenceDeleteParams = {
+    userId,
+    evidenceId: parseOntologyRequiredId(record, "evidenceId", "ontology.evidence.delete"),
+  };
+  const reason = parseOntologyOptionalReason(record, "ontology.evidence.delete");
+  if (reason !== undefined) {
+    params.reason = reason;
+  }
+  return params;
+}
+
+function parseOntologyEntityDeleteParams(value: unknown): GatewayOntologyEntityDeleteParams {
+  const userId = parseOntologyUserId(value, "ontology.entity.delete");
+  const record = value as Record<string, unknown>;
+  const params: GatewayOntologyEntityDeleteParams = {
+    userId,
+    entityId: parseOntologyRequiredId(record, "entityId", "ontology.entity.delete"),
+  };
+  const reason = parseOntologyOptionalReason(record, "ontology.entity.delete");
+  if (reason !== undefined) {
+    params.reason = reason;
+  }
+  return params;
+}
+
+function parseOntologyCategoryDeleteParams(value: unknown): GatewayOntologyCategoryDeleteParams {
+  const userId = parseOntologyUserId(value, "ontology.category.delete");
+  const record = value as Record<string, unknown>;
+  const params: GatewayOntologyCategoryDeleteParams = { userId };
+  if (record.predicate !== undefined) {
+    if (typeof record.predicate !== "string" || !record.predicate.trim()) {
+      badRequest("ontology.category.delete predicate must be a non-empty string.");
+    }
+    params.predicate = normalizeShortText(record.predicate, "predicate", 120);
+  }
+  if (record.sourceType !== undefined) {
+    if (!isOntologySourceType(record.sourceType)) {
+      badRequest("ontology.category.delete sourceType is invalid.");
+    }
+    params.sourceType = record.sourceType;
+  }
+  if (record.entityType !== undefined) {
+    if (typeof record.entityType !== "string" || !record.entityType.trim()) {
+      badRequest("ontology.category.delete entityType must be a non-empty string.");
+    }
+    params.entityType = normalizeShortText(record.entityType, "entityType", 120);
+  }
+  const reason = parseOntologyOptionalReason(record, "ontology.category.delete");
+  if (reason !== undefined) {
+    params.reason = reason;
+  }
+  return params;
+}
+
+function parseOntologyDeleteAllParams(value: unknown): GatewayOntologyDeleteAllParams {
+  const userId = parseOntologyUserId(value, "ontology.deleteAll");
+  const params: GatewayOntologyDeleteAllParams = { userId };
+  const reason = parseOntologyOptionalReason(value as Record<string, unknown>, "ontology.deleteAll");
+  if (reason !== undefined) {
+    params.reason = reason;
+  }
+  return params;
+}
+
+function parseOntologyEntityUnmergeParams(value: unknown): GatewayOntologyEntityUnmergeParams {
+  const userId = parseOntologyUserId(value, "ontology.entity.unmerge");
+  return { userId, entityId: parseOntologyRequiredId(value as Record<string, unknown>, "entityId", "ontology.entity.unmerge") };
+}
+
+function parseOntologySnapshotRegenerateParams(value: unknown): GatewayOntologySnapshotRegenerateParams {
+  return { userId: parseOntologyUserId(value, "ontology.snapshot.regenerate") };
+}
+
+function parseOntologyExportParams(value: unknown): GatewayOntologyExportParams {
+  const userId = parseOntologyUserId(value, "ontology.export");
+  const record = value as Record<string, unknown>;
+  const params: GatewayOntologyExportParams = { userId };
+  if (record.includeSensitiveEvidence !== undefined) {
+    if (typeof record.includeSensitiveEvidence !== "boolean") {
+      badRequest("ontology.export includeSensitiveEvidence must be a boolean.");
+    }
+    params.includeSensitiveEvidence = record.includeSensitiveEvidence;
+  }
+  return params;
+}
+
+function parseOntologyImportParams(value: unknown): GatewayOntologyImportParams {
+  const userId = parseOntologyUserId(value, "ontology.import");
+  const record = value as Record<string, unknown>;
+  if (record.payload === undefined || record.payload === null) {
+    badRequest("ontology.import requires params.payload.");
+  }
+  return { userId, payload: record.payload };
+}
+
+function isOntologyAssertionStatusFilter(value: unknown): value is NonNullable<GatewayOntologyCandidateListParams["status"]> {
+  return ["candidate", "active", "disputed", "superseded", "retracted", "all"].includes(String(value));
+}
+
+function isOntologySourceType(value: unknown): value is NonNullable<GatewayOntologyCategoryDeleteParams["sourceType"]> {
+  return ["explicit", "observed", "inferred", "imported"].includes(String(value));
 }
 
 function parseTrajectoryListParams(value: unknown): GatewayTrajectoryListParams {

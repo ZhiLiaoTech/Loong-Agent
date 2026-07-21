@@ -4,6 +4,7 @@ import { EventsFeed } from "./components/EventsFeed.js";
 import { ApprovalInboxPanel } from "./components/ApprovalInboxPanel.js";
 import { KpiSnapshotPanel } from "./components/KpiSnapshotPanel.js";
 import { MemoryCandidatesPanel } from "./components/MemoryCandidatesPanel.js";
+import { OntologyPanel } from "./components/OntologyPanel.js";
 import { RunsObserveTable } from "./components/RunsObserveTable.js";
 import { TicketsPanel } from "./components/TicketsPanel.js";
 import { TrajectoriesSection } from "./components/TrajectoriesSection.js";
@@ -88,6 +89,21 @@ export function ObserveWorkspace() {
           onRefresh={() => void page.refreshMemory()}
           onPromote={id => void page.promoteMemory(id)}
           onReject={id => void page.rejectMemory(id)}
+        />
+        <OntologyPanel
+          userId={page.ontologyUserId}
+          knowledge={page.ontologyKnowledge}
+          canWrite={page.ontologyCanWrite}
+          supported={page.ontologySupported}
+          result={page.ontologyResult}
+          loading={page.loading}
+          onUserIdChange={value => page.setOntologyUserId(value)}
+          onRefresh={() => void page.refreshOntology()}
+          onExplain={id => void page.explainOntologyFact(id)}
+          onCorrect={id => void page.correctOntologyFact(id)}
+          onRetract={id => void page.retractOntologyFact(id)}
+          onDeleteAll={() => void page.deleteAllOntology()}
+          onExport={() => void page.exportOntology()}
         />
       </div>
 

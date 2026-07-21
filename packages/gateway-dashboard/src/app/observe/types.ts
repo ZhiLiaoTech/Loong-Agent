@@ -56,4 +56,29 @@ export interface OrgTicketView {
   createdAt?: string;
 }
 
+export interface OntologyFactView {
+  assertionId: string;
+  line: string;
+  predicate: string;
+  confidence: number;
+  sourceType: string;
+  status: string;
+  evidenceCount: number;
+  validFrom?: string;
+  validTo?: string;
+}
+
+export interface OntologyKnowledgeGroupView {
+  predicate: string;
+  facts: OntologyFactView[];
+}
+
+export interface OntologyKnowledgeView {
+  groups: OntologyKnowledgeGroupView[];
+  activeCount: number;
+  candidateCount: number;
+  disputedCount: number;
+  inferredActiveCount: number;
+}
+
 export type { GatewayRunRecord };

@@ -21,9 +21,11 @@ import {
   createMemoryContextProvider,
   createSessionCompactionContextProvider,
   createSqliteMemoryStore,
+  createSqliteOntologyStore,
   type MemoryRecord,
   type MemorySearchResult,
   type MemoryStore,
+  type OntologyStore,
   type TrajectoryStore,
 } from "@loong/memory";
 import { loadLoongPlugin, type LoongPluginMemoryBackend, type LoadedLoongPlugin } from "@loong/plugin-sdk";
@@ -85,6 +87,8 @@ export interface RuntimeFactoryResult {
   tools: ToolDefinition[];
   toolRegistry: ToolRegistry;
   permissionEngine?: ToolPermissionEngine;
+  /** Phase 5: ontology store backing the user-control RPCs; agent mode only. */
+  ontologyStore?: OntologyStore;
 }
 
 export async function createRuntime(options: RuntimeFactoryOptions): Promise<RuntimeFactoryResult> {
@@ -127,6 +131,9 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
     const memoryStore = options.mode === "agent"
       ? selectMemoryStore(options.memoryBackendId, pluginMemoryBackends, options.memoryDir)
       : undefined;
+    const ontologyStore = options.mode === "agent" && memoryStore
+      ? createSqliteOntologyStore({ databasePath: path.join(options.memoryDir, "ontology.db") })
+      : undefined;
     const memoryCandidateHook = options.mode === "agent" && memoryStore
       ? createMemoryCandidateLifecycleHook({ rootDir: options.memoryDir })
       : undefined;
@@ -161,6 +168,7 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
             { toolName: "skill_load", decision: "allow" as const, reason: "CLI agent read-only skill loading tool." },
             { toolName: "memory_search", decision: "allow" as const, reason: "CLI agent read-only memory search tool." },
             { toolName: "memory_candidates_list", decision: "allow" as const, reason: "CLI agent read-only memory candidate review tool." },
+            { toolName: "ontology_candidates_list", decision: "allow" as const, reason: "CLI agent read-only ontology candidate review tool." },
             { toolName: "trajectory_list", decision: "allow" as const, reason: "CLI agent read-only trajectory listing tool." },
             { toolName: "trajectory_get", decision: "allow" as const, reason: "CLI agent read-only trajectory loading tool." },
             { toolName: "delegation_run", decision: "allow" as const, reason: "CLI agent bounded delegation execution tool." },
@@ -185,6 +193,9 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
                   { toolName: "skill_improve", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
                   { toolName: "memory_candidate_promote", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
                   { toolName: "memory_candidate_reject", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
+                  { toolName: "ontology_candidate_promote", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
+                  { toolName: "ontology_candidate_reject", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
+                  { toolName: "ontology_user_control_write", decision: "allow" as const, reason: "CLI agent write access explicitly enabled." },
                 ]
               : []),
             ...(options.allowExec
@@ -203,6 +214,7 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
         memoryStore,
         memoryDir: options.memoryDir,
         ...(trajectoryStore ? { trajectoryStore } : {}),
+        ...(ontologyStore ? { ontologyStore } : {}),
         runtime: () => runtime,
         ...(options.allowExec ? { allowExec: true } : {}),
       });
@@ -299,6 +311,7 @@ export async function createRuntime(options: RuntimeFactoryOptions): Promise<Run
       tools: toolRegistry.list(),
       toolRegistry,
       ...(permissionEngine ? { permissionEngine } : {}),
+      ...(ontologyStore ? { ontologyStore } : {}),
     };
   } catch (error) {
     await deactivateLoadedPlugins(plugins);

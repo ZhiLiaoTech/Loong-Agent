@@ -27,6 +27,12 @@ export interface GatewayAgentParams {
   queryLoop?: boolean;
   queryLoopMaxTurns?: number;
   metadata?: Record<string, unknown>;
+  /**
+   * Channel-provided end-user id. When present, the gateway builds a
+   * `MemoryIdentity` on the turn input so memory layers can isolate data per
+   * user (ontology memory Phase 1, FR-01).
+   */
+  userId?: string;
 }
 
 export interface GatewayWebhookParams extends GatewayAgentParams {

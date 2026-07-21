@@ -1,4 +1,4 @@
-import { mergeAgentProfileIntoTurnInput, type LoongSource, type LoongThinkingLevel, type LoongTurnInput } from "@loong/core";
+import { mergeAgentProfileIntoTurnInput, type LoongSource, type LoongThinkingLevel, type LoongTurnInput, type MemoryIdentity } from "@loong/core";
 import { assertLoongGatewayWebhookPayload } from "./channels-webhook.js";
 import { badRequest } from "./gateway-http.js";
 import {
@@ -18,6 +18,14 @@ import type {
 
 const GATEWAY_MAX_ATTACHMENTS = 10;
 const GATEWAY_MAX_ATTACHMENT_BASE64 = 14 * 1024 * 1024; // ~10MB raw
+
+/**
+ * Tenant used for turn identities until the gateway grows a real
+ * tenant-resolution/configuration concept (ontology memory Phase 1, FR-01).
+ * Channel user ids are only unique within a tenant, so every gateway-built
+ * identity is namespaced under this default tenant for now.
+ */
+export const GATEWAY_DEFAULT_TENANT_ID = "default";
 
 export function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
   if (!isRecord(value)) {
@@ -56,6 +64,9 @@ export function parseGatewayAgentParams(value: unknown): GatewayAgentParams {
   }
   if (typeof value.employeeId === "string" && value.employeeId.trim()) {
     params.employeeId = normalizeShortText(value.employeeId, "employeeId", 200);
+  }
+  if (typeof value.userId === "string" && value.userId.trim()) {
+    params.userId = normalizeShortText(value.userId, "userId", 200);
   }
   if (typeof value.systemPrompt === "string" && value.systemPrompt.trim()) {
     params.systemPrompt = normalizeBoundedText(value.systemPrompt, "systemPrompt", 16_000);
@@ -294,5 +305,30 @@ export function toTurnInput(params: GatewayAgentParams): LoongTurnInput {
   if (params.metadata !== undefined) {
     input.metadata = params.metadata;
   }
+  const identity = resolveGatewayTurnIdentity(params);
+  if (identity !== undefined) {
+    input.identity = identity;
+  }
   return input;
+}
+
+/**
+ * Build the turn identity from the channel-provided user id (FR-01).
+ *
+ * Prefers the explicit `params.userId`; falls back to
+ * `metadata.channelUserId`, which webhook channels already populate. Returns
+ * undefined when no trustworthy user id is present — the turn then behaves
+ * exactly as before and user-scope memory writes are refused downstream.
+ */
+export function resolveGatewayTurnIdentity(params: GatewayAgentParams): MemoryIdentity | undefined {
+  const metadataUserId = params.metadata?.channelUserId;
+  const userId = params.userId
+    ?? (typeof metadataUserId === "string" && metadataUserId.trim() ? metadataUserId : undefined);
+  if (userId === undefined) {
+    return undefined;
+  }
+  return {
+    tenantId: GATEWAY_DEFAULT_TENANT_ID,
+    userId,
+  };
 }
