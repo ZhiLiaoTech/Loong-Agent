@@ -94,6 +94,7 @@ import type {
 import {
   createObligationService,
   createOntologyUserControlService,
+  summarizeObligationRecord,
   type ObligationCreateInput,
   type ObligationEvidenceRef,
   type ObligationService,
@@ -176,10 +177,14 @@ export type {
   GatewayObligationDanglingKind,
   GatewayObligationEvidenceRef,
   GatewayObligationGetParams,
+  GatewayObligationHumanVerdictParams,
   GatewayObligationListParams,
   GatewayObligationOverdueListParams,
+  GatewayObligationRetryParams,
   GatewayObligationStatus,
+  GatewayObligationValidateParams,
   GatewayObligationValidatorKind,
+  GatewayObligationVerdict,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -224,8 +229,11 @@ import type {
   GatewayObligationAttachEvidenceParams,
   GatewayObligationCreateParams,
   GatewayObligationGetParams,
+  GatewayObligationHumanVerdictParams,
   GatewayObligationListParams,
   GatewayObligationOverdueListParams,
+  GatewayObligationRetryParams,
+  GatewayObligationValidateParams,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -445,14 +453,24 @@ export interface HttpLoongGatewayOptions {
    */
   ontologyStore?: OntologyStore;
   /**
-   * Phase 3.0 (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §11): obligation
+   * Phase 3.0/3.1 (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §11): obligation
    * （任务契约）recording store. When present the gateway exposes the
-   * obligation.create / list / get / attachEvidence / overdue.list RPC family
+   * obligation.create / list / get / attachEvidence / overdue.list family
+   * plus the 3.1 verdict RPCs (obligation.validate / verdict.human / retry)
    * backed by an ObligationService constructed over this store. The service
    * also receives `ontologyStore` (when present) to verify ontology
    * evidence/episode refs resolve under the caller's identity (§9).
    */
   obligationStore?: ObligationStore;
+  /**
+   * Phase 3.1 (§6.3): interval for the obligation deadline sweep. Default 0
+   * (off). When > 0 AND obligationStore is present, start() arms an unref'd
+   * interval that expires overdue in-flight obligations via
+   * sweepExpiredSystem (audit detail via=deadline_sweep). This is the
+   * in-process fallback; the design's durable wf_timer wakeups belong to the
+   * orchestration runtime, which can drive the same service method.
+   */
+  obligationSweepIntervalMs?: number;
   directToolNames?: readonly string[];
   skillRoots?: readonly string[];
   pluginRoots?: readonly string[];
@@ -500,6 +518,8 @@ export class HttpLoongGateway implements LoongGateway {
   readonly #permissionEngine: ToolPermissionEngine;
   readonly #ontology: OntologyUserControlService | undefined;
   readonly #obligations: ObligationService | undefined;
+  readonly #obligationSweepIntervalMs: number;
+  #obligationSweepTimer: ReturnType<typeof setInterval> | undefined;
   #directToolNames: Set<string>;
   readonly #skillRoots: readonly string[];
   readonly #suiteDataDir: string | undefined;
@@ -552,6 +572,10 @@ export class HttpLoongGateway implements LoongGateway {
         ...(options.ontologyStore !== undefined ? { ontologyStore: options.ontologyStore } : {}),
       })
       : undefined;
+    this.#obligationSweepIntervalMs =
+      typeof options.obligationSweepIntervalMs === "number" && Number.isFinite(options.obligationSweepIntervalMs)
+        ? Math.max(0, Math.floor(options.obligationSweepIntervalMs))
+        : 0;
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
     this.#skillRoots = [...(options.skillRoots ?? [])];
     this.#suiteDataDir = options.suiteDataDir !== undefined ? path.resolve(options.suiteDataDir) : undefined;
@@ -612,6 +636,19 @@ export class HttpLoongGateway implements LoongGateway {
     this.#runtimeUnsubscribe = this.#runtime.subscribe(event => {
       this.#connections.broadcastRuntimeEvent(event);
     });
+    if (this.#obligationSweepIntervalMs > 0 && this.#obligations !== undefined) {
+      const service = this.#obligations;
+      const timer = setInterval(() => {
+        service.sweepExpiredSystem().catch(error => {
+          console.error(
+            `[${this.#name}] obligation deadline sweep failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      }, this.#obligationSweepIntervalMs);
+      // 兜底扫描不阻止进程退出。
+      (timer as { unref?: () => void }).unref?.();
+      this.#obligationSweepTimer = timer;
+    }
     void seedMandatoryPresetSkills(this.#skillRoots);
     const authNotice = describeAuthStartup(normalized);
     if (authNotice) {
@@ -628,6 +665,10 @@ export class HttpLoongGateway implements LoongGateway {
     const server = this.#server;
     if (!server) {
       return;
+    }
+    if (this.#obligationSweepTimer !== undefined) {
+      clearInterval(this.#obligationSweepTimer);
+      this.#obligationSweepTimer = undefined;
     }
     this.#runtimeUnsubscribe?.();
     this.#runtimeUnsubscribe = undefined;
@@ -890,6 +931,9 @@ export class HttpLoongGateway implements LoongGateway {
       getObligation: params => this.#getObligation(params as GatewayObligationGetParams),
       attachObligationEvidence: params => this.#attachObligationEvidence(params as GatewayObligationAttachEvidenceParams),
       listOverdueObligations: params => this.#listOverdueObligations(params as GatewayObligationOverdueListParams),
+      validateObligation: params => this.#validateObligation(params as GatewayObligationValidateParams),
+      submitObligationHumanVerdict: params => this.#submitObligationHumanVerdict(params as GatewayObligationHumanVerdictParams),
+      retryObligation: params => this.#retryObligation(params as GatewayObligationRetryParams),
       listTrajectories: params => this.#listTrajectories(params as GatewayTrajectoryListParams),
       getTrajectory: params => this.#getTrajectory(params as GatewayTrajectoryGetParams),
       listCronJobs: () => this.#listCronJobs(),
@@ -2023,12 +2067,13 @@ export class HttpLoongGateway implements LoongGateway {
   }
 
   // ------------------------------------------------------------------------
-  // Phase 3.0: obligation（任务契约）RPCs — 先记录不裁定
-  // (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §11 Phase 3.0).
+  // Phase 3.0/3.1: obligation（任务契约）RPCs — 3.0 先记录不裁定，3.1 三态裁定
+  // (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §11).
   // obligation.list / get / overdue.list are read-only; obligation.create /
-  // attachEvidence go through the write-permission probe. Identity is always
-  // the gateway-scoped { tenantId, userId } from params.userId — cross-user
-  // obligations are invisible (§9).
+  // attachEvidence / validate / verdict.human / retry go through the
+  // write-permission probe. Identity is always the gateway-scoped
+  // { tenantId, userId } from params.userId — cross-user obligations are
+  // invisible (§9).
   // ------------------------------------------------------------------------
 
   #requireObligationService(): ObligationService {
@@ -2059,7 +2104,7 @@ export class HttpLoongGateway implements LoongGateway {
     return {
       name: OBLIGATION_WRITE_PROBE_TOOL,
       description:
-        "Synthetic permission probe gating obligation write RPCs (create / attachEvidence).",
+        "Synthetic permission probe gating obligation write RPCs (create / attachEvidence / validate / verdict.human / retry).",
       inputSchema: { type: "object" },
       capabilities: ["write", "memory"],
       permission: "ask",
@@ -2119,7 +2164,8 @@ export class HttpLoongGateway implements LoongGateway {
     if (record === undefined) {
       throw new Error(`Obligation not found for the given identity: ${id}`);
     }
-    return record;
+    // Phase 3.1：get 响应携带裁定摘要（verdictState/计数/待人工项）。
+    return { ...record, verdictSummary: summarizeObligationRecord(record) };
   }
 
   async #attachObligationEvidence(params: GatewayObligationAttachEvidenceParams): Promise<unknown> {
@@ -2158,6 +2204,46 @@ export class HttpLoongGateway implements LoongGateway {
       obligations[kind] = records.map(record => ({ ...record, danglingKind: kind }));
     }
     return { obligations };
+  }
+
+  // --------------------------------------------------------------------------
+  // Phase 3.1 三态裁定 RPC（§6/§11）：全部走 obligation_write 探针门控。
+  // --------------------------------------------------------------------------
+
+  async #validateObligation(params: GatewayObligationValidateParams): Promise<unknown> {
+    const identity = this.#requireObligationIdentity(params);
+    this.#assertObligationWriteAllowed("obligation.validate");
+    const obligationId = this.#requireObligationId(params?.obligationId, "obligationId");
+    return await this.#requireObligationService().validateObligation(identity, obligationId, {
+      operator: OBLIGATION_RPC_OPERATOR,
+      source: "obligation.validate",
+    });
+  }
+
+  async #submitObligationHumanVerdict(params: GatewayObligationHumanVerdictParams): Promise<unknown> {
+    const identity = this.#requireObligationIdentity(params);
+    this.#assertObligationWriteAllowed("obligation.verdict.human");
+    const obligationId = this.#requireObligationId(params?.obligationId, "obligationId");
+    const itemId = this.#requireObligationId(params?.itemId, "itemId");
+    return await this.#requireObligationService().submitHumanVerdict(identity, obligationId, {
+      itemId,
+      verdict: params.verdict,
+      ...(params.reason !== undefined ? { reason: params.reason } : {}),
+    }, {
+      // 人工确认的审计 operator 必须是确认人本人（RPC 用户），而不是 gateway。
+      operator: identity.userId,
+      source: "obligation.verdict.human",
+    });
+  }
+
+  async #retryObligation(params: GatewayObligationRetryParams): Promise<unknown> {
+    const identity = this.#requireObligationIdentity(params);
+    this.#assertObligationWriteAllowed("obligation.retry");
+    const obligationId = this.#requireObligationId(params?.obligationId, "obligationId");
+    return await this.#requireObligationService().retryObligation(identity, obligationId, {
+      operator: OBLIGATION_RPC_OPERATOR,
+      source: "obligation.retry",
+    });
   }
 }
 

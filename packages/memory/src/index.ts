@@ -313,8 +313,8 @@ export {
   parseOntologyExportPayload,
 } from "./ontology/ontology-user-control.js";
 // ---------------------------------------------------------------------------
-// Phase 3.0: Obligation（任务契约）+ 执行证据链 —— 先记录不裁定
-// (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §3/§5/§11).
+// Phase 3.0/3.1: Obligation（任务契约）+ 执行证据链 —— 3.0 先记录不裁定，
+// 3.1 三态裁定生效 (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §3/§5/§6/§11).
 // ---------------------------------------------------------------------------
 export type {
   Obligation,
@@ -329,8 +329,10 @@ export type {
 export {
   isObligationEvidenceRefKind,
   isObligationStatus,
+  isObligationTransitionAllowed,
   isObligationTransitionAllowedInPhase30,
   isObligationValidatorKind,
+  OBLIGATION_ALLOWED_TRANSITIONS,
   OBLIGATION_EVIDENCE_REF_KINDS,
   OBLIGATION_PHASE30_ALLOWED_TRANSITIONS,
   OBLIGATION_STATUSES,
@@ -351,9 +353,11 @@ export type {
   ObligationEvidenceLink,
   ObligationEvidenceLinkWrite,
   ObligationFilter,
+  ObligationItemVerdictWrite,
   ObligationItemWrite,
   ObligationRecord,
   ObligationStore,
+  ObligationSweptRecord,
   ObligationWrite,
   ObligationWriteMeta,
 } from "./obligation/obligation-store.js";
@@ -367,16 +371,56 @@ export {
   SqliteObligationStore,
 } from "./obligation/sqlite-obligation-store.js";
 export type {
+  ObligationAggregateInput,
+  ObligationAggregateOutcome,
+  ObligationCommandResult,
+  ObligationCommandRunner,
+  ObligationHumanConfirmConfig,
+  ObligationModelReviewConfig,
+  ObligationModelReviewResult,
+  ObligationModelReviewer,
+  ObligationSchemaValidatorConfig,
+  ObligationTestCommandConfig,
+  ObligationToolAssertion,
+  ObligationToolAssertionConfig,
+  ObligationAssertionOp,
+  ObligationValidatorContext,
+  ObligationValidatorResult,
+} from "./obligation/obligation-verdict.js";
+export {
+  aggregateObligationVerdict,
+  checkSchemaLite,
+  DEFAULT_MODEL_REVIEW_PASS_THRESHOLD,
+  DEFAULT_TEST_COMMAND_TIMEOUT_MS,
+  evaluateAssertion,
+  executeValidator,
+  getPathValue,
+  MAX_TEST_COMMAND_TIMEOUT_MS,
+  OBLIGATION_ASSERTION_OPS,
+  parseModelReviewConfig,
+  parseSchemaValidatorConfig,
+  parseTestCommandConfig,
+  parseToolAssertionConfig,
+  resolveValidatorSubject,
+} from "./obligation/obligation-verdict.js";
+export type {
   ObligationAttachEvidenceInput,
   ObligationAttachEvidenceResult,
   ObligationCreateInput,
   ObligationCreateItemInput,
   ObligationDanglingQueryInput,
+  ObligationHumanVerdictInput,
   ObligationService,
   ObligationServiceOptions,
   ObligationStepResultAttach,
+  ObligationValidationItemResult,
+  ObligationValidationReport,
+  ObligationVerdictState,
+  ObligationVerdictSummary,
 } from "./obligation/obligation-service.js";
 export {
   createObligationService,
+  obligationVerdictStateOf,
   requiredCoverageComplete,
+  summarizeObligationRecord,
 } from "./obligation/obligation-service.js";

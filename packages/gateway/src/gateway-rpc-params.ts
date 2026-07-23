@@ -411,3 +411,28 @@ export interface GatewayObligationOverdueListParams {
   olderThan?: string;
   limit?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3.1: 三态裁定 RPC params（§6/§11）— validate / human verdict / retry。
+// All three are write-probe gated exactly like obligation.create.
+// ---------------------------------------------------------------------------
+
+export interface GatewayObligationValidateParams {
+  userId: string;
+  obligationId: string;
+}
+
+export type GatewayObligationVerdict = "pass" | "recoverable_block" | "hard_block";
+
+export interface GatewayObligationHumanVerdictParams {
+  userId: string;
+  obligationId: string;
+  itemId: string;
+  verdict: GatewayObligationVerdict;
+  reason?: string;
+}
+
+export interface GatewayObligationRetryParams {
+  userId: string;
+  obligationId: string;
+}

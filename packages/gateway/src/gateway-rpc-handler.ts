@@ -67,6 +67,9 @@ export interface GatewayRpcHandlerDeps {
   getObligation(params: unknown): Promise<unknown>;
   attachObligationEvidence(params: unknown): Promise<unknown>;
   listOverdueObligations(params: unknown): Promise<unknown>;
+  validateObligation(params: unknown): Promise<unknown>;
+  submitObligationHumanVerdict(params: unknown): Promise<unknown>;
+  retryObligation(params: unknown): Promise<unknown>;
   listTrajectories(params: unknown): Promise<unknown>;
   getTrajectory(params: unknown): Promise<unknown>;
   listCronJobs(): Promise<unknown>;
@@ -295,6 +298,15 @@ export async function handleGatewayRpc(
       }
       if (request.type === "obligation.overdue.list") {
         return { type: "response", id: request.id, ok: true, payload: await deps.listOverdueObligations(request.params) };
+      }
+      if (request.type === "obligation.validate") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.validateObligation(request.params) };
+      }
+      if (request.type === "obligation.verdict.human") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.submitObligationHumanVerdict(request.params) };
+      }
+      if (request.type === "obligation.retry") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.retryObligation(request.params) };
       }
       if (request.type === "trajectory.list") {
         return { type: "response", id: request.id, ok: true, payload: await deps.listTrajectories(request.params) };

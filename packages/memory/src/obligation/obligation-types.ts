@@ -1,14 +1,14 @@
 import type { MemoryIdentity } from "@loong/core";
 
 /**
- * Phase 3.0 of the Obligation + Evidence Chain design
+ * Phase 3.0/3.1 of the Obligation + Evidence Chain design
  * (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §3): core obligation data models.
  *
- * Phase 3.0 is RECORDING ONLY (先记录不裁定): the full 8-state status enum is
- * defined now, but persisted transitions are limited to
- * `pending → dispatched → evidence_collecting → validating` (§11 Phase 3.0).
- * Verdicts and the fulfilled / blocked_* / expired transitions land in
- * Phase 3.1+ — see OBLIGATION_PHASE30_ALLOWED_TRANSITIONS below.
+ * Phase 3.0 was RECORDING ONLY (先记录不裁定); Phase 3.1 turns on verdicts:
+ * persisted transitions follow OBLIGATION_ALLOWED_TRANSITIONS (§3.2, the full
+ * 8-state machine incl. fulfilled / blocked_* / expired), item verdicts have a
+ * write path, and retry_budget / deadline sweeps are live. The 3.0 allow-list
+ * stays exported for compatibility only.
  *
  * Truth-source boundaries (§5.2) honored by this module:
  * - Obligation tables hold契约状态与证据「指针」only — never evidence excerpts
@@ -55,7 +55,7 @@ export interface ObligationItem {
   validatorConfig: Record<string, unknown>; // schemaRef / 断言表达式 / 命令 / 审批链 / rubric
   required: boolean;                   // false = 建议项，不阻断 fulfilled
   deadlineAt?: string;                 // 项级超时
-  /** Phase 3.1+ 裁定结果；3.0 记录中始终为空。 */
+  /** Phase 3.1 裁定结果（recordItemVerdict 写入）；3.0 记录中始终为空。 */
   verdict?: ObligationVerdict;
   verdictReason?: string;
   validatedAt?: string;
@@ -140,11 +140,8 @@ export function isObligationEvidenceRefKind(value: unknown): value is Obligation
 }
 
 /**
- * Phase 3.0 允许的持久化状态迁移（先记录不裁定）。
- *
- * `validating` 是 3.0 的记录终态：只表示「验收待系统/人工裁定（Phase 3.1）」。
- * fulfilled / blocked_* / expired 一律拒绝持久化（§11 Phase 3.0 checklist:
- * 「状态推进到 evidence_collecting 为止（本阶段不做裁定）」+ validating 记录位）。
+ * Phase 3.0 允许的持久化状态迁移（先记录不裁定）—— 历史快照，仅保留给
+ * 外部兼容引用；3.1 起 store 统一使用 OBLIGATION_ALLOWED_TRANSITIONS。
  */
 export const OBLIGATION_PHASE30_ALLOWED_TRANSITIONS: Readonly<Record<ObligationStatus, readonly ObligationStatus[]>> = {
   pending: ["dispatched"],
@@ -163,6 +160,42 @@ export function isObligationTransitionAllowedInPhase30(from: ObligationStatus, t
     return true;
   }
   return OBLIGATION_PHASE30_ALLOWED_TRANSITIONS[from].includes(to);
+}
+
+/**
+ * Phase 3.1 允许的持久化状态迁移（三态裁定生效，§3.2 状态机）。
+ *
+ * 与 §3.2 mermaid 图一一对应：
+ * - pending → dispatched（派发执行载体）
+ * - dispatched → evidence_collecting（回执/证据回流）| expired（超时兜底）
+ * - evidence_collecting → validating（覆盖齐套）| expired
+ * - validating → fulfilled（全部 required pass）| blocked_recoverable
+ *   （retry_budget > 0 的可恢复阻断）| blocked_hard | expired
+ * - blocked_recoverable → dispatched（扣减 retry_budget 后重新派发，§6.2）
+ *   | blocked_hard（重试预算耗尽）| expired
+ * - fulfilled / blocked_hard / expired：终态，无出边（expired 人工重开留待后续阶段）。
+ *
+ * 文档图未画 validating / blocked_recoverable 的 expired 出边；这里按 §6.3
+ * 「契约级超时 → expired」的无条件语义与 §10「无静默悬挂」指标补齐——
+ * 等待人工确认或等待重试的契约同样不允许无限期悬挂。
+ */
+export const OBLIGATION_ALLOWED_TRANSITIONS: Readonly<Record<ObligationStatus, readonly ObligationStatus[]>> = {
+  pending: ["dispatched"],
+  dispatched: ["evidence_collecting", "expired"],
+  evidence_collecting: ["validating", "expired"],
+  validating: ["fulfilled", "blocked_recoverable", "blocked_hard", "expired"],
+  fulfilled: [],
+  blocked_recoverable: ["dispatched", "blocked_hard", "expired"],
+  blocked_hard: [],
+  expired: [],
+};
+
+/** Same-status is an idempotent no-op; otherwise must appear in the 3.1 allow-list. */
+export function isObligationTransitionAllowed(from: ObligationStatus, to: ObligationStatus): boolean {
+  if (from === to) {
+    return true;
+  }
+  return OBLIGATION_ALLOWED_TRANSITIONS[from].includes(to);
 }
 
 /**

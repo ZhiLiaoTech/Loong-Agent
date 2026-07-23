@@ -19,11 +19,12 @@ import { assert, createEventRuntime } from "../lib/test-helpers.js";
 import type { TestCase } from "../runner.js";
 
 /**
- * Phase 3.0 acceptance tests（先记录不裁定）:
+ * Phase 3.0 acceptance tests（先记录不裁定）+ 3.1 状态机守卫回归:
  * docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §11 Phase 3.0 checklist —
  * recording lifecycle, evidence ref integrity (§5.2/§9), 三类断裂点 dangling
  * detection, identity isolation, overdue query correctness, audit entries,
- * and the hard guarantee that NO verdict transition can persist in 3.0.
+ * and the §3.2 state-machine transition guards (3.1: verdict transitions
+ * allowed from validating; illegal edges still rejected).
  */
 
 const TENANT = "t-p3";
@@ -487,25 +488,28 @@ async function testAuditContainsNoExcerpt(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// 14. 3.0 硬保证：任何裁定/终态迁移都被拒绝；同状态幂等 no-op 不写审计。
+// 14. 状态机守卫（3.1 起）：非法迁移仍被拒（pending→终态 / dispatched→pending /
+//     终态无出边）；validating → fulfilled/blocked_*/expired 裁定迁移已放行，
+//     fulfilled 落 fulfilled_at；同状态幂等 no-op 不写审计。
 // ---------------------------------------------------------------------------
-async function testNoVerdictTransitionsInPhase30(): Promise<void> {
+async function testTransitionGuardsPhase31(): Promise<void> {
   const { service, store } = fixture();
   const identity = alice();
   const created = await service.createObligation(identity, baseCreateInput());
   const id = created.obligation.id;
 
+  // pending → 终态：3.1 状态机下依旧非法。
   for (const target of ["fulfilled", "blocked_recoverable", "blocked_hard", "expired"] as const) {
     await expectReject(
       () => store.transitionStatus(identity, id, target),
-      "not allowed in Phase 3.0",
+      "is not a permitted obligation status transition",
     );
   }
   // 逆迁移同样拒绝（dispatched → pending）。
   await store.transitionStatus(identity, id, "dispatched");
   await expectReject(
     () => store.transitionStatus(identity, id, "pending"),
-    "not allowed in Phase 3.0",
+    "is not a permitted obligation status transition",
   );
 
   // 同状态幂等 no-op：不写新审计。
@@ -515,15 +519,19 @@ async function testNoVerdictTransitionsInPhase30(): Promise<void> {
   const after = await service.listAudit(identity, { recordId: id });
   assert(after.length === before.length, "same-status no-op must not append audit rows");
 
-  // 即使到了 3.0 记录终态 validating，裁定依旧无路可走。
+  // 3.1：validating → fulfilled / blocked_* / expired 由状态机放行（裁定语义
+  // 由 service 聚合保证；store 只做迁移守卫），fulfilled 迁移落 fulfilled_at。
   await store.transitionStatus(identity, id, "evidence_collecting");
   await store.transitionStatus(identity, id, "validating");
-  for (const target of ["fulfilled", "blocked_recoverable", "blocked_hard", "expired"] as const) {
-    await expectReject(
-      () => store.transitionStatus(identity, id, target),
-      "not allowed in Phase 3.0",
-    );
-  }
+  const fulfilled = await store.transitionStatus(identity, id, "fulfilled");
+  assert(fulfilled.status === "fulfilled", "3.1 allows validating → fulfilled");
+  assert(typeof fulfilled.fulfilledAt === "string" && fulfilled.fulfilledAt.length > 0, "fulfilled_at should be stamped");
+
+  // 终态无出边。
+  await expectReject(
+    () => store.transitionStatus(identity, id, "dispatched"),
+    "is not a permitted obligation status transition",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -641,7 +649,7 @@ export const obligationTestCases: TestCase[] = [
   ["obligation: dangling unvalidated detection (returned-but-unvalidated)", testDanglingUnvalidated],
   ["obligation: cross-tenant and cross-user isolation", testIdentityIsolation],
   ["obligation: audit detail holds pointers only, never excerpts", testAuditContainsNoExcerpt],
-  ["obligation: no verdict transitions can persist in Phase 3.0", testNoVerdictTransitionsInPhase30],
+  ["obligation: transition guards follow the 3.1 state machine", testTransitionGuardsPhase31],
   ["obligation: step.execute hook records receipts (replay-safe, failure-resilient)", testStepExecutionRecordingHook],
   ["obligation: attachStepResult resolves by idempotency key", testAttachStepResultExplicit],
 ];

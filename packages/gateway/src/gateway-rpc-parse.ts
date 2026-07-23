@@ -44,9 +44,12 @@ import type {
   GatewayObligationCreateParams,
   GatewayObligationEvidenceRef,
   GatewayObligationGetParams,
+  GatewayObligationHumanVerdictParams,
   GatewayObligationListParams,
   GatewayObligationOverdueListParams,
+  GatewayObligationRetryParams,
   GatewayObligationStatus,
+  GatewayObligationValidateParams,
   GatewayObligationValidatorKind,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
@@ -494,6 +497,27 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
       type: "obligation.overdue.list",
       id: value.id,
       params: parseObligationOverdueListParams(value.params),
+    };
+  }
+  if (value.type === "obligation.validate") {
+    return {
+      type: "obligation.validate",
+      id: value.id,
+      params: parseObligationValidateParams(value.params),
+    };
+  }
+  if (value.type === "obligation.verdict.human") {
+    return {
+      type: "obligation.verdict.human",
+      id: value.id,
+      params: parseObligationHumanVerdictParams(value.params),
+    };
+  }
+  if (value.type === "obligation.retry") {
+    return {
+      type: "obligation.retry",
+      id: value.id,
+      params: parseObligationRetryParams(value.params),
     };
   }
   if (value.type === "trajectory.list") {
@@ -1666,6 +1690,48 @@ function parseObligationOverdueListParams(value: unknown): GatewayObligationOver
     params.limit = parseObligationLimit(record.limit, "obligation.overdue.list");
   }
   return params;
+}
+
+// Phase 3.1: 三态裁定 RPC parsers — verdict 语义/聚合在 obligation service。
+function parseObligationValidateParams(value: unknown): GatewayObligationValidateParams {
+  const userId = parseOntologyUserId(value, "obligation.validate");
+  return {
+    userId,
+    obligationId: parseOntologyRequiredId(value as Record<string, unknown>, "obligationId", "obligation.validate"),
+  };
+}
+
+function parseObligationHumanVerdictParams(value: unknown): GatewayObligationHumanVerdictParams {
+  const userId = parseOntologyUserId(value, "obligation.verdict.human");
+  const record = value as Record<string, unknown>;
+  if (!isObligationVerdictValue(record.verdict)) {
+    badRequest("obligation.verdict.human verdict is invalid.");
+  }
+  const params: GatewayObligationHumanVerdictParams = {
+    userId,
+    obligationId: parseOntologyRequiredId(record, "obligationId", "obligation.verdict.human"),
+    itemId: parseOntologyRequiredId(record, "itemId", "obligation.verdict.human"),
+    verdict: record.verdict,
+  };
+  if (record.reason !== undefined) {
+    if (typeof record.reason !== "string" || !record.reason.trim()) {
+      badRequest("obligation.verdict.human reason must be a non-empty string.");
+    }
+    params.reason = normalizeShortText(record.reason, "reason", 2000);
+  }
+  return params;
+}
+
+function parseObligationRetryParams(value: unknown): GatewayObligationRetryParams {
+  const userId = parseOntologyUserId(value, "obligation.retry");
+  return {
+    userId,
+    obligationId: parseOntologyRequiredId(value as Record<string, unknown>, "obligationId", "obligation.retry"),
+  };
+}
+
+function isObligationVerdictValue(value: unknown): value is "pass" | "recoverable_block" | "hard_block" {
+  return ["pass", "recoverable_block", "hard_block"].includes(String(value));
 }
 
 function parseObligationEvidenceRef(value: unknown): GatewayObligationEvidenceRef {

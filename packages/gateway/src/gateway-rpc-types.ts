@@ -30,8 +30,11 @@ import type {
   GatewayObligationAttachEvidenceParams,
   GatewayObligationCreateParams,
   GatewayObligationGetParams,
+  GatewayObligationHumanVerdictParams,
   GatewayObligationListParams,
   GatewayObligationOverdueListParams,
+  GatewayObligationRetryParams,
+  GatewayObligationValidateParams,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -113,6 +116,9 @@ export type GatewayRequest =
   | { type: "obligation.get"; id: string; params: GatewayObligationGetParams }
   | { type: "obligation.attachEvidence"; id: string; params: GatewayObligationAttachEvidenceParams }
   | { type: "obligation.overdue.list"; id: string; params: GatewayObligationOverdueListParams }
+  | { type: "obligation.validate"; id: string; params: GatewayObligationValidateParams }
+  | { type: "obligation.verdict.human"; id: string; params: GatewayObligationHumanVerdictParams }
+  | { type: "obligation.retry"; id: string; params: GatewayObligationRetryParams }
   | { type: "trajectory.list"; id: string; params: GatewayTrajectoryListParams }
   | { type: "trajectory.get"; id: string; params: GatewayTrajectoryGetParams }
   | { type: "cron.jobs.list"; id: string }

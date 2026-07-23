@@ -7,10 +7,11 @@ import type {
   ObligationItem,
   ObligationStatus,
   ObligationValidatorKind,
+  ObligationVerdict,
 } from "./obligation-types.js";
 
 /**
- * Phase 3.0 (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §5): backend-agnostic
+ * Phase 3.0/3.1 (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §5): backend-agnostic
  * obligation store contract.
  *
  * Same isolation posture as `OntologyStore`: every method takes a mandatory
@@ -22,9 +23,12 @@ import type {
  * appends an audit row (operator/source, pointer-only detail — never raw
  * evidence excerpts, §9) inside the same write transaction.
  *
- * Phase 3.0 is recording-only: `transitionStatus` rejects any target outside
- * OBLIGATION_PHASE30_ALLOWED_TRANSITIONS (no fulfilled / blocked_* / expired),
- * and `obligation_item.verdict*` columns exist but have no write path in 3.0.
+ * Phase 3.1 verdicts are live: `transitionStatus` follows
+ * OBLIGATION_ALLOWED_TRANSITIONS (§3.2), `recordItemVerdict` writes item
+ * verdicts, `setRetryBudget` backs the recoverable-retry loop, and the
+ * `sweepExpired*` methods implement the deadline backstop. The only exception
+ * is `sweepExpiredGlobal`, a system-internal scan that iterates rows under
+ * each row's own identity (audit rows are written per-row identity).
  */
 
 export interface ObligationWriteMeta {
@@ -134,7 +138,9 @@ export type ObligationAuditAction =
   | "dispatch"
   | "update_carrier"
   | "attach_evidence"
-  | "transition";
+  | "transition"
+  | "record_verdict"
+  | "retry_budget";
 
 export type ObligationAuditRecordKind = "obligation" | "obligation_item";
 
@@ -155,6 +161,20 @@ export interface ObligationAuditFilter {
   limit?: number;
 }
 
+/** Phase 3.1 单项裁定写入（指针/元数据级；reason 不复制证据原文）。 */
+export interface ObligationItemVerdictWrite {
+  verdict: ObligationVerdict;
+  reason?: string;
+  /** Defaults to the store clock; must be an ISO timestamp when provided. */
+  validatedAt?: string;
+}
+
+/** sweepExpiredGlobal 的返回单位：按行自身 identity 扫出的过期契约。 */
+export interface ObligationSweptRecord {
+  identity: MemoryIdentity;
+  obligation: Obligation;
+}
+
 export interface ObligationStore {
   /**
    * Insert an obligation (status `pending`) with its items atomically, plus a
@@ -172,12 +192,46 @@ export interface ObligationStore {
   findObligationByIdempotencyKey(identity: MemoryIdentity, idempotencyKey: string): Promise<Obligation | undefined>;
 
   /**
-   * Phase 3.0 guarded transition. Same-status is an idempotent no-op (no new
-   * audit row); anything outside OBLIGATION_PHASE30_ALLOWED_TRANSITIONS throws
-   * — fulfilled / blocked_recoverable / blocked_hard / expired cannot be
-   * persisted in 3.0.
+   * Phase 3.1 guarded transition. Same-status is an idempotent no-op (no new
+   * audit row); anything outside OBLIGATION_ALLOWED_TRANSITIONS (§3.2) throws.
+   * Transitioning to `fulfilled` also stamps `fulfilled_at`.
    */
   transitionStatus(identity: MemoryIdentity, id: string, to: ObligationStatus, meta?: ObligationWriteMeta): Promise<Obligation>;
+
+  /**
+   * Phase 3.1: persist an item verdict (`record_verdict` audit, recordKind
+   * `obligation_item`). The item must belong to the obligation under the
+   * caller's identity. This is the ONLY write path for `verdict*` columns.
+   */
+  recordItemVerdict(
+    identity: MemoryIdentity,
+    obligationId: string,
+    itemId: string,
+    write: ObligationItemVerdictWrite,
+    meta?: ObligationWriteMeta,
+  ): Promise<ObligationItem>;
+
+  /**
+   * Phase 3.1: overwrite the remaining retry budget (`retry_budget` audit with
+   * from/to). Decrementing happens only on re-dispatch (§6.2), never on entry
+   * into blocked_recoverable.
+   */
+  setRetryBudget(identity: MemoryIdentity, id: string, retryBudget: number, meta?: ObligationWriteMeta): Promise<Obligation>;
+
+  /**
+   * Phase 3.1 deadline backstop (§6.3/§10): every in-flight obligation
+   * (dispatched / evidence_collecting / validating / blocked_recoverable)
+   * under this identity whose `deadline_at <= now` transitions to `expired`
+   * with audit detail `{ via: "deadline_sweep" }`. Returns the swept rows.
+   */
+  sweepExpired(identity: MemoryIdentity, now: string, meta?: ObligationWriteMeta): Promise<Obligation[]>;
+
+  /**
+   * System-internal variant of sweepExpired across ALL identities: rows are
+   * located globally, then each row is swept under its own identity so audit
+   * rows keep the correct tenant/user attribution.
+   */
+  sweepExpiredGlobal(now: string, meta?: ObligationWriteMeta): Promise<ObligationSweptRecord[]>;
 
   /** Patch execution-carrier fields (only provided fields change). */
   updateCarrier(identity: MemoryIdentity, id: string, patch: ObligationCarrierPatch, meta?: ObligationWriteMeta): Promise<Obligation>;

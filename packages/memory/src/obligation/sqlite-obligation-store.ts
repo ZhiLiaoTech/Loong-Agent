@@ -17,8 +17,10 @@ import type {
   ObligationEvidenceLink,
   ObligationEvidenceLinkWrite,
   ObligationFilter,
+  ObligationItemVerdictWrite,
   ObligationRecord,
   ObligationStore,
+  ObligationSweptRecord,
   ObligationWrite,
   ObligationWriteMeta,
 } from "./obligation-store.js";
@@ -29,11 +31,12 @@ import type {
   ObligationEvidenceRefKind,
   ObligationItem,
   ObligationStatus,
+  ObligationVerdict,
 } from "./obligation-types.js";
 import {
   isObligationEvidenceRefKind,
   isObligationStatus,
-  isObligationTransitionAllowedInPhase30,
+  isObligationTransitionAllowed,
   isObligationValidatorKind,
 } from "./obligation-types.js";
 
@@ -68,7 +71,7 @@ export function canonicalizeObligationEvidenceRef(ref: ObligationEvidenceRef): s
 }
 
 /**
- * Identity-isolated SQLite obligation backend (Phase 3.0, 设计 §5/§9).
+ * Identity-isolated SQLite obligation backend (Phase 3.0/3.1, 设计 §5/§9).
  *
  * Four tables (obligation, obligation_item, obligation_evidence_link,
  * obligation_audit_log). EVERY statement is forced through
@@ -76,9 +79,10 @@ export function canonicalizeObligationEvidenceRef(ref: ObligationEvidenceRef): s
  * same posture as `SqliteOntologyStore`. Every mutation appends an audit row
  * (operator/source per §9) inside the same transaction.
  *
- * Recording-only (先记录不裁定): status transitions are guarded by
- * OBLIGATION_PHASE30_ALLOWED_TRANSITIONS; verdict columns exist on
- * obligation_item but have no write path in 3.0.
+ * Phase 3.1 verdicts are live: transitions follow
+ * OBLIGATION_ALLOWED_TRANSITIONS (§3.2), `recordItemVerdict` is the single
+ * write path for item verdicts, `setRetryBudget` backs the retry loop, and
+ * `sweepExpired` / `sweepExpiredGlobal` implement the deadline backstop.
  */
 export class SqliteObligationStore implements ObligationStore {
   readonly #rootDir: string;
@@ -221,27 +225,178 @@ export class SqliteObligationStore implements ObligationStore {
         updated = current;
         return;
       }
-      if (!isObligationTransitionAllowedInPhase30(current.status, to)) {
+      if (!isObligationTransitionAllowed(current.status, to)) {
         throw new MemoryToolError(
-          `Obligation status transition ${current.status} → ${to} is not allowed in Phase 3.0`
-          + " (recording only; verdicts and terminal states land in Phase 3.1).",
+          `Obligation status transition ${current.status} → ${to} is not a permitted obligation status transition (§3.2).`,
         );
       }
       const now = new Date().toISOString();
-      database.prepare(`
-        UPDATE obligation SET status = ?, updated_at = ?
-        WHERE tenant_id = ? AND user_id = ? AND id = ?
-      `).run(to, now, identity.tenantId, identity.userId, id);
+      if (to === "fulfilled") {
+        database.prepare(`
+          UPDATE obligation SET status = ?, updated_at = ?, fulfilled_at = ?
+          WHERE tenant_id = ? AND user_id = ? AND id = ?
+        `).run(to, now, now, identity.tenantId, identity.userId, id);
+      } else {
+        database.prepare(`
+          UPDATE obligation SET status = ?, updated_at = ?
+          WHERE tenant_id = ? AND user_id = ? AND id = ?
+        `).run(to, now, identity.tenantId, identity.userId, id);
+      }
       this.#appendAudit(database, identity, "transition", "obligation", id, {
         ...meta,
         detail: { ...(meta.detail ?? {}), from: current.status, to },
       }, now);
-      updated = { ...current, status: to, updatedAt: now };
+      updated = { ...current, status: to, updatedAt: now, ...(to === "fulfilled" ? { fulfilledAt: now } : {}) };
     });
     if (updated === undefined) {
       throw new MemoryToolError("Obligation transition failed.");
     }
     return updated;
+  }
+
+  async recordItemVerdict(
+    identityValue: MemoryIdentity,
+    obligationId: string,
+    itemId: string,
+    write: ObligationItemVerdictWrite,
+    meta: ObligationWriteMeta = {},
+  ): Promise<ObligationItem> {
+    const identity = assertMemoryIdentity(identityValue);
+    validateItemVerdictWrite(write);
+    const database = await this.#getDatabase();
+    let updated: ObligationItem | undefined;
+    this.#transaction(database, () => {
+      const obligationRow = database.prepare(`
+        SELECT id FROM obligation WHERE tenant_id = ? AND user_id = ? AND id = ?
+      `).get(identity.tenantId, identity.userId, obligationId);
+      if (obligationRow === undefined) {
+        throw new MemoryToolError("Obligation not found for the given identity.");
+      }
+      const itemRow = database.prepare(`
+        SELECT * FROM obligation_item
+        WHERE tenant_id = ? AND user_id = ? AND id = ? AND obligation_id = ?
+      `).get(identity.tenantId, identity.userId, itemId, obligationId) as Record<string, unknown> | undefined;
+      if (itemRow === undefined) {
+        throw new MemoryToolError("Obligation item not found on this obligation.");
+      }
+      const now = new Date().toISOString();
+      const validatedAt = write.validatedAt ?? now;
+      database.prepare(`
+        UPDATE obligation_item SET verdict = ?, verdict_reason = ?, validated_at = ?, updated_at = ?
+        WHERE tenant_id = ? AND user_id = ? AND id = ?
+      `).run(write.verdict, write.reason ?? null, validatedAt, now, identity.tenantId, identity.userId, itemId);
+      // 审计 detail 只记裁定元数据（obligationId/verdict），绝不复制验证对象原文（§9）。
+      this.#appendAudit(database, identity, "record_verdict", "obligation_item", itemId, {
+        ...meta,
+        detail: { ...(meta.detail ?? {}), obligationId, verdict: write.verdict },
+      }, now);
+      const next: ObligationItem = {
+        ...this.#rowToItem(identity, itemRow),
+        verdict: write.verdict,
+        validatedAt,
+        updatedAt: now,
+      };
+      if (write.reason !== undefined) {
+        next.verdictReason = write.reason;
+      } else {
+        delete next.verdictReason;
+      }
+      updated = next;
+    });
+    if (updated === undefined) {
+      throw new MemoryToolError("Obligation item verdict write failed.");
+    }
+    return updated;
+  }
+
+  async setRetryBudget(
+    identityValue: MemoryIdentity,
+    id: string,
+    retryBudget: number,
+    meta: ObligationWriteMeta = {},
+  ): Promise<Obligation> {
+    const identity = assertMemoryIdentity(identityValue);
+    if (!Number.isInteger(retryBudget) || retryBudget < 0) {
+      throw new MemoryToolError("Obligation retryBudget must be a non-negative integer.");
+    }
+    const database = await this.#getDatabase();
+    let updated: Obligation | undefined;
+    this.#transaction(database, () => {
+      const row = database.prepare(`
+        SELECT * FROM obligation WHERE tenant_id = ? AND user_id = ? AND id = ?
+      `).get(identity.tenantId, identity.userId, id) as Record<string, unknown> | undefined;
+      if (row === undefined) {
+        throw new MemoryToolError("Obligation not found for the given identity.");
+      }
+      const current = this.#rowToObligation(identity, row);
+      if (current.retryBudget === retryBudget) {
+        updated = current;
+        return;
+      }
+      const now = new Date().toISOString();
+      database.prepare(`
+        UPDATE obligation SET retry_budget = ?, updated_at = ?
+        WHERE tenant_id = ? AND user_id = ? AND id = ?
+      `).run(retryBudget, now, identity.tenantId, identity.userId, id);
+      this.#appendAudit(database, identity, "retry_budget", "obligation", id, {
+        ...meta,
+        detail: { ...(meta.detail ?? {}), from: current.retryBudget, to: retryBudget },
+      }, now);
+      updated = { ...current, retryBudget, updatedAt: now };
+    });
+    if (updated === undefined) {
+      throw new MemoryToolError("Obligation retry budget update failed.");
+    }
+    return updated;
+  }
+
+  async sweepExpired(identityValue: MemoryIdentity, now: string, meta: ObligationWriteMeta = {}): Promise<Obligation[]> {
+    const identity = assertMemoryIdentity(identityValue);
+    if (!isIsoTimestamp(now)) {
+      throw new MemoryToolError("Obligation sweep now must be an ISO timestamp.");
+    }
+    const database = await this.#getDatabase();
+    const rows = database.prepare(`
+      SELECT id FROM obligation
+      WHERE tenant_id = ? AND user_id = ?
+        AND status IN ('dispatched', 'evidence_collecting', 'validating', 'blocked_recoverable')
+        AND deadline_at IS NOT NULL AND deadline_at <= ?
+      ORDER BY updated_at ASC
+    `).all(identity.tenantId, identity.userId, now);
+    const swept: Obligation[] = [];
+    for (const row of rows) {
+      const id = readRequiredText(row as Record<string, unknown>, "id", "obligation deadline sweep");
+      swept.push(await this.transitionStatus(identity, id, "expired", {
+        ...meta,
+        detail: { ...(meta.detail ?? {}), via: "deadline_sweep" },
+      }));
+    }
+    return swept;
+  }
+
+  async sweepExpiredGlobal(now: string, meta: ObligationWriteMeta = {}): Promise<ObligationSweptRecord[]> {
+    if (!isIsoTimestamp(now)) {
+      throw new MemoryToolError("Obligation sweep now must be an ISO timestamp.");
+    }
+    const database = await this.#getDatabase();
+    // 系统内部扫描：先定位到行，再逐行按行自身 identity 迁移——审计归属不串租户。
+    const rows = database.prepare(`
+      SELECT DISTINCT tenant_id, user_id FROM obligation
+      WHERE status IN ('dispatched', 'evidence_collecting', 'validating', 'blocked_recoverable')
+        AND deadline_at IS NOT NULL AND deadline_at <= ?
+    `).all(now);
+    const swept: ObligationSweptRecord[] = [];
+    for (const row of rows) {
+      const record = row as Record<string, unknown>;
+      const identity: MemoryIdentity = {
+        tenantId: readRequiredText(record, "tenant_id", "obligation global sweep"),
+        userId: readRequiredText(record, "user_id", "obligation global sweep"),
+      };
+      for (const obligation of await this.sweepExpired(identity, now, meta)) {
+        swept.push({ identity, obligation });
+      }
+    }
+    return swept;
   }
 
   async updateCarrier(
@@ -736,7 +891,7 @@ export class SqliteObligationStore implements ObligationStore {
         CREATE INDEX IF NOT EXISTS obligation_idempotency_idx
           ON obligation (tenant_id, user_id, idempotency_key);
 
-        -- 验收项（完成标准的最小单元；verdict* 为 3.1 预留，3.0 无写入路径）
+        -- 验收项（完成标准的最小单元；verdict* 由 recordItemVerdict 单点写入，3.1 起生效）
         CREATE TABLE IF NOT EXISTS obligation_item (
           tenant_id TEXT NOT NULL,
           user_id TEXT NOT NULL,
@@ -979,6 +1134,19 @@ function validateDanglingQuery(query: ObligationDanglingQuery): void {
   }
 }
 
+function validateItemVerdictWrite(write: ObligationItemVerdictWrite): void {
+  const verdict: ObligationVerdict = write.verdict;
+  if (verdict !== "pass" && verdict !== "recoverable_block" && verdict !== "hard_block") {
+    throw new MemoryToolError("Obligation item verdict is invalid.");
+  }
+  if (write.reason !== undefined) {
+    normalizeBoundedText(write.reason, "verdict reason", 2000);
+  }
+  if (write.validatedAt !== undefined && !isIsoTimestamp(write.validatedAt)) {
+    throw new MemoryToolError("Obligation item validatedAt must be an ISO timestamp.");
+  }
+}
+
 function normalizeBoundedText(value: string, field: string, maxLength: number): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new MemoryToolError(`Obligation ${field} cannot be empty.`);
@@ -1074,6 +1242,8 @@ function readAuditAction(row: Record<string, unknown>): ObligationAuditAction {
     && action !== "update_carrier"
     && action !== "attach_evidence"
     && action !== "transition"
+    && action !== "record_verdict"
+    && action !== "retry_budget"
   ) {
     throw new MemoryToolError("Invalid obligation audit action in storage.");
   }
