@@ -27,6 +27,11 @@ import type {
   GatewayOntologyImportParams,
   GatewayOntologyKnowledgeListParams,
   GatewayOntologySnapshotRegenerateParams,
+  GatewayObligationAttachEvidenceParams,
+  GatewayObligationCreateParams,
+  GatewayObligationGetParams,
+  GatewayObligationListParams,
+  GatewayObligationOverdueListParams,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -103,6 +108,11 @@ export type GatewayRequest =
   | { type: "ontology.snapshot.regenerate"; id: string; params: GatewayOntologySnapshotRegenerateParams }
   | { type: "ontology.export"; id: string; params: GatewayOntologyExportParams }
   | { type: "ontology.import"; id: string; params: GatewayOntologyImportParams }
+  | { type: "obligation.create"; id: string; params: GatewayObligationCreateParams }
+  | { type: "obligation.list"; id: string; params: GatewayObligationListParams }
+  | { type: "obligation.get"; id: string; params: GatewayObligationGetParams }
+  | { type: "obligation.attachEvidence"; id: string; params: GatewayObligationAttachEvidenceParams }
+  | { type: "obligation.overdue.list"; id: string; params: GatewayObligationOverdueListParams }
   | { type: "trajectory.list"; id: string; params: GatewayTrajectoryListParams }
   | { type: "trajectory.get"; id: string; params: GatewayTrajectoryGetParams }
   | { type: "cron.jobs.list"; id: string }

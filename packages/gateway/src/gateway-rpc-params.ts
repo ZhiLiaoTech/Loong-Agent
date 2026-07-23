@@ -329,3 +329,85 @@ export interface GatewayOntologyImportParams {
   userId: string;
   payload: unknown;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3.0: obligation（任务契约）RPC params — 先记录不裁定
+// (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §3/§11).
+// Every obligation RPC carries an explicit `userId` resolved to the
+// gateway-scoped identity exactly like the ontology RPCs — the obligation
+// store enforces tenant/user isolation on every query (§9).
+// ---------------------------------------------------------------------------
+
+export type GatewayObligationStatus =
+  | "pending"
+  | "dispatched"
+  | "evidence_collecting"
+  | "validating"
+  | "fulfilled"
+  | "blocked_recoverable"
+  | "blocked_hard"
+  | "expired";
+
+export type GatewayObligationValidatorKind =
+  | "schema"
+  | "tool_assertion"
+  | "test_command"
+  | "human_confirm"
+  | "model_review";
+
+export interface GatewayObligationCreateItem {
+  seq?: number;
+  acceptance: string;
+  validator: GatewayObligationValidatorKind;
+  validatorConfig?: Record<string, unknown>;
+  required?: boolean;
+  deadlineAt?: string;
+}
+
+export interface GatewayObligationCreateParams {
+  userId: string;
+  employeeId: string;
+  requesterUserId?: string;
+  source?: string;
+  statement: string;
+  items: GatewayObligationCreateItem[];
+  budget?: { maxTokens?: number; maxCostUsd?: number };
+  deadlineAt?: string;
+  retryBudget?: number;
+  /** 执行载体：提供任意字段即视为已派发（创建后推进到 dispatched）。 */
+  dispatch?: { instanceId?: string; runId?: string; idempotencyKey?: string };
+}
+
+export interface GatewayObligationListParams {
+  userId: string;
+  status?: GatewayObligationStatus;
+  limit?: number;
+}
+
+export interface GatewayObligationGetParams {
+  userId: string;
+  id: string;
+}
+
+export type GatewayObligationEvidenceRef =
+  | { kind: "wf_event"; instanceId: string; seq: number }
+  | { kind: "ontology_evidence"; tenantId: string; userId: string; evidenceId: string }
+  | { kind: "ontology_episode"; tenantId: string; userId: string; episodeId: string }
+  | { kind: "step_result"; idempotencyKey: string };
+
+export interface GatewayObligationAttachEvidenceParams {
+  userId: string;
+  obligationId: string;
+  itemId?: string;
+  ref: GatewayObligationEvidenceRef;
+}
+
+export type GatewayObligationDanglingKind = "untouched" | "silent" | "unvalidated";
+
+export interface GatewayObligationOverdueListParams {
+  userId: string;
+  kind?: GatewayObligationDanglingKind;
+  now?: string;
+  olderThan?: string;
+  limit?: number;
+}

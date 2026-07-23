@@ -92,7 +92,12 @@ import type {
   MemoryIdentity,
 } from "@loong/core";
 import {
+  createObligationService,
   createOntologyUserControlService,
+  type ObligationCreateInput,
+  type ObligationEvidenceRef,
+  type ObligationService,
+  type ObligationStore,
   type OntologyCorrectionInput,
   type OntologyStore,
   type OntologyUserControlService,
@@ -165,6 +170,16 @@ export type {
   GatewayOntologyImportParams,
   GatewayOntologyKnowledgeListParams,
   GatewayOntologySnapshotRegenerateParams,
+  GatewayObligationAttachEvidenceParams,
+  GatewayObligationCreateItem,
+  GatewayObligationCreateParams,
+  GatewayObligationDanglingKind,
+  GatewayObligationEvidenceRef,
+  GatewayObligationGetParams,
+  GatewayObligationListParams,
+  GatewayObligationOverdueListParams,
+  GatewayObligationStatus,
+  GatewayObligationValidatorKind,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -206,6 +221,11 @@ import type {
   GatewayOntologyImportParams,
   GatewayOntologyKnowledgeListParams,
   GatewayOntologySnapshotRegenerateParams,
+  GatewayObligationAttachEvidenceParams,
+  GatewayObligationCreateParams,
+  GatewayObligationGetParams,
+  GatewayObligationListParams,
+  GatewayObligationOverdueListParams,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -424,6 +444,15 @@ export interface HttpLoongGatewayOptions {
    * tools in the tool registry.
    */
   ontologyStore?: OntologyStore;
+  /**
+   * Phase 3.0 (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §11): obligation
+   * （任务契约）recording store. When present the gateway exposes the
+   * obligation.create / list / get / attachEvidence / overdue.list RPC family
+   * backed by an ObligationService constructed over this store. The service
+   * also receives `ontologyStore` (when present) to verify ontology
+   * evidence/episode refs resolve under the caller's identity (§9).
+   */
+  obligationStore?: ObligationStore;
   directToolNames?: readonly string[];
   skillRoots?: readonly string[];
   pluginRoots?: readonly string[];
@@ -441,6 +470,8 @@ const DEFAULT_TOOL_SESSION_ID = "gateway-tools";
 const DEFAULT_MEMORY_REVIEW_SESSION_ID = "gateway-memory-review";
 const ONTOLOGY_USER_CONTROL_WRITE_TOOL = "ontology_user_control_write";
 const ONTOLOGY_RPC_OPERATOR = "gateway-rpc";
+const OBLIGATION_WRITE_PROBE_TOOL = "obligation_write";
+const OBLIGATION_RPC_OPERATOR = "gateway-rpc";
 export function createHttpGateway(options: HttpLoongGatewayOptions): LoongGateway {
   return new HttpLoongGateway(options);
 }
@@ -468,6 +499,7 @@ export class HttpLoongGateway implements LoongGateway {
   readonly #toolRegistry: ToolRegistry;
   readonly #permissionEngine: ToolPermissionEngine;
   readonly #ontology: OntologyUserControlService | undefined;
+  readonly #obligations: ObligationService | undefined;
   #directToolNames: Set<string>;
   readonly #skillRoots: readonly string[];
   readonly #suiteDataDir: string | undefined;
@@ -513,6 +545,12 @@ export class HttpLoongGateway implements LoongGateway {
     this.#permissionEngine = options.permissionEngine ?? createToolPermissionEngine({ defaultDecision: "deny" });
     this.#ontology = options.ontologyStore
       ? createOntologyUserControlService({ store: options.ontologyStore })
+      : undefined;
+    this.#obligations = options.obligationStore
+      ? createObligationService({
+        store: options.obligationStore,
+        ...(options.ontologyStore !== undefined ? { ontologyStore: options.ontologyStore } : {}),
+      })
       : undefined;
     this.#directToolNames = new Set(options.directToolNames ?? DEFAULT_DIRECT_TOOL_NAMES);
     this.#skillRoots = [...(options.skillRoots ?? [])];
@@ -847,6 +885,11 @@ export class HttpLoongGateway implements LoongGateway {
       regenerateOntologySnapshot: params => this.#regenerateOntologySnapshot(params as GatewayOntologySnapshotRegenerateParams),
       exportOntology: params => this.#exportOntology(params as GatewayOntologyExportParams),
       importOntology: params => this.#importOntology(params as GatewayOntologyImportParams),
+      createObligation: params => this.#createObligation(params as GatewayObligationCreateParams),
+      listObligations: params => this.#listObligations(params as GatewayObligationListParams),
+      getObligation: params => this.#getObligation(params as GatewayObligationGetParams),
+      attachObligationEvidence: params => this.#attachObligationEvidence(params as GatewayObligationAttachEvidenceParams),
+      listOverdueObligations: params => this.#listOverdueObligations(params as GatewayObligationOverdueListParams),
       listTrajectories: params => this.#listTrajectories(params as GatewayTrajectoryListParams),
       getTrajectory: params => this.#getTrajectory(params as GatewayTrajectoryGetParams),
       listCronJobs: () => this.#listCronJobs(),
@@ -1978,6 +2021,144 @@ export class HttpLoongGateway implements LoongGateway {
       operator: ONTOLOGY_RPC_OPERATOR,
     });
   }
+
+  // ------------------------------------------------------------------------
+  // Phase 3.0: obligation（任务契约）RPCs — 先记录不裁定
+  // (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §11 Phase 3.0).
+  // obligation.list / get / overdue.list are read-only; obligation.create /
+  // attachEvidence go through the write-permission probe. Identity is always
+  // the gateway-scoped { tenantId, userId } from params.userId — cross-user
+  // obligations are invisible (§9).
+  // ------------------------------------------------------------------------
+
+  #requireObligationService(): ObligationService {
+    const service = this.#obligations;
+    if (!service) {
+      throw new Error("Obligation recording is not configured for this gateway.");
+    }
+    return service;
+  }
+
+  #requireObligationIdentity(params: { userId?: unknown } | undefined): MemoryIdentity {
+    const userId = typeof params?.userId === "string" ? params.userId.trim() : "";
+    if (!userId) {
+      throw new Error("Obligation RPCs require a non-empty userId string.");
+    }
+    return { tenantId: GATEWAY_DEFAULT_TENANT_ID, userId };
+  }
+
+  #requireObligationId(value: unknown, field: string): string {
+    const id = typeof value === "string" ? value.trim() : "";
+    if (!id) {
+      throw new Error(`Obligation RPCs require a non-empty ${field} string.`);
+    }
+    return id;
+  }
+
+  #obligationWriteProbe(): ToolDefinition {
+    return {
+      name: OBLIGATION_WRITE_PROBE_TOOL,
+      description:
+        "Synthetic permission probe gating obligation write RPCs (create / attachEvidence).",
+      inputSchema: { type: "object" },
+      capabilities: ["write", "memory"],
+      permission: "ask",
+      invoke: async () => ({ id: "", ok: false, error: "probe only" }),
+    };
+  }
+
+  #assertObligationWriteAllowed(operation: string): void {
+    const probe = this.#obligationWriteProbe();
+    const permission = this.#permissionEngine.decide(probe, {
+      id: randomUUID(),
+      name: probe.name,
+      input: { operation },
+      sessionId: DEFAULT_MEMORY_REVIEW_SESSION_ID,
+    });
+    if (permission.decision !== "allow") {
+      throw new Error(
+        `Tool permission ${permission.decision} for ${probe.name} (${operation}): ${permission.reason}` +
+        " Restart loong gateway with --allow-write (or configure a permissionEngine that allows this tool) to enable obligation write RPCs.",
+      );
+    }
+  }
+
+  async #createObligation(params: GatewayObligationCreateParams): Promise<unknown> {
+    const identity = this.#requireObligationIdentity(params);
+    this.#assertObligationWriteAllowed("obligation.create");
+    const input: ObligationCreateInput = {
+      employeeId: params.employeeId,
+      statement: params.statement,
+      items: params.items,
+      ...(params.requesterUserId !== undefined ? { requesterUserId: params.requesterUserId } : {}),
+      ...(params.source !== undefined ? { source: params.source } : {}),
+      ...(params.budget !== undefined ? { budget: params.budget } : {}),
+      ...(params.deadlineAt !== undefined ? { deadlineAt: params.deadlineAt } : {}),
+      ...(params.retryBudget !== undefined ? { retryBudget: params.retryBudget } : {}),
+      ...(params.dispatch !== undefined ? { carrier: params.dispatch } : {}),
+    };
+    return await this.#requireObligationService().createObligation(identity, input, {
+      operator: OBLIGATION_RPC_OPERATOR,
+      source: "obligation.create",
+    });
+  }
+
+  async #listObligations(params: GatewayObligationListParams): Promise<unknown> {
+    const identity = this.#requireObligationIdentity(params);
+    const obligations = await this.#requireObligationService().listObligations(identity, {
+      ...(params?.status !== undefined ? { status: params.status } : {}),
+      ...(params?.limit !== undefined ? { limit: params.limit } : {}),
+    });
+    return { obligations };
+  }
+
+  async #getObligation(params: GatewayObligationGetParams): Promise<unknown> {
+    const identity = this.#requireObligationIdentity(params);
+    const id = this.#requireObligationId(params?.id, "id");
+    const record = await this.#requireObligationService().getObligation(identity, id);
+    if (record === undefined) {
+      throw new Error(`Obligation not found for the given identity: ${id}`);
+    }
+    return record;
+  }
+
+  async #attachObligationEvidence(params: GatewayObligationAttachEvidenceParams): Promise<unknown> {
+    const identity = this.#requireObligationIdentity(params);
+    this.#assertObligationWriteAllowed("obligation.attachEvidence");
+    const obligationId = this.#requireObligationId(params?.obligationId, "obligationId");
+    return await this.#requireObligationService().attachEvidence(identity, obligationId, {
+      ...(params.itemId !== undefined ? { itemId: params.itemId } : {}),
+      ref: params.ref as ObligationEvidenceRef,
+    }, {
+      operator: OBLIGATION_RPC_OPERATOR,
+      source: "obligation.attachEvidence",
+    });
+  }
+
+  async #listOverdueObligations(params: GatewayObligationOverdueListParams): Promise<unknown> {
+    const identity = this.#requireObligationIdentity(params);
+    const service = this.#requireObligationService();
+    const query = {
+      ...(params?.now !== undefined ? { now: params.now } : {}),
+      ...(params?.olderThan !== undefined ? { olderThan: params.olderThan } : {}),
+      ...(params?.limit !== undefined ? { limit: params.limit } : {}),
+    };
+    if (params?.kind !== undefined) {
+      const records = await service.listDangling(identity, { kind: params.kind, ...query });
+      return {
+        kind: params.kind,
+        obligations: records.map(record => ({ ...record, danglingKind: params.kind })),
+      };
+    }
+    // 无 kind：三类断裂点分组返回（路由完成无人接手 / 派发后长期无响应 / 结果返回无验收）。
+    const kinds = ["untouched", "silent", "unvalidated"] as const;
+    const obligations: Record<string, unknown[]> = {};
+    for (const kind of kinds) {
+      const records = await service.listDangling(identity, { kind, ...query });
+      obligations[kind] = records.map(record => ({ ...record, danglingKind: kind }));
+    }
+    return { obligations };
+  }
 }
 
 function resultStatusToRunState(status: LoongTurnResult["status"]): GatewayRunState {
@@ -2687,4 +2868,30 @@ export {
   readDashboardAsset,
   resetDashboardStaticCache,
 } from "./dashboard.js";
+// Phase 0/3.0: 无状态单步执行器 + obligation 记录钩子
+// (docs/DETERMINISTIC_ORCHESTRATION_DESIGN.md §5, docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §11).
+export {
+  executeGatewayStep,
+  stepParamsFromRequest,
+  type GatewayStepExecuteDeps,
+  type GatewayStepObligationRecorder,
+} from "./gateway-step-execute.js";
+export type {
+  GatewayStepBudget,
+  GatewayStepContext,
+  GatewayStepExecuteParams,
+  GatewayStepHistoryMessage,
+  GatewayStepMode,
+  GatewayStepModelPolicy,
+  GatewayStepProposal,
+  GatewayStepResult,
+  GatewayStepUsage,
+} from "./gateway-step-types.js";
+export { parseGatewayStepExecuteParams } from "./gateway-step-parse.js";
+export {
+  createFileStepIdempotencyStore,
+  createInMemoryStepIdempotencyStore,
+  type StepIdempotencyStore,
+} from "./gateway-step-idempotency.js";
+export { createGatewayStepObligationRecorder } from "./gateway-step-obligation.js";
 

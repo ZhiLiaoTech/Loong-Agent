@@ -40,6 +40,14 @@ import type {
   GatewayOntologyImportParams,
   GatewayOntologyKnowledgeListParams,
   GatewayOntologySnapshotRegenerateParams,
+  GatewayObligationAttachEvidenceParams,
+  GatewayObligationCreateParams,
+  GatewayObligationEvidenceRef,
+  GatewayObligationGetParams,
+  GatewayObligationListParams,
+  GatewayObligationOverdueListParams,
+  GatewayObligationStatus,
+  GatewayObligationValidatorKind,
   GatewaySuiteInstallParams,
   GatewaySuiteInstanceMaterializeParams,
   GatewaySuiteReleaseInstallParams,
@@ -451,6 +459,41 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
       type: "ontology.import",
       id: value.id,
       params: parseOntologyImportParams(value.params),
+    };
+  }
+  if (value.type === "obligation.create") {
+    return {
+      type: "obligation.create",
+      id: value.id,
+      params: parseObligationCreateParams(value.params),
+    };
+  }
+  if (value.type === "obligation.list") {
+    return {
+      type: "obligation.list",
+      id: value.id,
+      params: parseObligationListParams(value.params),
+    };
+  }
+  if (value.type === "obligation.get") {
+    return {
+      type: "obligation.get",
+      id: value.id,
+      params: parseObligationGetParams(value.params),
+    };
+  }
+  if (value.type === "obligation.attachEvidence") {
+    return {
+      type: "obligation.attachEvidence",
+      id: value.id,
+      params: parseObligationAttachEvidenceParams(value.params),
+    };
+  }
+  if (value.type === "obligation.overdue.list") {
+    return {
+      type: "obligation.overdue.list",
+      id: value.id,
+      params: parseObligationOverdueListParams(value.params),
     };
   }
   if (value.type === "trajectory.list") {
@@ -1433,6 +1476,269 @@ function parseOntologyImportParams(value: unknown): GatewayOntologyImportParams 
     badRequest("ontology.import requires params.payload.");
   }
   return { userId, payload: record.payload };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3.0: obligation（任务契约）RPC params — 先记录不裁定
+// (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §3/§11). Deep validation (item
+// coverage, evidence existence, transition guards) lives in the obligation
+// service/store; this layer validates shapes only.
+// ---------------------------------------------------------------------------
+
+function parseObligationCreateParams(value: unknown): GatewayObligationCreateParams {
+  const userId = parseOntologyUserId(value, "obligation.create");
+  const record = value as Record<string, unknown>;
+  if (typeof record.employeeId !== "string" || !record.employeeId.trim()) {
+    badRequest("obligation.create requires params.employeeId.");
+  }
+  if (typeof record.statement !== "string" || !record.statement.trim()) {
+    badRequest("obligation.create requires params.statement.");
+  }
+  const params: GatewayObligationCreateParams = {
+    userId,
+    employeeId: normalizeShortText(record.employeeId, "employeeId", 200),
+    statement: normalizeBoundedText(record.statement, "statement", 4000),
+    items: parseObligationCreateItems(record.items),
+  };
+  if (record.requesterUserId !== undefined) {
+    if (typeof record.requesterUserId !== "string" || !record.requesterUserId.trim()) {
+      badRequest("obligation.create requesterUserId must be a non-empty string.");
+    }
+    params.requesterUserId = normalizeShortText(record.requesterUserId, "requesterUserId", 200);
+  }
+  if (record.source !== undefined) {
+    if (typeof record.source !== "string" || !record.source.trim()) {
+      badRequest("obligation.create source must be a non-empty string.");
+    }
+    params.source = normalizeShortText(record.source, "source", 64);
+  }
+  if (record.budget !== undefined) {
+    if (!isRecord(record.budget)) {
+      badRequest("obligation.create budget must be an object.");
+    }
+    const budget: { maxTokens?: number; maxCostUsd?: number } = {};
+    if (record.budget.maxTokens !== undefined) {
+      if (typeof record.budget.maxTokens !== "number" || !Number.isFinite(record.budget.maxTokens) || record.budget.maxTokens <= 0) {
+        badRequest("obligation.create budget.maxTokens must be a positive number.");
+      }
+      budget.maxTokens = record.budget.maxTokens;
+    }
+    if (record.budget.maxCostUsd !== undefined) {
+      if (typeof record.budget.maxCostUsd !== "number" || !Number.isFinite(record.budget.maxCostUsd) || record.budget.maxCostUsd < 0) {
+        badRequest("obligation.create budget.maxCostUsd must be a non-negative number.");
+      }
+      budget.maxCostUsd = record.budget.maxCostUsd;
+    }
+    params.budget = budget;
+  }
+  if (record.deadlineAt !== undefined) {
+    params.deadlineAt = parseObligationIsoTimestamp(record.deadlineAt, "deadlineAt", "obligation.create");
+  }
+  if (record.retryBudget !== undefined) {
+    if (typeof record.retryBudget !== "number" || !Number.isInteger(record.retryBudget) || record.retryBudget < 0) {
+      badRequest("obligation.create retryBudget must be a non-negative integer.");
+    }
+    params.retryBudget = record.retryBudget;
+  }
+  if (record.dispatch !== undefined) {
+    if (!isRecord(record.dispatch)) {
+      badRequest("obligation.create dispatch must be an object.");
+    }
+    const dispatch: { instanceId?: string; runId?: string; idempotencyKey?: string } = {};
+    if (record.dispatch.instanceId !== undefined) {
+      if (typeof record.dispatch.instanceId !== "string" || !record.dispatch.instanceId.trim()) {
+        badRequest("obligation.create dispatch.instanceId must be a non-empty string.");
+      }
+      dispatch.instanceId = normalizeShortText(record.dispatch.instanceId, "dispatch.instanceId", 200);
+    }
+    if (record.dispatch.runId !== undefined) {
+      if (typeof record.dispatch.runId !== "string" || !record.dispatch.runId.trim()) {
+        badRequest("obligation.create dispatch.runId must be a non-empty string.");
+      }
+      dispatch.runId = normalizeShortText(record.dispatch.runId, "dispatch.runId", 200);
+    }
+    if (record.dispatch.idempotencyKey !== undefined) {
+      if (typeof record.dispatch.idempotencyKey !== "string" || !record.dispatch.idempotencyKey.trim()) {
+        badRequest("obligation.create dispatch.idempotencyKey must be a non-empty string.");
+      }
+      dispatch.idempotencyKey = normalizeShortText(record.dispatch.idempotencyKey, "dispatch.idempotencyKey", 200);
+    }
+    params.dispatch = dispatch;
+  }
+  return params;
+}
+
+function parseObligationCreateItems(value: unknown): GatewayObligationCreateParams["items"] {
+  if (!Array.isArray(value) || value.length === 0) {
+    badRequest("obligation.create requires a non-empty params.items array.");
+  }
+  return value.map((entry, index) => {
+    if (!isRecord(entry)) {
+      badRequest(`obligation.create items[${index}] must be an object.`);
+    }
+    if (typeof entry.acceptance !== "string" || !entry.acceptance.trim()) {
+      badRequest(`obligation.create items[${index}].acceptance is required.`);
+    }
+    if (!isObligationValidatorKindValue(entry.validator)) {
+      badRequest(`obligation.create items[${index}].validator is invalid.`);
+    }
+    const item: GatewayObligationCreateParams["items"][number] = {
+      acceptance: normalizeBoundedText(entry.acceptance, `items[${index}].acceptance`, 2000),
+      validator: entry.validator,
+    };
+    if (entry.seq !== undefined) {
+      if (typeof entry.seq !== "number" || !Number.isInteger(entry.seq) || entry.seq < 1) {
+        badRequest(`obligation.create items[${index}].seq must be a positive integer.`);
+      }
+      item.seq = entry.seq;
+    }
+    if (entry.validatorConfig !== undefined) {
+      if (!isRecord(entry.validatorConfig)) {
+        badRequest(`obligation.create items[${index}].validatorConfig must be an object.`);
+      }
+      item.validatorConfig = entry.validatorConfig;
+    }
+    if (entry.required !== undefined) {
+      if (typeof entry.required !== "boolean") {
+        badRequest(`obligation.create items[${index}].required must be a boolean.`);
+      }
+      item.required = entry.required;
+    }
+    if (entry.deadlineAt !== undefined) {
+      item.deadlineAt = parseObligationIsoTimestamp(entry.deadlineAt, `items[${index}].deadlineAt`, "obligation.create");
+    }
+    return item;
+  });
+}
+
+function parseObligationListParams(value: unknown): GatewayObligationListParams {
+  const userId = parseOntologyUserId(value, "obligation.list");
+  const record = value as Record<string, unknown>;
+  const params: GatewayObligationListParams = { userId };
+  if (record.status !== undefined) {
+    if (!isObligationStatusValue(record.status)) {
+      badRequest("obligation.list status is invalid.");
+    }
+    params.status = record.status;
+  }
+  if (record.limit !== undefined) {
+    params.limit = parseObligationLimit(record.limit, "obligation.list");
+  }
+  return params;
+}
+
+function parseObligationGetParams(value: unknown): GatewayObligationGetParams {
+  const userId = parseOntologyUserId(value, "obligation.get");
+  return { userId, id: parseOntologyRequiredId(value as Record<string, unknown>, "id", "obligation.get") };
+}
+
+function parseObligationAttachEvidenceParams(value: unknown): GatewayObligationAttachEvidenceParams {
+  const userId = parseOntologyUserId(value, "obligation.attachEvidence");
+  const record = value as Record<string, unknown>;
+  const params: GatewayObligationAttachEvidenceParams = {
+    userId,
+    obligationId: parseOntologyRequiredId(record, "obligationId", "obligation.attachEvidence"),
+    ref: parseObligationEvidenceRef(record.ref),
+  };
+  if (record.itemId !== undefined) {
+    params.itemId = parseOntologyRequiredId(record, "itemId", "obligation.attachEvidence");
+  }
+  return params;
+}
+
+function parseObligationOverdueListParams(value: unknown): GatewayObligationOverdueListParams {
+  const userId = parseOntologyUserId(value, "obligation.overdue.list");
+  const record = value as Record<string, unknown>;
+  const params: GatewayObligationOverdueListParams = { userId };
+  if (record.kind !== undefined) {
+    if (!isObligationDanglingKindValue(record.kind)) {
+      badRequest("obligation.overdue.list kind is invalid.");
+    }
+    params.kind = record.kind;
+  }
+  if (record.now !== undefined) {
+    params.now = parseObligationIsoTimestamp(record.now, "now", "obligation.overdue.list");
+  }
+  if (record.olderThan !== undefined) {
+    params.olderThan = parseObligationIsoTimestamp(record.olderThan, "olderThan", "obligation.overdue.list");
+  }
+  if (record.limit !== undefined) {
+    params.limit = parseObligationLimit(record.limit, "obligation.overdue.list");
+  }
+  return params;
+}
+
+function parseObligationEvidenceRef(value: unknown): GatewayObligationEvidenceRef {
+  if (!isRecord(value) || typeof value.kind !== "string") {
+    badRequest("obligation.attachEvidence requires a ref object with a kind.");
+  }
+  switch (value.kind) {
+    case "wf_event": {
+      if (typeof value.instanceId !== "string" || !value.instanceId.trim()) {
+        badRequest("obligation.attachEvidence wf_event ref requires instanceId.");
+      }
+      if (typeof value.seq !== "number" || !Number.isInteger(value.seq) || value.seq < 0) {
+        badRequest("obligation.attachEvidence wf_event ref seq must be a non-negative integer.");
+      }
+      return { kind: "wf_event", instanceId: normalizeShortText(value.instanceId, "ref.instanceId", 200), seq: value.seq };
+    }
+    case "ontology_evidence":
+      return {
+        kind: "ontology_evidence",
+        tenantId: parseOntologyRequiredId(value, "tenantId", "obligation.attachEvidence"),
+        userId: parseOntologyRequiredId(value, "userId", "obligation.attachEvidence"),
+        evidenceId: parseOntologyRequiredId(value, "evidenceId", "obligation.attachEvidence"),
+      };
+    case "ontology_episode":
+      return {
+        kind: "ontology_episode",
+        tenantId: parseOntologyRequiredId(value, "tenantId", "obligation.attachEvidence"),
+        userId: parseOntologyRequiredId(value, "userId", "obligation.attachEvidence"),
+        episodeId: parseOntologyRequiredId(value, "episodeId", "obligation.attachEvidence"),
+      };
+    case "step_result":
+      return {
+        kind: "step_result",
+        idempotencyKey: parseOntologyRequiredId(value, "idempotencyKey", "obligation.attachEvidence"),
+      };
+    default:
+      badRequest("obligation.attachEvidence ref.kind is invalid.");
+  }
+}
+
+function parseObligationIsoTimestamp(value: unknown, field: string, rpcName: string): string {
+  if (typeof value !== "string" || !value.trim() || Number.isNaN(Date.parse(value))) {
+    badRequest(`${rpcName} ${field} must be an ISO timestamp.`);
+  }
+  return value.trim();
+}
+
+function parseObligationLimit(value: unknown, rpcName: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    badRequest(`${rpcName} limit must be a positive integer.`);
+  }
+  return value;
+}
+
+function isObligationStatusValue(value: unknown): value is GatewayObligationStatus {
+  return [
+    "pending",
+    "dispatched",
+    "evidence_collecting",
+    "validating",
+    "fulfilled",
+    "blocked_recoverable",
+    "blocked_hard",
+    "expired",
+  ].includes(String(value));
+}
+
+function isObligationValidatorKindValue(value: unknown): value is GatewayObligationValidatorKind {
+  return ["schema", "tool_assertion", "test_command", "human_confirm", "model_review"].includes(String(value));
+}
+
+function isObligationDanglingKindValue(value: unknown): value is NonNullable<GatewayObligationOverdueListParams["kind"]> {
+  return ["untouched", "silent", "unvalidated"].includes(String(value));
 }
 
 function isOntologyAssertionStatusFilter(value: unknown): value is NonNullable<GatewayOntologyCandidateListParams["status"]> {

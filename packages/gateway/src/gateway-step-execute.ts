@@ -18,6 +18,25 @@ export interface GatewayStepExecuteDeps {
   idempotencyStore: StepIdempotencyStore;
   agentTurnDeps: GatewayAgentTurnDeps;
   resolveAgentParams(params: GatewayAgentParams): Promise<GatewayAgentParams>;
+  /**
+   * Phase 3.0 (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §11): optional
+   * obligation recording hook. When present AND the step carries both
+   * tenantId and employeeId, the step result is reported after execution so
+   * the recorder can attach a `step_result` evidence ref to any obligation
+   * registered under this idempotencyKey. Recording is best-effort: a
+   * recorder failure never fails the step.
+   */
+  obligationRecorder?: GatewayStepObligationRecorder;
+}
+
+/** Phase 3.0 step→obligation recording surface (adapter lives in gateway-step-obligation.ts). */
+export interface GatewayStepObligationRecorder {
+  attachStepResult(input: {
+    tenantId: string;
+    employeeId: string;
+    idempotencyKey: string;
+    runId?: string;
+  }): Promise<unknown>;
 }
 
 export async function executeGatewayStep(
@@ -34,7 +53,33 @@ export async function executeGatewayStep(
   const payload = await executeGatewaySingleAgentTurn(deps.agentTurnDeps, agentParams);
   const result = toStepResult(payload, Date.now() - startedAt, params.mode);
   await deps.idempotencyStore.put(params.idempotencyKey, result);
+  await recordStepResultForObligation(deps, params, result);
   return result;
+}
+
+/** Best-effort Phase 3.0 recording: never throw into the step execution path. */
+async function recordStepResultForObligation(
+  deps: GatewayStepExecuteDeps,
+  params: GatewayStepExecuteParams,
+  result: GatewayStepResult,
+): Promise<void> {
+  const recorder = deps.obligationRecorder;
+  const tenantId = params.tenantId?.trim();
+  const employeeId = params.employeeId?.trim();
+  if (recorder === undefined || !tenantId || !employeeId) {
+    return;
+  }
+  try {
+    await recorder.attachStepResult({
+      tenantId,
+      employeeId,
+      idempotencyKey: params.idempotencyKey,
+      ...(result.runId !== undefined ? { runId: result.runId } : {}),
+    });
+  } catch {
+    // Recording must not break execution; dangling detection (obligation.overdue.list)
+    // is the 3.0 safety net for missed receipts.
+  }
 }
 
 export function stepParamsFromRequest(params: GatewayStepExecuteParams): GatewayAgentParams {

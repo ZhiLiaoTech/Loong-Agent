@@ -312,3 +312,71 @@ export {
   ONTOLOGY_EXPORT_FORMAT_VERSION,
   parseOntologyExportPayload,
 } from "./ontology/ontology-user-control.js";
+// ---------------------------------------------------------------------------
+// Phase 3.0: Obligation（任务契约）+ 执行证据链 —— 先记录不裁定
+// (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §3/§5/§11).
+// ---------------------------------------------------------------------------
+export type {
+  Obligation,
+  ObligationBudget,
+  ObligationEvidenceRef,
+  ObligationEvidenceRefKind,
+  ObligationItem,
+  ObligationStatus,
+  ObligationValidatorKind,
+  ObligationVerdict,
+} from "./obligation/obligation-types.js";
+export {
+  isObligationEvidenceRefKind,
+  isObligationStatus,
+  isObligationTransitionAllowedInPhase30,
+  isObligationValidatorKind,
+  OBLIGATION_EVIDENCE_REF_KINDS,
+  OBLIGATION_PHASE30_ALLOWED_TRANSITIONS,
+  OBLIGATION_STATUSES,
+  OBLIGATION_VALIDATOR_KINDS,
+  obligationEmployeeUserId,
+} from "./obligation/obligation-types.js";
+export type {
+  ObligationAuditAction,
+  ObligationAuditFilter,
+  ObligationAuditRecord,
+  ObligationAuditRecordKind,
+  ObligationCarrier,
+  ObligationCarrierPatch,
+  ObligationDanglingKind,
+  ObligationDanglingQuery,
+  ObligationDanglingRecord,
+  ObligationEvidenceAttachResult,
+  ObligationEvidenceLink,
+  ObligationEvidenceLinkWrite,
+  ObligationFilter,
+  ObligationItemWrite,
+  ObligationRecord,
+  ObligationStore,
+  ObligationWrite,
+  ObligationWriteMeta,
+} from "./obligation/obligation-store.js";
+export type { SqliteObligationStoreOptions } from "./obligation/sqlite-obligation-store.js";
+export {
+  ABSOLUTE_OBLIGATION_LIST_LIMIT,
+  canonicalizeObligationEvidenceRef,
+  createSqliteObligationStore,
+  DEFAULT_OBLIGATION_LIST_LIMIT,
+  hashObligationEvidenceRef,
+  SqliteObligationStore,
+} from "./obligation/sqlite-obligation-store.js";
+export type {
+  ObligationAttachEvidenceInput,
+  ObligationAttachEvidenceResult,
+  ObligationCreateInput,
+  ObligationCreateItemInput,
+  ObligationDanglingQueryInput,
+  ObligationService,
+  ObligationServiceOptions,
+  ObligationStepResultAttach,
+} from "./obligation/obligation-service.js";
+export {
+  createObligationService,
+  requiredCoverageComplete,
+} from "./obligation/obligation-service.js";

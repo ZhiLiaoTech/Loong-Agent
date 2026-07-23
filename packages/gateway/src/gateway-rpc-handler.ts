@@ -62,6 +62,11 @@ export interface GatewayRpcHandlerDeps {
   regenerateOntologySnapshot(params: unknown): Promise<unknown>;
   exportOntology(params: unknown): Promise<unknown>;
   importOntology(params: unknown): Promise<unknown>;
+  createObligation(params: unknown): Promise<unknown>;
+  listObligations(params: unknown): Promise<unknown>;
+  getObligation(params: unknown): Promise<unknown>;
+  attachObligationEvidence(params: unknown): Promise<unknown>;
+  listOverdueObligations(params: unknown): Promise<unknown>;
   listTrajectories(params: unknown): Promise<unknown>;
   getTrajectory(params: unknown): Promise<unknown>;
   listCronJobs(): Promise<unknown>;
@@ -275,6 +280,21 @@ export async function handleGatewayRpc(
       }
       if (request.type === "ontology.import") {
         return { type: "response", id: request.id, ok: true, payload: await deps.importOntology(request.params) };
+      }
+      if (request.type === "obligation.create") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.createObligation(request.params) };
+      }
+      if (request.type === "obligation.list") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.listObligations(request.params) };
+      }
+      if (request.type === "obligation.get") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.getObligation(request.params) };
+      }
+      if (request.type === "obligation.attachEvidence") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.attachObligationEvidence(request.params) };
+      }
+      if (request.type === "obligation.overdue.list") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.listOverdueObligations(request.params) };
       }
       if (request.type === "trajectory.list") {
         return { type: "response", id: request.id, ok: true, payload: await deps.listTrajectories(request.params) };

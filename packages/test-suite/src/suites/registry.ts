@@ -2,6 +2,7 @@ import type { TestCase } from "../runner.js";
 import { cliTestCases } from "./cli.tests.js";
 import { gatewayTestCases } from "./gateway.tests.js";
 import { memoryV2TestCases } from "./memory-v2.tests.js";
+import { obligationTestCases } from "./obligation.tests.js";
 import { ontologyConsolidationTestCases } from "./ontology-consolidation.tests.js";
 import { ontologyControlTestCases } from "./ontology-control.tests.js";
 import { ontologyRecallTestCases } from "./ontology-recall.tests.js";
@@ -29,5 +30,6 @@ export function mergeAllTestCases(core: CoreTestCases): TestCase[] {
     ...ontologyConsolidationTestCases,
     ...ontologyRecallTestCases,
     ...ontologyControlTestCases,
+    ...obligationTestCases,
   ];
 }
