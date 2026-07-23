@@ -30,10 +30,32 @@ import {
   type ObligationCommandRunner,
   type ObligationModelReviewer,
 } from "./obligation-verdict.js";
+import {
+  ABSOLUTE_OBLIGATION_LIST_LIMIT,
+} from "./sqlite-obligation-store.js";
+import {
+  obligationSedimentEpisodeId,
+  obligationSedimentEvidenceId,
+  type ObligationSedimenter,
+} from "./obligation-sediment.js";
+import {
+  evaluateObligationStoppingRule,
+  isObligationTerminalStatus,
+  type ObligationStoppingRule,
+  type ObligationUsageAggregate,
+} from "./obligation-loop.js";
+import {
+  extractObligationFinalVerdict,
+  extractObligationRetryHistory,
+  foldObligationAuditTimeline,
+  type ObligationExplainedEvidence,
+  type ObligationExplanation,
+} from "./obligation-explain.js";
 
 /**
- * Phase 3.0/3.1 契约记录与裁定服务（docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md
- * §11：3.0「先记录，不裁定」→ 3.1 三态裁定生效）。
+ * Phase 3.0/3.1/3.2 契约记录与裁定服务（docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md
+ * §11：3.0「先记录，不裁定」→ 3.1 三态裁定生效 → 3.2 记忆沉淀 + 解释链 +
+ * Loop 对接）。
  *
  * 职责：
  * - 显式登记契约（createObligation）：携带验收项；带执行载体创建时直接推进
@@ -45,6 +67,10 @@ import {
  *   sweepExpired）：逐项执行机器验证器（human_confirm 留给人工），聚合三态
  *   裁定并按 §3.2 状态机迁移 fulfilled / blocked_recoverable / blocked_hard /
  *   expired；retry_budget 在重新派发时扣减（§6.2）。
+ * - Phase 3.2 沉淀与解释（§7/§8）：终态（fulfilled / blocked_hard / expired）
+ *   经可插拔 sedimenter 幂等沉淀进 ontology 记忆层；explainObligation 输出
+ *   FR-12 同构全链路解释；getObligationStatus / awaitObligationVerdict 暴露
+ *   「契约即退出条件」的 Loop 停止原语。
  * - 三类断裂点悬挂查询（listDangling）与审计查询（listAudit）。
  *
  * 证据完整性规则（§5.2 / §9）：
@@ -84,6 +110,26 @@ export interface ObligationServiceOptions {
    * fail-closed posture as commandRunner when unconfigured.
    */
   modelReviewer?: ObligationModelReviewer;
+  /**
+   * Phase 3.2 (§7): terminal-state sedimentation listener. Invoked
+   * best-effort after every transition that lands in a terminal status
+   * (fulfilled / blocked_hard / expired — NOT blocked_recoverable, which is
+   * retryable). Must be idempotent: duplicate terminal notifications must not
+   * duplicate sedimented artifacts. Use createOntologyObligationSedimenter to
+   * write OntologyEpisode + OntologyEvidence into an ontology store.
+   */
+  sedimenter?: ObligationSedimenter;
+  /**
+   * Phase 3.2 (§8): resolves cross-step aggregated usage (tokens/cost) for
+   * the contract-level budget hard limit. Not wired by default — step usages
+   * live gateway/orchestration-side; embedders inject their own resolver
+   * (same posture as subjectResolver). Budget evaluation stays inactive
+   * while unresolved.
+   */
+  usageResolver?: (
+    identity: MemoryIdentity,
+    obligation: Obligation,
+  ) => ObligationUsageAggregate | undefined | Promise<ObligationUsageAggregate | undefined>;
   clock?: () => Date;
 }
 
@@ -226,6 +272,30 @@ export function summarizeObligationRecord(record: ObligationRecord): ObligationV
   };
 }
 
+/** Phase 3.2：obligation.get 的状态视图（记录 + 裁定摘要 + Loop 停止信号 + 聚合用量）。 */
+export interface ObligationStatusReport {
+  record: ObligationRecord;
+  verdictSummary: ObligationVerdictSummary;
+  stoppingRule: ObligationStoppingRule;
+  usage?: ObligationUsageAggregate;
+}
+
+/** Phase 3.2：awaitObligationVerdict 的等待参数（均为进程内轮询，非 durable timer）。 */
+export interface ObligationAwaitVerdictOptions {
+  /** 0 = 单次轮询立即返回；上限 60_000ms。 */
+  timeoutMs?: number;
+  /** 默认 250ms，范围 [10, 5_000]。 */
+  pollIntervalMs?: number;
+}
+
+export interface ObligationAwaitVerdictResult {
+  record: ObligationRecord;
+  stoppingRule: ObligationStoppingRule;
+  /** true = 等到超时仍未到停止条件。 */
+  timedOut: boolean;
+  polls: number;
+}
+
 export type ObligationDanglingQueryInput = Omit<ObligationDanglingQuery, "now"> & { now?: string };
 
 export interface ObligationService {
@@ -282,6 +352,29 @@ export interface ObligationService {
   sweepExpired(identity: MemoryIdentity, now?: string): Promise<Obligation[]>;
   /** 系统内部全量兜底扫描：跨 identity 定位后逐行按行 identity 迁移。 */
   sweepExpiredSystem(now?: string): Promise<ObligationSweptRecord[]>;
+  /**
+   * Phase 3.2（§8 Loop 对接）：契约状态视图 —— 记录 + 裁定摘要 + 停止信号
+   * （契约即退出条件）+ 聚合用量（usageResolver 已接线时）。
+   */
+  getObligationStatus(identity: MemoryIdentity, id: string): Promise<ObligationStatusReport | undefined>;
+  /**
+   * Phase 3.2（§7 解释链，FR-12 explainAssertion 同构）：一次调用返回契约
+   * 全链路 —— 四身份、审计折叠时间线、逐项 verdict 与理由、证据指针解引用
+   * （ontology 原文按调用方 identity 解引用；外部指针标 external；悬空标
+   * dangling）、retry 历史、终态裁定与 operator、终态沉淀。不存在时返回
+   * undefined（跨 identity 不可见）。
+   */
+  explainObligation(identity: MemoryIdentity, id: string): Promise<ObligationExplanation | undefined>;
+  /**
+   * Phase 3.2（§8）：Loop 轮询/等待原语 —— 进程内轮询直到停止条件满足
+   * （终态或预算超支）或超时。单租户外层编排使用；durable 等待仍属
+   * wf_timer 领域，本方法不做持久化定时。
+   */
+  awaitObligationVerdict(
+    identity: MemoryIdentity,
+    id: string,
+    options?: ObligationAwaitVerdictOptions,
+  ): Promise<ObligationAwaitVerdictResult>;
 }
 
 export function createObligationService(options: ObligationServiceOptions): ObligationService {
@@ -541,6 +634,10 @@ export function createObligationService(options: ObligationServiceOptions): Obli
         ...meta,
         detail: { ...(meta.detail ?? {}), via: "retry_budget_exhausted" },
       });
+      await notifyTerminal(identity, obligationId, {
+        via: "retry_budget_exhausted",
+        ...(meta.operator !== undefined ? { operator: meta.operator } : {}),
+      });
       return await requireRecord(identity, obligationId);
     }
     // §6.2：扣减发生在重新派发时，而不是进入 blocked_recoverable 时。
@@ -557,17 +654,177 @@ export function createObligationService(options: ObligationServiceOptions): Obli
 
   async function sweepExpired(identityValue: MemoryIdentity, now?: string): Promise<Obligation[]> {
     const identity = assertMemoryIdentity(identityValue);
-    return await options.store.sweepExpired(identity, now ?? clock().toISOString(), {
+    const swept = await options.store.sweepExpired(identity, now ?? clock().toISOString(), {
       operator: "system",
       source: "obligation.sweep",
     });
+    for (const obligation of swept) {
+      // expired = 异常归档（§3.2），同样沉淀（§7 终态语义 + §8 停止信号）。
+      await notifyTerminal(identity, obligation.id, { via: "deadline_sweep", operator: "system" });
+    }
+    return swept;
   }
 
   async function sweepExpiredSystem(now?: string): Promise<ObligationSweptRecord[]> {
-    return await options.store.sweepExpiredGlobal(now ?? clock().toISOString(), {
+    const swept = await options.store.sweepExpiredGlobal(now ?? clock().toISOString(), {
       operator: "system",
       source: "obligation.sweep",
     });
+    for (const record of swept) {
+      await notifyTerminal(record.identity, record.obligation.id, { via: "deadline_sweep", operator: "system" });
+    }
+    return swept;
+  }
+
+  async function getObligationStatus(identityValue: MemoryIdentity, id: string): Promise<ObligationStatusReport | undefined> {
+    const identity = assertMemoryIdentity(identityValue);
+    const record = await options.store.getObligation(identity, id);
+    if (record === undefined) {
+      return undefined;
+    }
+    const usage = await resolveUsage(identity, record.obligation);
+    return {
+      record,
+      verdictSummary: summarizeObligationRecord(record),
+      stoppingRule: evaluateObligationStoppingRule(record, usage),
+      ...(usage !== undefined ? { usage } : {}),
+    };
+  }
+
+  async function explainObligation(identityValue: MemoryIdentity, id: string): Promise<ObligationExplanation | undefined> {
+    const identity = assertMemoryIdentity(identityValue);
+    const record = await options.store.getObligation(identity, id);
+    if (record === undefined) {
+      return undefined;
+    }
+    const itemIds = new Set(record.items.map(item => item.id));
+    // 契约行 + 全部验收项行的审计（FR-12 同构：折叠成一条 provenance 链）。
+    const audits = (await options.store.listAudit(identity, { limit: ABSOLUTE_OBLIGATION_LIST_LIMIT }))
+      .filter(entry => entry.recordId === id || itemIds.has(entry.recordId));
+    const explainedEvidence = await resolveEvidenceLinks(identity, record.evidenceLinks);
+    const usage = await resolveUsage(identity, record.obligation);
+    const sedimentEpisodeId = obligationSedimentEpisodeId(id);
+    const sedimentEvidenceId = obligationSedimentEvidenceId(id);
+    const sedimentEpisode = options.ontologyStore !== undefined
+      ? await options.ontologyStore.getEpisode(identity, sedimentEpisodeId)
+      : undefined;
+    const finalVerdict = extractObligationFinalVerdict(audits);
+    const obligation = record.obligation;
+    return {
+      identity: { ...identity },
+      record,
+      fourIdentities: {
+        request: {
+          tenantId: identity.tenantId,
+          userId: identity.userId,
+          employeeId: obligation.employeeId,
+          ...(obligation.requesterUserId !== undefined ? { requesterUserId: obligation.requesterUserId } : {}),
+          source: obligation.source,
+        },
+        contract: {
+          statement: obligation.statement,
+          itemCount: record.items.length,
+          requiredItemCount: record.items.filter(item => item.required).length,
+          ...(obligation.budget !== undefined ? { budget: obligation.budget } : {}),
+          ...(obligation.deadlineAt !== undefined ? { deadlineAt: obligation.deadlineAt } : {}),
+          retryBudget: obligation.retryBudget,
+        },
+        carrier: {
+          ...(obligation.instanceId !== undefined ? { instanceId: obligation.instanceId } : {}),
+          ...(obligation.runId !== undefined ? { runId: obligation.runId } : {}),
+          ...(obligation.idempotencyKey !== undefined ? { idempotencyKey: obligation.idempotencyKey } : {}),
+        },
+        record: {
+          evidenceLinkCount: record.evidenceLinks.length,
+          auditCount: audits.length,
+          sedimented: sedimentEpisode !== undefined,
+          sedimentEpisodeId,
+          sedimentEvidenceId,
+        },
+      },
+      verdictSummary: summarizeObligationRecord(record),
+      stoppingRule: evaluateObligationStoppingRule(record, usage),
+      ...(usage !== undefined ? { usage } : {}),
+      timeline: foldObligationAuditTimeline(audits),
+      items: record.items.map(item => ({
+        item,
+        evidence: explainedEvidence.filter(entry => entry.link.itemId === item.id),
+      })),
+      contractEvidence: explainedEvidence.filter(entry => entry.link.itemId === undefined),
+      retryHistory: extractObligationRetryHistory(audits),
+      ...(finalVerdict !== undefined ? { finalVerdict } : {}),
+      sedimentation: {
+        sedimented: sedimentEpisode !== undefined,
+        episodeId: sedimentEpisodeId,
+        evidenceId: sedimentEvidenceId,
+        ...(sedimentEpisode !== undefined ? { episode: sedimentEpisode } : {}),
+      },
+      audit: audits,
+    };
+  }
+
+  /** §5.2/§9：ontology 指针按调用方 identity 解引用；悬空/缺 store 标 dangling；外部指针只标 external。 */
+  async function resolveEvidenceLinks(
+    identity: MemoryIdentity,
+    links: readonly ObligationEvidenceLink[],
+  ): Promise<ObligationExplainedEvidence[]> {
+    const resolved: ObligationExplainedEvidence[] = [];
+    for (const link of links) {
+      const ref = link.ref;
+      if (ref.kind === "ontology_evidence") {
+        // 跨 identity 指针在挂接时已被拒绝（3.0 fail-closed）；此处仍以调用方
+        // identity 解引用，命中不了就标 dangling（读方容忍，不泄露、不报错）。
+        const evidence = ref.tenantId === identity.tenantId && ref.userId === identity.userId && options.ontologyStore !== undefined
+          ? await options.ontologyStore.getEvidence(identity, ref.evidenceId)
+          : undefined;
+        resolved.push({
+          link,
+          resolution: evidence !== undefined
+            ? { kind: "ontology_evidence", status: "resolved", evidence }
+            : { kind: "ontology_evidence", status: "dangling" },
+        });
+        continue;
+      }
+      if (ref.kind === "ontology_episode") {
+        const episode = ref.tenantId === identity.tenantId && ref.userId === identity.userId && options.ontologyStore !== undefined
+          ? await options.ontologyStore.getEpisode(identity, ref.episodeId)
+          : undefined;
+        resolved.push({
+          link,
+          resolution: episode !== undefined
+            ? { kind: "ontology_episode", status: "resolved", episode }
+            : { kind: "ontology_episode", status: "dangling" },
+        });
+        continue;
+      }
+      resolved.push({ link, resolution: { kind: ref.kind, status: "external" } });
+    }
+    return resolved;
+  }
+
+  async function awaitObligationVerdict(
+    identityValue: MemoryIdentity,
+    id: string,
+    awaitOptions: ObligationAwaitVerdictOptions = {},
+  ): Promise<ObligationAwaitVerdictResult> {
+    const identity = assertMemoryIdentity(identityValue);
+    const timeoutMs = clampAwaitMs(awaitOptions.timeoutMs ?? 0, 0, MAX_AWAIT_TIMEOUT_MS);
+    const pollIntervalMs = clampAwaitMs(awaitOptions.pollIntervalMs ?? DEFAULT_AWAIT_POLL_INTERVAL_MS, 10, MAX_AWAIT_POLL_INTERVAL_MS);
+    const deadline = Date.now() + timeoutMs;
+    let polls = 0;
+    for (;;) {
+      polls += 1;
+      const record = await options.store.getObligation(identity, id);
+      if (record === undefined) {
+        throw new MemoryToolError("Obligation not found for the given identity.");
+      }
+      const usage = await resolveUsage(identity, record.obligation);
+      const stoppingRule = evaluateObligationStoppingRule(record, usage);
+      if (stoppingRule.shouldStop || Date.now() >= deadline) {
+        return { record, stoppingRule, timedOut: !stoppingRule.shouldStop, polls };
+      }
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+    }
   }
 
   /** 聚合当前 verdicts 并按 §3.2 迁移（awaiting 时保持 validating）。 */
@@ -590,7 +847,47 @@ export function createObligationService(options: ObligationServiceOptions): Obli
       ...meta,
       detail: { ...(meta.detail ?? {}), via, reason: outcome.reason },
     });
+    if (isObligationTerminalStatus(outcome.kind)) {
+      await notifyTerminal(identity, obligationId, {
+        via,
+        reason: outcome.reason,
+        ...(meta.operator !== undefined ? { operator: meta.operator } : {}),
+      });
+    }
     return { record: { ...record, obligation: transitioned }, outcome: outcome.kind, reason: outcome.reason };
+  }
+
+  /**
+   * Phase 3.2（§7）：终态沉淀通知。best-effort —— 沉淀是记忆投影，投影失败
+   * 绝不回滚裁定（与 3.0 step 记录钩子同姿态）；幂等由 sedimenter 的确定性
+   * id 锚点保证。
+   */
+  async function notifyTerminal(
+    identity: MemoryIdentity,
+    obligationId: string,
+    notice: { via: string; reason?: string; operator?: string },
+  ): Promise<void> {
+    const sedimenter = options.sedimenter;
+    if (sedimenter === undefined) {
+      return;
+    }
+    const record = await options.store.getObligation(identity, obligationId);
+    if (record === undefined || !isObligationTerminalStatus(record.obligation.status)) {
+      return;
+    }
+    try {
+      await sedimenter.onObligationTerminal(identity, { record, ...notice });
+    } catch {
+      // 投影失败不影响契约状态；悬挂由 ontology 审计与 explain 视图兜底。
+    }
+  }
+
+  /** §8 聚合用量解析（未接线时返回 undefined，预算评估不激活）。 */
+  async function resolveUsage(identity: MemoryIdentity, obligation: Obligation): Promise<ObligationUsageAggregate | undefined> {
+    if (options.usageResolver === undefined) {
+      return undefined;
+    }
+    return await options.usageResolver(identity, obligation);
   }
 
   /** fail-closed：test_command / model_review 项缺少执行器时验证整体不可进行。 */
@@ -665,7 +962,21 @@ export function createObligationService(options: ObligationServiceOptions): Obli
     retryObligation,
     sweepExpired,
     sweepExpiredSystem,
+    getObligationStatus,
+    explainObligation,
+    awaitObligationVerdict,
   };
+}
+
+const DEFAULT_AWAIT_POLL_INTERVAL_MS = 250;
+const MAX_AWAIT_TIMEOUT_MS = 60_000;
+const MAX_AWAIT_POLL_INTERVAL_MS = 5_000;
+
+function clampAwaitMs(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(Math.max(min, Math.floor(value)), max);
 }
 
 /** 全部 required 验收项均有 ≥1 条项级证据（契约级证据不计入项覆盖）。 */

@@ -43,6 +43,7 @@ import type {
   GatewayObligationAttachEvidenceParams,
   GatewayObligationCreateParams,
   GatewayObligationEvidenceRef,
+  GatewayObligationExplainParams,
   GatewayObligationGetParams,
   GatewayObligationHumanVerdictParams,
   GatewayObligationListParams,
@@ -518,6 +519,13 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
       type: "obligation.retry",
       id: value.id,
       params: parseObligationRetryParams(value.params),
+    };
+  }
+  if (value.type === "obligation.explain") {
+    return {
+      type: "obligation.explain",
+      id: value.id,
+      params: parseObligationExplainParams(value.params),
     };
   }
   if (value.type === "trajectory.list") {
@@ -1727,6 +1735,14 @@ function parseObligationRetryParams(value: unknown): GatewayObligationRetryParam
   return {
     userId,
     obligationId: parseOntologyRequiredId(value as Record<string, unknown>, "obligationId", "obligation.retry"),
+  };
+}
+
+function parseObligationExplainParams(value: unknown): GatewayObligationExplainParams {
+  const userId = parseOntologyUserId(value, "obligation.explain");
+  return {
+    userId,
+    obligationId: parseOntologyRequiredId(value as Record<string, unknown>, "obligationId", "obligation.explain"),
   };
 }
 

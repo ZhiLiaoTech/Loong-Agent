@@ -29,6 +29,7 @@ import type {
   GatewayOntologySnapshotRegenerateParams,
   GatewayObligationAttachEvidenceParams,
   GatewayObligationCreateParams,
+  GatewayObligationExplainParams,
   GatewayObligationGetParams,
   GatewayObligationHumanVerdictParams,
   GatewayObligationListParams,
@@ -119,6 +120,7 @@ export type GatewayRequest =
   | { type: "obligation.validate"; id: string; params: GatewayObligationValidateParams }
   | { type: "obligation.verdict.human"; id: string; params: GatewayObligationHumanVerdictParams }
   | { type: "obligation.retry"; id: string; params: GatewayObligationRetryParams }
+  | { type: "obligation.explain"; id: string; params: GatewayObligationExplainParams }
   | { type: "trajectory.list"; id: string; params: GatewayTrajectoryListParams }
   | { type: "trajectory.get"; id: string; params: GatewayTrajectoryGetParams }
   | { type: "cron.jobs.list"; id: string }

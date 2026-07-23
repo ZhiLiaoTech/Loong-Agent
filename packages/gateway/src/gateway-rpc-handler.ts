@@ -70,6 +70,7 @@ export interface GatewayRpcHandlerDeps {
   validateObligation(params: unknown): Promise<unknown>;
   submitObligationHumanVerdict(params: unknown): Promise<unknown>;
   retryObligation(params: unknown): Promise<unknown>;
+  explainObligation(params: unknown): Promise<unknown>;
   listTrajectories(params: unknown): Promise<unknown>;
   getTrajectory(params: unknown): Promise<unknown>;
   listCronJobs(): Promise<unknown>;
@@ -307,6 +308,9 @@ export async function handleGatewayRpc(
       }
       if (request.type === "obligation.retry") {
         return { type: "response", id: request.id, ok: true, payload: await deps.retryObligation(request.params) };
+      }
+      if (request.type === "obligation.explain") {
+        return { type: "response", id: request.id, ok: true, payload: await deps.explainObligation(request.params) };
       }
       if (request.type === "trajectory.list") {
         return { type: "response", id: request.id, ok: true, payload: await deps.listTrajectories(request.params) };

@@ -436,3 +436,9 @@ export interface GatewayObligationRetryParams {
   userId: string;
   obligationId: string;
 }
+
+/** Phase 3.2 (§7 解释链): read-only provenance RPC — no write probe. */
+export interface GatewayObligationExplainParams {
+  userId: string;
+  obligationId: string;
+}

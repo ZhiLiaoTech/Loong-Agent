@@ -93,8 +93,8 @@ import type {
 } from "@loong/core";
 import {
   createObligationService,
+  createOntologyObligationSedimenter,
   createOntologyUserControlService,
-  summarizeObligationRecord,
   type ObligationCreateInput,
   type ObligationEvidenceRef,
   type ObligationService,
@@ -176,6 +176,7 @@ export type {
   GatewayObligationCreateParams,
   GatewayObligationDanglingKind,
   GatewayObligationEvidenceRef,
+  GatewayObligationExplainParams,
   GatewayObligationGetParams,
   GatewayObligationHumanVerdictParams,
   GatewayObligationListParams,
@@ -228,6 +229,7 @@ import type {
   GatewayOntologySnapshotRegenerateParams,
   GatewayObligationAttachEvidenceParams,
   GatewayObligationCreateParams,
+  GatewayObligationExplainParams,
   GatewayObligationGetParams,
   GatewayObligationHumanVerdictParams,
   GatewayObligationListParams,
@@ -570,6 +572,11 @@ export class HttpLoongGateway implements LoongGateway {
       ? createObligationService({
         store: options.obligationStore,
         ...(options.ontologyStore !== undefined ? { ontologyStore: options.ontologyStore } : {}),
+        // Phase 3.2 (§7)：obligation + ontology 双 store 都在时自动接线终态沉淀
+        // （确定性 id 幂等；blocked_recoverable 非终态不沉淀）。
+        ...(options.ontologyStore !== undefined
+          ? { sedimenter: createOntologyObligationSedimenter({ ontologyStore: options.ontologyStore }) }
+          : {}),
       })
       : undefined;
     this.#obligationSweepIntervalMs =
@@ -934,6 +941,7 @@ export class HttpLoongGateway implements LoongGateway {
       validateObligation: params => this.#validateObligation(params as GatewayObligationValidateParams),
       submitObligationHumanVerdict: params => this.#submitObligationHumanVerdict(params as GatewayObligationHumanVerdictParams),
       retryObligation: params => this.#retryObligation(params as GatewayObligationRetryParams),
+      explainObligation: params => this.#explainObligation(params as GatewayObligationExplainParams),
       listTrajectories: params => this.#listTrajectories(params as GatewayTrajectoryListParams),
       getTrajectory: params => this.#getTrajectory(params as GatewayTrajectoryGetParams),
       listCronJobs: () => this.#listCronJobs(),
@@ -2160,12 +2168,17 @@ export class HttpLoongGateway implements LoongGateway {
   async #getObligation(params: GatewayObligationGetParams): Promise<unknown> {
     const identity = this.#requireObligationIdentity(params);
     const id = this.#requireObligationId(params?.id, "id");
-    const record = await this.#requireObligationService().getObligation(identity, id);
-    if (record === undefined) {
+    // Phase 3.2（§8）：get 响应携带裁定摘要 + Loop 停止信号 + 聚合用量（若接线）。
+    const status = await this.#requireObligationService().getObligationStatus(identity, id);
+    if (status === undefined) {
       throw new Error(`Obligation not found for the given identity: ${id}`);
     }
-    // Phase 3.1：get 响应携带裁定摘要（verdictState/计数/待人工项）。
-    return { ...record, verdictSummary: summarizeObligationRecord(record) };
+    return {
+      ...status.record,
+      verdictSummary: status.verdictSummary,
+      stoppingRule: status.stoppingRule,
+      ...(status.usage !== undefined ? { usage: status.usage } : {}),
+    };
   }
 
   async #attachObligationEvidence(params: GatewayObligationAttachEvidenceParams): Promise<unknown> {
@@ -2244,6 +2257,21 @@ export class HttpLoongGateway implements LoongGateway {
       operator: OBLIGATION_RPC_OPERATOR,
       source: "obligation.retry",
     });
+  }
+
+  /**
+   * Phase 3.2 (§7 解释链)：read-only — 与 obligation.get 同姿态，不走写探针。
+   * 返回 FR-12 同构全链路：四身份 / 时间线 / 项 verdict / 证据解引用 /
+   * retry 历史 / 终态裁定 / 沉淀。
+   */
+  async #explainObligation(params: GatewayObligationExplainParams): Promise<unknown> {
+    const identity = this.#requireObligationIdentity(params);
+    const obligationId = this.#requireObligationId(params?.obligationId, "obligationId");
+    const explanation = await this.#requireObligationService().explainObligation(identity, obligationId);
+    if (explanation === undefined) {
+      throw new Error(`Obligation not found for the given identity: ${obligationId}`);
+    }
+    return explanation;
   }
 }
 

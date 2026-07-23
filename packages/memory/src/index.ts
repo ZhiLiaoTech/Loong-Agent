@@ -404,14 +404,59 @@ export {
   resolveValidatorSubject,
 } from "./obligation/obligation-verdict.js";
 export type {
+  ObligationTerminalNotice,
+  ObligationSedimenter,
+  OntologyObligationSedimenterOptions,
+} from "./obligation/obligation-sediment.js";
+export {
+  buildObligationSedimentSummary,
+  buildObligationVerdictReport,
+  createOntologyObligationSedimenter,
+  MAX_SEDIMENT_REPORT_CHARS,
+  MAX_SEDIMENT_SUMMARY_CHARS,
+  OBLIGATION_SEDIMENT_EVIDENCE_SOURCE,
+  obligationSedimentEpisodeId,
+  obligationSedimentEvidenceId,
+} from "./obligation/obligation-sediment.js";
+export type {
+  ObligationStoppingRule,
+  ObligationUsageAggregate,
+} from "./obligation/obligation-loop.js";
+export {
+  evaluateObligationStoppingRule,
+  isObligationBudgetExceeded,
+  isObligationTerminalStatus,
+  OBLIGATION_TERMINAL_STATUSES,
+} from "./obligation/obligation-loop.js";
+export type {
+  ObligationEvidenceResolution,
+  ObligationExplainedEvidence,
+  ObligationExplanation,
+  ObligationFinalVerdict,
+  ObligationFourIdentities,
+  ObligationItemExplanation,
+  ObligationRetryEvent,
+  ObligationSedimentationView,
+  ObligationTimelineEntry,
+  ObligationTimelineKind,
+} from "./obligation/obligation-explain.js";
+export {
+  extractObligationFinalVerdict,
+  extractObligationRetryHistory,
+  foldObligationAuditTimeline,
+} from "./obligation/obligation-explain.js";
+export type {
   ObligationAttachEvidenceInput,
   ObligationAttachEvidenceResult,
+  ObligationAwaitVerdictOptions,
+  ObligationAwaitVerdictResult,
   ObligationCreateInput,
   ObligationCreateItemInput,
   ObligationDanglingQueryInput,
   ObligationHumanVerdictInput,
   ObligationService,
   ObligationServiceOptions,
+  ObligationStatusReport,
   ObligationStepResultAttach,
   ObligationValidationItemResult,
   ObligationValidationReport,
