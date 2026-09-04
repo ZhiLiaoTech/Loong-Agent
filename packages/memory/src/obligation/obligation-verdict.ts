@@ -1,6 +1,6 @@
 import { MemoryToolError } from "../memory-tool-error.js";
 import type { ObligationEvidenceLink } from "./obligation-store.js";
-import type { ObligationItem, ObligationVerdict } from "./obligation-types.js";
+import type { ObligationItem, ObligationValidatorKind, ObligationVerdict } from "./obligation-types.js";
 
 /**
  * Phase 3.1 (docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §6): validator engine +
@@ -241,6 +241,33 @@ async function executeModelReviewValidator(
 // Three-way verdict aggregation (§6.2)
 // ---------------------------------------------------------------------------
 
+/**
+ * 主体证据规则（§10 证据完备的闭环流解释）：`schema` / `tool_assertion` /
+ * `model_review` 三类验证器的验证主体就是执行产物本身（step result），因此
+ * 契约级 `step_result` 证据链接即构成该项的验收证据——不要求再挂一条指向同一
+ * 产物的项级指针。`test_command`（验证主体是外部命令执行）与 `human_confirm`
+ * （人工必须指向具体证据）不适用本规则，仍要求项级链接。
+ */
+export const OBLIGATION_SUBJECT_BASED_VALIDATORS: readonly ObligationValidatorKind[] = [
+  "schema",
+  "tool_assertion",
+  "model_review",
+];
+
+/** §10 证据完备判定：项级链接优先；主体型验证器可由契约级 step_result 链接覆盖。 */
+export function isObligationItemEvidenceCovered(
+  item: Pick<ObligationItem, "id" | "validator">,
+  links: readonly ObligationEvidenceLink[],
+): boolean {
+  if (links.some(link => link.itemId === item.id)) {
+    return true;
+  }
+  if ((OBLIGATION_SUBJECT_BASED_VALIDATORS as readonly string[]).includes(item.validator)) {
+    return links.some(link => link.itemId === undefined && link.kind === "step_result");
+  }
+  return false;
+}
+
 export type ObligationAggregateOutcome =
   | { kind: "fulfilled"; reason: string }
   | { kind: "blocked_recoverable"; reason: string }
@@ -263,8 +290,10 @@ export interface ObligationAggregateInput {
  *   remains, otherwise escalates to blocked_hard (错误放大防护);
  * - all required pass → fulfilled ONLY when at least one required item passed
  *   on a non-model_review validator (§6.1 模型评审不可单独定论; human_confirm
- *   counts as non-model) AND every required item carries ≥1 item-level
- *   evidence link (§10 证据完备, when links are provided).
+ *   counts as non-model) AND every required item carries evidence coverage
+ *   (§10 证据完备, when links are provided — item-level link, or a
+ *   contract-level step_result link for subject-based validators, see
+ *   isObligationItemEvidenceCovered).
  */
 export function aggregateObligationVerdict(input: ObligationAggregateInput): ObligationAggregateOutcome {
   const requiredItems = input.items.filter(item => item.required);
@@ -309,9 +338,9 @@ export function aggregateObligationVerdict(input: ObligationAggregateInput): Obl
   }
   if (input.evidenceLinks !== undefined) {
     const links = input.evidenceLinks;
-    const uncovered = requiredItems.filter(item => !links.some(link => link.itemId === item.id));
+    const uncovered = requiredItems.filter(item => !isObligationItemEvidenceCovered(item, links));
     if (uncovered.length > 0) {
-      const base = `required items lack item-level evidence links (§10 证据完备): ${uncovered.map(item => item.id).join(", ")}`;
+      const base = `required items lack evidence coverage (§10 证据完备; subject-based validators accept a contract-level step_result link): ${uncovered.map(item => item.id).join(", ")}`;
       return input.retryBudget > 0
         ? { kind: "blocked_recoverable", reason: base }
         : { kind: "blocked_hard", reason: `${base}; retry budget exhausted, escalated to hard_block` };

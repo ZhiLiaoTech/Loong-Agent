@@ -3008,4 +3008,15 @@ export {
   type StepIdempotencyStore,
 } from "./gateway-step-idempotency.js";
 export { createGatewayStepObligationRecorder } from "./gateway-step-obligation.js";
+// Obligation-bound step execution: 六环节闭环（execute → evidence → validate →
+// verdict → stop signal），docs/OBLIGATION_EVIDENCE_CHAIN_DESIGN.md §4/§6.2/§8。
+export {
+  executeObligationBoundStep,
+  type GatewayObligationBoundStepBinding,
+  type GatewayObligationBoundStepDeps,
+  type GatewayObligationBoundStepOutcome,
+  type GatewayObligationBoundStepParams,
+  type GatewayObligationBoundStepResult,
+  type GatewayStepObligationVerdict,
+} from "./gateway-step-obligation-flow.js";
 

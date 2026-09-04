@@ -1,0 +1,13 @@
+{
+  "id": "refund.v1",
+  "type": "proposal",
+  "action": "refund",
+  "required": ["action", "params"],
+  "params": {
+    "required": ["orderId"],
+    "properties": {
+      "orderId": { "type": "string", "minLength": 1 },
+      "reason": { "type": "string" }
+    }
+  }
+}

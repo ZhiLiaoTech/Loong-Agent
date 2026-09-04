@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Loong 技术竞争力对标（2026 Agent 市场）</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f7f8fa;
+    --text: #1c1e21;
+    --text-2: #5b6168;
+    --text-3: #8a9099;
+    --stroke: #e3e6ea;
+    --stroke-2: #d3d8de;
+    --accent: #2f6df6;
+    --accent-soft: rgba(47, 109, 246, 0.12);
+    --success: #1a9c5b;
+    --success-soft: rgba(26, 156, 91, 0.10);
+    --warning: #c9850a;
+    --warning-soft: rgba(201, 133, 10, 0.10);
+    --danger: #d23f3f;
+    --danger-soft: rgba(210, 63, 63, 0.10);
+    --info: #2f6df6;
+    --info-soft: rgba(47, 109, 246, 0.08);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Microsoft YaHei", "Hiragino Sans GB", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 32px 64px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 18px; margin: 36px 0 14px; letter-spacing: -0.01em; }
+  h3 { font-size: 14px; margin: 0 0 10px; color: var(--text); }
+  p { margin: 0; }
+  .lead { color: var(--text-2); font-size: 14.5px; max-width: 860px; }
+  .accent { color: var(--accent); }
+  .b { font-weight: 600; }
+  code {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em; background: var(--surface); border: 1px solid var(--stroke);
+    border-radius: 4px; padding: 1px 5px;
+  }
+  .divider { height: 1px; background: var(--stroke); margin: 32px 0; border: 0; }
+
+  /* Stat strip */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 22px; }
+  .stat { border: 1px solid var(--stroke); border-radius: 10px; padding: 14px 16px; background: var(--bg); }
+  .stat .v { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+  .stat .l { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+  .stat.success .v { color: var(--success); }
+  .stat.danger .v { color: var(--danger); }
+
+  /* Radar block */
+  .radar-grid { display: grid; grid-template-columns: minmax(0, 560px) 1fr; gap: 28px; align-items: start; }
+  .radar-cap { font-size: 12px; color: var(--text-3); margin-top: 8px; }
+  .legend { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  .legend .item { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--text-2); }
+  .legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  .callout { border: 1px solid var(--stroke); border-radius: 10px; padding: 13px 15px; margin-bottom: 12px; }
+  .callout .ct { font-weight: 600; margin-bottom: 4px; }
+  .callout p { color: var(--text-2); font-size: 13px; }
+  .callout.success { background: var(--success-soft); border-color: rgba(26,156,91,0.25); }
+  .callout.success .ct { color: var(--success); }
+  .callout.danger { background: var(--danger-soft); border-color: rgba(210,63,63,0.25); }
+  .callout.danger .ct { color: var(--danger); }
+  .callout.info { background: var(--info-soft); border-color: rgba(47,109,246,0.22); }
+  .callout.info .ct { color: var(--info); }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; border: 1px solid var(--stroke); border-radius: 10px; overflow: hidden; }
+  thead th {
+    text-align: left; font-size: 12px; font-weight: 600; color: var(--text-2);
+    background: var(--surface); padding: 9px 12px; border-bottom: 1px solid var(--stroke);
+  }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid var(--stroke); vertical-align: top; font-size: 13px; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td .dim { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  td .need { color: var(--text-2); font-size: 12.5px; }
+  td.center { text-align: center; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot.lead { background: var(--success); }
+  .dot.par { background: var(--info); }
+  .dot.gap { background: var(--warning); }
+  .dot.critical { background: var(--danger); }
+  .tag {
+    display: inline-block; font-size: 11.5px; padding: 1px 9px; border-radius: 999px;
+    border: 1px solid var(--stroke-2); color: var(--text-2); white-space: nowrap;
+  }
+  .tag.lead { background: var(--success); color: #fff; border-color: transparent; }
+  .tag.critical { background: var(--danger); color: #fff; border-color: transparent; }
+  .tag.par { color: var(--info); }
+  .tag.gap { color: var(--warning); }
+
+  /* Moats */
+  .moats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .moat { border: 1px solid var(--stroke); border-radius: 10px; overflow: hidden; }
+  .moat .head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 14px; border-bottom: 1px solid var(--stroke); background: var(--surface);
+    font-size: 12.5px; font-weight: 600;
+  }
+  .moat .head .badge { font-size: 11px; font-weight: 600; color: #fff; background: var(--accent); padding: 1px 8px; border-radius: 999px; }
+  .moat .body { padding: 11px 14px; }
+  .moat .line { display: flex; gap: 10px; font-size: 12.5px; margin-bottom: 5px; }
+  .moat .line:last-child { margin-bottom: 0; }
+  .moat .line .k { width: 44px; flex-shrink: 0; color: var(--text-3); }
+  .moat .line .market { color: var(--text-2); }
+  .moat .line .loong { color: var(--accent); font-weight: 500; }
+
+  /* Future */
+  .future { display: grid; grid-template-columns: repeat(2, 1fr); gap: 26px; align-items: start; }
+  .action { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 9px; font-size: 13px; }
+  .pri {
+    font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; flex-shrink: 0;
+    border: 1px solid var(--stroke-2); color: var(--text-2);
+  }
+  .pri.p0 { background: var(--danger); color: #fff; border-color: transparent; }
+  .pri.p1 { background: var(--accent); color: #fff; border-color: transparent; }
+  .pri.p2 { color: var(--accent); border-color: var(--accent); }
+
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--stroke); color: var(--text-3); font-size: 12px; }
+
+  @media (max-width: 820px) {
+    .stats, .moats, .future { grid-template-columns: 1fr; }
+    .radar-grid { grid-template-columns: 1fr; }
+  }
+  @media print {
+    body { font-size: 12px; }
+    .wrap { padding: 0 8px; max-width: 100%; }
+    h2 { margin-top: 22px; }
+    .callout, .moat, .stat, table { break-inside: avoid; }
+    .radar-grid, .moats, .future { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Loong 技术竞争力对标（2026 Agent 市场）</h1>
+    <p class="lead">
+      Suite-aware 的 TypeScript agent runtime：把<span class="b">组织治理</span>、<span class="b">分级调度</span>、<span class="b">因果自优化</span>内建进运行时，主打“演示很美、上线很惨”那个坑。
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="v">26 包</div><div class="l">TS monorepo（全单运行时）</div></div>
+    <div class="stat success"><div class="v">3 档</div><div class="l">fast/standard/deep 分级调度</div></div>
+    <div class="stat success"><div class="v">因果推断</div><div class="l">trajectory→处理效应自优化</div></div>
+    <div class="stat danger"><div class="v">3 项硬伤</div><div class="l">编排 / 扩展 / 身份（对标缺口）</div></div>
+  </div>
+
+  <h2>能力雷达：Loong vs 2026 市场基线</h2>
+  <div class="radar-grid">
+    <div>
+      <svg id="radar" width="540" height="380" viewBox="0 0 540 380" style="max-width:100%"></svg>
+      <div class="legend">
+        <span class="item"><span class="sw" style="background:var(--accent)"></span>Loong 现状</span>
+        <span class="item"><span class="sw" style="background:var(--text-3)"></span>2026 市场生产基线</span>
+      </div>
+      <div class="radar-cap">评分 0–5（定性）· 来源：Loong 源码评审 + 2026 agent 市场综述</div>
+    </div>
+    <div>
+      <div class="callout success">
+        <div class="ct">向外突出的三角（护城河）</div>
+        <p><span class="b">自我优化、多模型分级、组织治理</span>三个维度，Loong 已超出市场生产基线——尤其 <code>causal-learning.ts</code> 的分层处理效应估计，在开源框架里相当罕见。</p>
+      </div>
+      <div class="callout danger">
+        <div class="ct">向内塌陷的缺口（硬伤）</div>
+        <p><span class="b">编排确定性、多租户/扩展、可观测/Eval</span>明显低于基线。这正是 2026 市场最硬的共识（durable workflow + 无状态扩展 + eval），也是企业上线的前置条件。</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider" />
+
+  <h2>对标差距矩阵</h2>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>2026 企业级要求</th><th>Loong 现状</th><th style="text-align:center">判定</th></tr>
+    </thead>
+    <tbody id="gap-body"></tbody>
+  </table>
+
+  <h2>差异化护城河</h2>
+  <div class="moats" id="moats"></div>
+
+  <hr class="divider" />
+
+  <h2>未来发展方向</h2>
+  <div class="future">
+    <div>
+      <h3>A. 必补硬伤（能否上企业生产）</h3>
+      <div id="fix"></div>
+    </div>
+    <div>
+      <h3>B. 放大差异化（能否赢）</h3>
+      <div id="push"></div>
+    </div>
+  </div>
+  <div class="callout info" style="margin-top:16px">
+    <div class="ct">收敛战略判断</div>
+    <p>不与 LangGraph 拼通用编排，也不被模型厂商 SDK 坍缩掉的那 80%。Loong 应卡住<span class="b">「规模化 + 强治理 + 私有化」</span>的 20% 企业场景：用「确定性编排（补齐）+ 内建治理（已有）+ 因果自优化（领先）+ TS 全栈本地优先（已有）」构成难以复制的组合，配合 ClawWorks 形成「控制面 + 执行内核」的商业闭环。</p>
+  </div>
+
+  <footer>
+    Loong 技术竞争力对标报告 · 生成于 2026-06-30 · 评分为基于源码评审的定性判断 · 可用浏览器打开并 Ctrl/Cmd+P 导出 PDF
+  </footer>
+
+</div>
+
+<script>
+  const RADAR_DIMS = [
+    { label: "工具协议 MCP/A2A", loong: 3, market: 5 },
+    { label: "编排确定性", loong: 1, market: 5 },
+    { label: "治理与合规", loong: 4, market: 4 },
+    { label: "自我优化(因果)", loong: 5, market: 3 },
+    { label: "多模型分级", loong: 5, market: 4 },
+    { label: "记忆/Context", loong: 4, market: 4 },
+    { label: "多租户/扩展", loong: 1, market: 5 },
+    { label: "可观测/Eval", loong: 2, market: 4 },
+  ];
+
+  const GAP_ROWS = [
+    { dim: "确定性编排", need: "状态机/durable workflow，可重放、exactly-once", loong: "LLM 概率 tool-loop，无重放/无补偿", level: "critical" },
+    { dim: "水平扩展/HA", need: "无状态节点 + 多副本 + 调度", loong: "单进程，会话锁/队列在进程内", level: "critical" },
+    { dim: "身份/多租户隔离", need: "OIDC/SSO + per-tenant 加密 + RLS", loong: "none 或单一 shared-secret", level: "critical" },
+    { dim: "Eval/回归闭环", need: "golden set 回归 + 漂移检测", loong: "仅 trajectory 持久化，无 eval", level: "gap" },
+    { dim: "A2A 互操作", need: "agent card + 跨框架协作", loong: "无 A2A；MCP 仅 client 侧", level: "gap" },
+    { dim: "工具协议 MCP", need: "MCP 工具连接(事实标准)", loong: "stdio + http MCP 客户端已落地", level: "par" },
+    { dim: "可审计记忆", need: "人工 promote 才入库", loong: "候选记忆审核晋升机制已具备", level: "lead" },
+    { dim: "多模型分级", need: "router 按复杂度选最便宜够用模型", loong: "fast/standard/deep tier + 委派继承", level: "lead" },
+    { dim: "组织治理", need: "组织/职位/审批链/KPI/风险分级", loong: "@loong/org 内建进数据模型", level: "lead" },
+    { dim: "自我优化", need: "agent 分析自身表现并优化", loong: "因果推断推荐 tier/model/employee", level: "lead" },
+  ];
+  const LEVEL_LABEL = { lead: "领先", par: "持平", gap: "落后", critical: "硬伤" };
+
+  const MOATS = [
+    { title: "全栈单运行时", market: "Python 为主，多语言拼接", loong: "全 TypeScript，同构到 Tauri 桌面端" },
+    { title: "治理内建", market: "外挂 guardrail / 事后审计", loong: "审批链/KPI/风险分级写进数据模型" },
+    { title: "因果自优化", market: "bandit / 规则启发式", loong: "分层处理效应估计(带 confounder 控制)" },
+    { title: "数字员工", market: "角色 / prompt 拼装", loong: "Suite 包原生物化为租户隔离实例" },
+  ];
+
+  const FIX = [
+    { tag: "P0", text: "引入确定性编排面：Loong 收敛为无状态单步执行器，多步流转交 durable workflow（FSM→Temporal）" },
+    { tag: "P0", text: "状态外置 + 水平扩展：会话/限流/队列迁 Redis + 持久化队列，限流 key 改按租户" },
+    { tag: "P0", text: "零信任身份：auth-policy 接 OIDC/SSO + 租户级 JWT，强制校验租户归属" },
+  ];
+  const PUSH = [
+    { tag: "P1", text: "把因果学习接进运行时闭环：自动调度 + Studio 可解释面板（self-improving + intent observability）" },
+    { tag: "P1", text: "MCP 双向 + A2A：把 Loong 暴露成 MCP server 并实现 A2A agent card，接入全球生态" },
+    { tag: "P2", text: "Eval harness：golden set 回归 + 越权率/幻觉率指标 + 按租户灰度回滚" },
+    { tag: "P2", text: "Suite 生态化：走数字员工 marketplace，让 Suite 成为可分发可计费资产" },
+  ];
+
+  // ---- Radar ----
+  (function drawRadar() {
+    const svg = document.getElementById("radar");
+    const SVGNS = "http://www.w3.org/2000/svg";
+    const dims = RADAR_DIMS, N = dims.length, maxV = 5;
+    const cx = 270, cy = 190, R = 120, labelR = R + 26;
+    const accent = "#2f6df6", market = "#8a9099", grid = "#d3d8de", txt = "#5b6168";
+    const ang = i => (Math.PI * 2 * i) / N - Math.PI / 2;
+    const pt = (i, v) => [cx + (v / maxV) * R * Math.cos(ang(i)), cy + (v / maxV) * R * Math.sin(ang(i))];
+    const poly = vals => vals.map((v, i) => pt(i, v).join(",")).join(" ");
+    const el = (n, a) => { const e = document.createElementNS(SVGNS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+    [1,2,3,4,5].forEach(l => svg.appendChild(el("polygon", { points: poly(dims.map(() => l)), fill: "none", stroke: grid, "stroke-width": 1 })));
+    dims.forEach((d, i) => { const [x, y] = pt(i, maxV); svg.appendChild(el("line", { x1: cx, y1: cy, x2: x, y2: y, stroke: grid, "stroke-width": 1 })); });
+    svg.appendChild(el("polygon", { points: poly(dims.map(d => d.market)), fill: market, "fill-opacity": 0.12, stroke: market, "stroke-width": 1.5 }));
+    svg.appendChild(el("polygon", { points: poly(dims.map(d => d.loong)), fill: accent, "fill-opacity": 0.22, stroke: accent, "stroke-width": 2 }));
+    dims.forEach((d, i) => {
+      const [mx, my] = pt(i, d.market); svg.appendChild(el("circle", { cx: mx, cy: my, r: 2.5, fill: market }));
+      const [lx, ly] = pt(i, d.loong);  svg.appendChild(el("circle", { cx: lx, cy: ly, r: 3, fill: accent }));
+    });
+    dims.forEach((d, i) => {
+      const x = cx + labelR * Math.cos(ang(i)), y = cy + labelR * Math.sin(ang(i)), c = Math.cos(ang(i));
+      const anchor = c > 0.3 ? "start" : c < -0.3 ? "end" : "middle";
+      const t = el("text", { x, y, "font-size": 11, fill: txt, "text-anchor": anchor, "dominant-baseline": "middle" });
+      t.textContent = d.label; svg.appendChild(t);
+    });
+  })();
+
+  // ---- Gap table ----
+  document.getElementById("gap-body").innerHTML = GAP_ROWS.map(r => `
+    <tr>
+      <td><span class="dim"><span class="dot ${r.level}"></span>${r.dim}</span></td>
+      <td><span class="need">${r.need}</span></td>
+      <td>${r.loong}</td>
+      <td class="center"><span class="tag ${r.level}">${LEVEL_LABEL[r.level]}</span></td>
+    </tr>`).join("");
+
+  // ---- Moats ----
+  document.getElementById("moats").innerHTML = MOATS.map(m => `
+    <div class="moat">
+      <div class="head"><span>${m.title}</span><span class="badge">Loong 优势</span></div>
+      <div class="body">
+        <div class="line"><span class="k">市场</span><span class="market">${m.market}</span></div>
+        <div class="line"><span class="k">Loong</span><span class="loong">${m.loong}</span></div>
+      </div>
+    </div>`).join("");
+
+  // ---- Future ----
+  const renderActions = (list) => list.map(a => `
+    <div class="action"><span class="pri ${a.tag.toLowerCase()}">${a.tag}</span><span>${a.text}</span></div>`).join("");
+  document.getElementById("fix").innerHTML = renderActions(FIX);
+  document.getElementById("push").innerHTML = renderActions(PUSH);
+</script>
+</body>
+</html>

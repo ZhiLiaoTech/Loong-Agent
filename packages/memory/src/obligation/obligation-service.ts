@@ -230,6 +230,12 @@ export interface ObligationHumanVerdictInput {
   reason?: string;
 }
 
+/** validateObligation 的按次调用选项（闭环流：手持执行产物直接作为验证主体）。 */
+export interface ObligationValidateCallOptions {
+  /** 优先于构造期 subjectResolver；undefined 时回落到注入的 resolver。 */
+  subject?: unknown;
+}
+
 /** obligation.get 挂的裁定摘要（指针/计数级，无证据原文）。 */
 export interface ObligationVerdictSummary {
   status: ObligationStatus;
@@ -326,8 +332,31 @@ export interface ObligationService {
    * human_confirm 项不执行，等待 submitHumanVerdict），逐项写 verdict 审计后
    * 聚合三态裁定并迁移状态。test_command / model_review 项缺少对应执行器时
    * 直接抛错（fail-closed，不写任何 verdict）。
+   *
+   * `callOptions.subject`（闭环流）：调用方手持执行产物（如 step result）时
+   * 按次传入验证主体，优先于构造期注入的 subjectResolver——与 3.1 的注入
+   * 姿态一致，只是粒度细化到单次裁定。
    */
-  validateObligation(identity: MemoryIdentity, obligationId: string, meta?: ObligationWriteMeta): Promise<ObligationValidationReport>;
+  validateObligation(
+    identity: MemoryIdentity,
+    obligationId: string,
+    meta?: ObligationWriteMeta,
+    callOptions?: ObligationValidateCallOptions,
+  ): Promise<ObligationValidationReport>;
+  /**
+   * 证据收集窗关闭（§3.2「证据齐套（或收集窗关闭）」的后者）：调用方声明本契约
+   * 的证据收集已完成，evidence_collecting → validating（审计 via =
+   * "collection_window_closed"）。已在 validating 时为幂等 no-op；其他状态
+   * 抛错。单步闭环流（executeObligationBoundStep）在挂接 step_result 回执后
+   * 显式关窗；多步契约仍走覆盖齐套自动推进，不受影响。
+   */
+  closeEvidenceCollection(
+    identity: MemoryIdentity,
+    obligationId: string,
+    meta?: ObligationWriteMeta,
+  ): Promise<ObligationRecord>;
+  /** 按执行载体幂等键查找契约（同 identity，只读）；闭环流自动建契约的重放去重锚点（§10 幂等）。 */
+  findObligationByIdempotencyKey(identity: MemoryIdentity, idempotencyKey: string): Promise<Obligation | undefined>;
   /**
    * Phase 3.1（§6.1 human_confirm）：人工对 human_confirm 项给出裁定。
    * 契约须在 validating；meta.operator 必须显式给出（确认人）；写完后自动
@@ -528,6 +557,7 @@ export function createObligationService(options: ObligationServiceOptions): Obli
     identityValue: MemoryIdentity,
     obligationId: string,
     meta: ObligationWriteMeta = {},
+    callOptions: ObligationValidateCallOptions = {},
   ): Promise<ObligationValidationReport> {
     const identity = assertMemoryIdentity(identityValue);
     const record = await requireRecord(identity, obligationId);
@@ -536,9 +566,12 @@ export function createObligationService(options: ObligationServiceOptions): Obli
     }
     // fail-closed 预检：存在无法执行的验证器时整体抛错，不写任何 verdict。
     assertExecutorsConfigured(record.items);
-    const subject = options.subjectResolver !== undefined
-      ? await options.subjectResolver(identity, record.obligation)
-      : undefined;
+    // 按次传入的验证主体优先；未传入时回落到构造期注入的 subjectResolver。
+    const subject = callOptions.subject !== undefined
+      ? callOptions.subject
+      : options.subjectResolver !== undefined
+        ? await options.subjectResolver(identity, record.obligation)
+        : undefined;
     const itemResults: ObligationValidationItemResult[] = [];
     for (const item of record.items) {
       if (item.verdict === "pass") {
@@ -650,6 +683,39 @@ export function createObligationService(options: ObligationServiceOptions): Obli
       detail: { ...(meta.detail ?? {}), via: "obligation.retry", remainingRetryBudget: budget - 1 },
     });
     return await requireRecord(identity, obligationId);
+  }
+
+  /** 证据收集窗关闭（§3.2）：evidence_collecting → validating；validating 幂等 no-op。 */
+  async function closeEvidenceCollection(
+    identityValue: MemoryIdentity,
+    obligationId: string,
+    meta: ObligationWriteMeta = {},
+  ): Promise<ObligationRecord> {
+    const identity = assertMemoryIdentity(identityValue);
+    const record = await requireRecord(identity, obligationId);
+    const status = record.obligation.status;
+    if (status === "validating") {
+      return record; // 幂等：收集窗已关闭，不重复写审计。
+    }
+    if (status !== "evidence_collecting") {
+      throw new MemoryToolError(
+        `Cannot close evidence collection for an obligation in status ${status};`
+        + " expected evidence_collecting (attach the execution receipt first).",
+      );
+    }
+    await options.store.transitionStatus(identity, obligationId, "validating", {
+      ...meta,
+      detail: { ...(meta.detail ?? {}), via: "collection_window_closed" },
+    });
+    return await requireRecord(identity, obligationId);
+  }
+
+  async function findObligationByIdempotencyKey(
+    identityValue: MemoryIdentity,
+    idempotencyKey: string,
+  ): Promise<Obligation | undefined> {
+    const identity = assertMemoryIdentity(identityValue);
+    return await options.store.findObligationByIdempotencyKey(identity, idempotencyKey);
   }
 
   async function sweepExpired(identityValue: MemoryIdentity, now?: string): Promise<Obligation[]> {
@@ -960,6 +1026,8 @@ export function createObligationService(options: ObligationServiceOptions): Obli
     validateObligation,
     submitHumanVerdict,
     retryObligation,
+    closeEvidenceCollection,
+    findObligationByIdempotencyKey,
     sweepExpired,
     sweepExpiredSystem,
     getObligationStatus,

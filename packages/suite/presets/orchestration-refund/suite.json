@@ -1,0 +1,9 @@
+{
+  "id": "orchestration-refund",
+  "name": "Orchestration Refund",
+  "version": "1.0.0",
+  "description": "Reference suite for deterministic refund workflow proposals.",
+  "activation": {
+    "mode": "reference"
+  }
+}
