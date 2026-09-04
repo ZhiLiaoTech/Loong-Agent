@@ -4,11 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CookingVideoError } from "./errors.js";
 import { computeJobInputDigest } from "./digest.js";
-import { detectMachineEvents } from "./event-detection.js";
+import { detectJobEvents } from "./event-detection.js";
 import { createJobEdit } from "./editing.js";
 import { JobStore } from "./job-store.js";
 import { runJobPipeline } from "./job-runner.js";
 import { ingestMedia } from "./media.js";
+import { consumeInbox, processInbox, scanInbox } from "./intake.js";
 import { selectJobShots } from "./shot-selection.js";
 import { renderJob } from "./render.js";
 import { reviewVideo } from "./quality.js";
@@ -30,12 +31,19 @@ interface CliOptions {
   videoFile?: string;
   responseFile?: string;
   timeoutMs?: number;
+  inboxRoot?: string;
+  stableSeconds?: number;
+  batchId?: string;
+  allowAlignedStart: boolean;
 }
 
 function usage(): string {
   return [
     "Usage:",
     "  loong-cooking-video create --job-file <path> [--jobs-root <path>]",
+    "  loong-cooking-video scan-inbox --inbox <path> [--jobs-root <path>] [--stable-seconds <seconds>] [--batch <batchId>]",
+    "  loong-cooking-video consume-inbox --inbox <path> [--jobs-root <path>] [--stable-seconds <seconds>] [--batch <batchId>]",
+    "  loong-cooking-video process-inbox --inbox <path> [--jobs-root <path>] [--stable-seconds <seconds>] [--batch <batchId>] [pipeline options]",
     "  loong-cooking-video status --job <jobId> [--jobs-root <path>]",
     "  loong-cooking-video ingest --job <jobId> [--jobs-root <path>] [--skip-proxy] [--skip-contact-sheet]",
     "  loong-cooking-video sync --job <jobId> [--jobs-root <path>] [--reference <cameraId>] [--offset <cameraId>=<milliseconds>]...",
@@ -48,7 +56,7 @@ function usage(): string {
     "  loong-cooking-video review --job <jobId> --video <output filename> [--jobs-root <path>]",
     "  loong-cooking-video run --job <jobId> [pipeline options]",
     "  loong-cooking-video resume --job <jobId> [pipeline options]",
-    "Pipeline options: --reference <camera> --offset <camera>=<ms> --template 15s|30s --approved --draft --timeout-ms <ms>",
+    "Pipeline options: --reference <camera> --offset <camera>=<ms> --allow-aligned-start --template 15s|30s --approved --draft --timeout-ms <ms>",
   ].join("\n");
 }
 
@@ -61,6 +69,7 @@ function parseArgs(argv: string[]): CliOptions {
     manualOffsets: {},
     draft: false,
     approved: false,
+    allowAlignedStart: false,
   };
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -86,6 +95,7 @@ function parseArgs(argv: string[]): CliOptions {
       options.template = value;
     }
     else if (arg === "--draft") options.draft = true;
+    else if (arg === "--allow-aligned-start") options.allowAlignedStart = true;
     else if (arg === "--approved") options.approved = true;
     else if (arg === "--video") {
       const value = argv[++index] ?? "";
@@ -95,6 +105,21 @@ function parseArgs(argv: string[]): CliOptions {
       options.videoFile = value;
     }
     else if (arg === "--response") options.responseFile = argv[++index];
+    else if (arg === "--inbox") {
+      const value = argv[++index];
+      if (!value || value.startsWith("--")) throw new CookingVideoError("INTAKE_INVALID", "--inbox requires a path value.");
+      options.inboxRoot = path.resolve(value);
+    }
+    else if (arg === "--batch") {
+      const value = argv[++index];
+      if (!value || value.startsWith("--")) throw new CookingVideoError("INTAKE_INVALID", "--batch requires a batchId value.");
+      options.batchId = value;
+    }
+    else if (arg === "--stable-seconds") {
+      const value = Number(argv[++index]);
+      if (!Number.isInteger(value) || value < 0 || value > 86_400) throw new CookingVideoError("INTAKE_INVALID", "--stable-seconds must be between 0 and 86400.");
+      options.stableSeconds = value;
+    }
     else if (arg === "--timeout-ms") {
       const value = Number(argv[++index]);
       if (!Number.isInteger(value) || value < 1000 || value > 86_400_000) throw new CookingVideoError("JOB_INVALID", "--timeout-ms must be between 1000 and 86400000.");
@@ -108,6 +133,25 @@ function parseArgs(argv: string[]): CliOptions {
 export async function runCookingVideo(argv: string[] = process.argv.slice(2)): Promise<void> {
   const options = parseArgs(argv);
   const store = new JobStore(options.jobsRoot);
+  if (options.command === "scan-inbox" || options.command === "consume-inbox" || options.command === "process-inbox") {
+    if (!options.inboxRoot) throw new CookingVideoError("INTAKE_INVALID", "--inbox is required.");
+    const intakeOptions = { stableSeconds: options.stableSeconds, batchId: options.batchId };
+    const result = options.command === "scan-inbox"
+      ? await scanInbox(options.inboxRoot, options.jobsRoot, intakeOptions)
+      : options.command === "consume-inbox"
+        ? await consumeInbox(options.inboxRoot, options.jobsRoot, intakeOptions)
+        : await processInbox(options.inboxRoot, options.jobsRoot, {
+            ...intakeOptions,
+            referenceCameraId: options.referenceCameraId,
+            manualOffsets: Object.keys(options.manualOffsets).length === 0 ? undefined : options.manualOffsets,
+            allowAlignedStart: options.allowAlignedStart,
+            template: options.template,
+            approved: options.approved,
+            draft: options.draft,
+          });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
   if (options.command === "create") {
     if (!options.jobFile) throw new CookingVideoError("JOB_INVALID", "--job-file is required.");
     const raw = JSON.parse(await readFile(path.resolve(options.jobFile), "utf8")) as unknown;
@@ -153,6 +197,7 @@ export async function runCookingVideo(argv: string[] = process.argv.slice(2)): P
       const syncMap = await synchronizeJob(result.paths, {
         referenceCameraId: options.referenceCameraId,
         manualOffsets: Object.keys(options.manualOffsets).length === 0 ? undefined : options.manualOffsets,
+        allowAlignedStart: options.allowAlignedStart,
       });
       await store.transition(options.jobId, "synced", { outputFiles: ["analysis/sync-map.json"] });
       process.stdout.write(`${JSON.stringify(syncMap, null, 2)}\n`);
@@ -171,7 +216,7 @@ export async function runCookingVideo(argv: string[] = process.argv.slice(2)): P
     const result = await store.load(options.jobId);
     await store.transition(options.jobId, "analyzing");
     try {
-      const timeline = await detectMachineEvents(result.job, result.paths);
+      const timeline = await detectJobEvents(result.job, result.paths);
       await store.transition(options.jobId, "analyzed", { outputFiles: ["analysis/event-timeline.json", ...timeline.events.flatMap(event => event.evidenceFrames)] });
       process.stdout.write(`${JSON.stringify(timeline, null, 2)}\n`);
     } catch (error) {
@@ -315,6 +360,7 @@ export async function runCookingVideo(argv: string[] = process.argv.slice(2)): P
     const result = await runJobPipeline(store, options.jobId, {
       referenceCameraId: options.referenceCameraId,
       manualOffsets: Object.keys(options.manualOffsets).length === 0 ? undefined : options.manualOffsets,
+      allowAlignedStart: options.allowAlignedStart,
       template: options.template,
       approved: options.approved,
       draft: options.draft,

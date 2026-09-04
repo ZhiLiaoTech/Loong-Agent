@@ -1,4 +1,5 @@
 import path from "node:path";
+import { validateMediaManifest, validateShotCandidates } from "./artifact-validation.js";
 import { CookingVideoError } from "./errors.js";
 import { readJsonFile, writeJsonAtomic } from "./json-files.js";
 import type { JobPaths } from "./paths.js";
@@ -58,12 +59,15 @@ function metricValue(text: string, key: string): number {
 }
 
 export function parseFrameMetrics(text: string): FrameMetrics {
+  const parsedBlur = Number(/blur mean:\s*(-?[\d.]+)/.exec(text)?.[1]);
   const metrics: FrameMetrics = {
     lumaAverage: metricValue(text, "lavfi\\.signalstats\\.YAVG"),
     lumaLow: metricValue(text, "lavfi\\.signalstats\\.YLOW"),
     lumaHigh: metricValue(text, "lavfi\\.signalstats\\.YHIGH"),
     saturationAverage: metricValue(text, "lavfi\\.signalstats\\.SATAVG"),
-    blurMean: Number(/blur mean:\s*(-?[\d.]+)/.exec(text)?.[1]),
+    // blurdetect may emit no value for a perfectly uniform frame. Treat it as
+    // maximally soft instead of failing the whole job.
+    blurMean: Number.isFinite(parsedBlur) ? parsedBlur : 20,
   };
   if (Object.values(metrics).some(value => !Number.isFinite(value))) {
     throw new CookingVideoError("PROCESS_FAILED", "FFmpeg did not return complete frame quality metrics.");
@@ -72,13 +76,14 @@ export function parseFrameMetrics(text: string): FrameMetrics {
 }
 
 function metricScores(metrics: FrameMetrics | undefined): { scores: Pick<ShotCandidate["scores"], "exposure" | "dynamicRange" | "saturation" | "sharpness">; problems: string[] } {
-  if (!metrics) return { scores: { exposure: 1, dynamicRange: 1, saturation: 1, sharpness: 1 }, problems: [] };
+  if (!metrics) return { scores: { exposure: 0.5, dynamicRange: 0.5, saturation: 0.5, sharpness: 0.5 }, problems: ["technical_metrics_missing"] };
   const exposure = clamp01(1 - Math.abs(metrics.lumaAverage - 128) / 128);
   const dynamicRange = clamp01((metrics.lumaHigh - metrics.lumaLow) / 128);
   const saturation = clamp01(1 - Math.abs(metrics.saturationAverage - 110) / 145);
   const sharpness = clamp01(1 - metrics.blurMean / 20);
   const problems = [
     ...(metrics.lumaAverage < 25 ? ["underexposed"] : []),
+    ...(metrics.lumaAverage < 10 ? ["black_frame"] : []),
     ...(metrics.lumaAverage > 225 ? ["overexposed"] : []),
     ...(metrics.lumaHigh - metrics.lumaLow < 20 ? ["low_dynamic_range"] : []),
     ...(metrics.blurMean > 12 ? ["blurry"] : []),
@@ -95,24 +100,43 @@ function metricScores(metrics: FrameMetrics | undefined): { scores: Pick<ShotCan
 }
 
 function dynamicsScores(scene: SceneAnalysis | undefined, cameraId: string, startMs: number, endMs: number): {
-  scores: Pick<ShotCandidate["scores"], "motion" | "continuity">;
+  scores: Pick<ShotCandidate["scores"], "motion" | "stability" | "continuity">;
   problems: string[];
 } {
   const camera = scene?.sources.find(source => source.cameraId === cameraId);
-  if (!camera) return { scores: { motion: 0.5, continuity: 1 }, problems: ["scene_analysis_missing"] };
+  if (!camera) return { scores: { motion: 0.5, stability: 0.5, continuity: 1 }, problems: ["scene_analysis_missing"] };
   const samples = camera.motionSamples.filter(sample => sample.timeMs >= startMs && sample.timeMs <= endMs);
   const averageMotion = samples.length === 0 ? 0 : samples.reduce((sum, sample) => sum + sample.score, 0) / samples.length;
   const interiorCuts = camera.cutsMs.filter(timeMs => timeMs > startMs + 250 && timeMs < endMs - 250).length;
   const motion = clamp01(averageMotion / 12);
+  const averageDelta = samples.length < 2 ? 0 : samples.slice(1).reduce((sum, sample, index) => sum + Math.abs(sample.score - samples[index].score), 0) / (samples.length - 1);
+  const stability = clamp01(1 - averageDelta / 12);
   const continuity = clamp01(1 - interiorCuts * 0.35);
   return {
-    scores: { motion: roundScore(motion), continuity: roundScore(continuity) },
+    scores: { motion: roundScore(motion), stability: roundScore(stability), continuity: roundScore(continuity) },
     problems: [
       ...(samples.length === 0 ? ["motion_samples_missing"] : []),
       ...(averageMotion < 0.5 ? ["low_motion"] : []),
+      ...(averageDelta > 8 ? ["shaky"] : []),
       ...(interiorCuts > 1 ? ["multiple_scene_cuts"] : []),
     ],
   };
+}
+
+function verticalCropScore(source: MediaSourceManifest): number {
+  const video = source.streams.find(stream => stream.codecType === "video");
+  if (!video?.width || !video.height) return 0.5;
+  const width = Math.abs(video.rotation ?? 0) % 180 === 90 ? video.height : video.width;
+  const height = Math.abs(video.rotation ?? 0) % 180 === 90 ? video.width : video.height;
+  const sourceRatio = width / height;
+  if (sourceRatio <= 9 / 16) return 1;
+  const retainedWidth = (height * 9 / 16) / width;
+  const roleFactor = source.role === "food_closeup" ? 1 : source.role === "action_side" ? 0.9 : 0.75;
+  return roundScore(clamp01((retainedWidth / 0.55) * roleFactor));
+}
+
+function hasOcclusion(problems: readonly string[] | undefined): boolean {
+  return (problems ?? []).some(problem => /occlud|obstruct|blocked|遮挡/i.test(problem));
 }
 
 export function selectShots(
@@ -140,12 +164,15 @@ export function selectShots(
     const durationFit = clamp01(duration < 1_500 ? duration / 1_500 : duration > 5_000 ? 5_000 / duration : 1);
     const technical = metricScores(frameMetrics.get(`${event.occurrenceId}/${event.cameraId}`));
     const dynamics = dynamicsScores(sceneAnalysis, event.cameraId, event.startMs, event.endMs);
-    const total = roundScore(
-      eventConfidence * 0.25 + eventRoleFit * 0.18 + resolution * 0.08 + durationFit * 0.08
-      + technical.scores.exposure * 0.08 + technical.scores.dynamicRange * 0.04
-      + technical.scores.saturation * 0.04 + technical.scores.sharpness * 0.10
-      + dynamics.scores.motion * 0.10 + dynamics.scores.continuity * 0.05,
-    );
+    const verticalCrop = verticalCropScore(source);
+    const occlusionPenalty = hasOcclusion(event.problems) ? 0.25 : 0;
+    const total = roundScore(clamp01(
+      eventConfidence * 0.22 + eventRoleFit * 0.15 + resolution * 0.06 + durationFit * 0.07
+      + technical.scores.exposure * 0.07 + technical.scores.dynamicRange * 0.03
+      + technical.scores.saturation * 0.03 + technical.scores.sharpness * 0.08
+      + dynamics.scores.motion * 0.08 + dynamics.scores.stability * 0.07 + dynamics.scores.continuity * 0.05
+      + verticalCrop * 0.09 - occlusionPenalty,
+    ));
     const candidate: ShotCandidate = {
       ...event,
       problems: [
@@ -164,6 +191,9 @@ export function selectShots(
         durationFit: roundScore(durationFit),
         ...technical.scores,
         ...dynamics.scores,
+        verticalCrop,
+        occlusionPenalty,
+        repetitionPenalty: 0,
         total,
       },
     };
@@ -172,13 +202,27 @@ export function selectShots(
     groups.set(event.occurrenceId, group);
   }
   const candidates: ShotCandidate[] = [];
-  for (const group of groups.values()) {
+  let previousCameraId: string | undefined;
+  const cameraUses = new Map<string, number>();
+  const orderedGroups = [...groups.values()].sort((left, right) => Math.min(...left.map(item => item.startMs)) - Math.min(...right.map(item => item.startMs)));
+  for (const group of orderedGroups) {
+    for (const candidate of group) {
+      const repeated = cameraUses.get(candidate.cameraId) ?? 0;
+      const penalty = Math.min(0.12, repeated * 0.03 + (candidate.cameraId === previousCameraId ? 0.04 : 0));
+      candidate.scores.repetitionPenalty = roundScore(penalty);
+      candidate.scores.total = roundScore(clamp01(candidate.scores.total - penalty));
+    }
     group.sort((left, right) => right.scores.total - left.scores.total || left.cameraId.localeCompare(right.cameraId));
     group.forEach((candidate, index) => {
       candidate.rank = index + 1;
       candidate.selected = index === 0 && candidate.event !== "unusable";
       candidates.push(candidate);
     });
+    const selected = group.find(candidate => candidate.selected);
+    if (selected) {
+      previousCameraId = selected.cameraId;
+      cameraUses.set(selected.cameraId, (cameraUses.get(selected.cameraId) ?? 0) + 1);
+    }
   }
   return {
     schemaVersion: "1.0",
@@ -194,6 +238,7 @@ export async function selectJobShots(paths: JobPaths, now = new Date(), options:
     readJsonFile<MediaManifest>(path.join(paths.analysis, "media-manifest.json")),
     readJsonFile<SceneAnalysis>(path.join(paths.analysis, "scene-cuts.json")),
   ]);
+  validateMediaManifest(manifest, timeline.jobId);
   const runner = options.runner ?? runProcess;
   const ffmpeg = options.ffmpegCommand ?? "ffmpeg";
   const metrics = new Map<string, FrameMetrics>();
@@ -212,6 +257,7 @@ export async function selectJobShots(paths: JobPaths, now = new Date(), options:
     throw new CookingVideoError("EVENT_INPUT_INVALID", "Scene analysis and event timeline belong to different jobs.");
   }
   const result = selectShots(timeline, manifest, now, metrics, sceneAnalysis);
+  validateShotCandidates(result, manifest);
   await writeJsonAtomic(path.join(paths.analysis, "shot-candidates.json"), result);
   return result;
 }

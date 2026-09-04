@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { CookingVideoError } from "./errors.js";
 import { readJsonFile, writeJsonAtomic } from "./json-files.js";
@@ -63,7 +63,7 @@ export function buildRenderArgs(
   decision: EditDecision,
   manifest: MediaManifest,
   options: Pick<RenderOptions, "draft"> = {},
-): { args: string[]; outputFile: string; width: number; height: number } {
+): { args: string[]; outputFile: string; temporaryOutputFile: string; width: number; height: number } {
   validateEditDecision(decision, manifest);
   const [width, height] = dimensions(decision.aspectRatio, options.draft === true);
   const args: string[] = ["-y"];
@@ -85,18 +85,20 @@ export function buildRenderArgs(
   const endDuration = (decision.endCard.durationMs / 1000).toFixed(3);
   filters.push(`color=c=${brandColor(job.brand?.primaryColor)}:s=${width}x${height}:r=${decision.fps}:d=${endDuration}[endv]`);
   filters.push(`anullsrc=r=48000:cl=stereo,atrim=duration=${endDuration}[enda]`);
-  filters.push(`${concatInputs.join("")}[endv][enda]concat=n=${decision.segments.length + 1}:v=1:a=1[basev][outa]`);
+  filters.push(`${concatInputs.join("")}[endv][enda]concat=n=${decision.segments.length + 1}:v=1:a=1[basev][premixa]`);
+  filters.push("[premixa]loudnorm=I=-16:LRA=11:TP=-1.5[outa]");
   const subtitleFile = path.join(paths.edit, "captions.srt");
   filters.push(`[basev]subtitles=filename='${escapeFilterFilename(subtitleFile)}':force_style='FontName=Microsoft YaHei,FontSize=${options.draft ? 18 : 42},PrimaryColour=&H00FFFFFF,OutlineColour=&H90000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=${options.draft ? 48 : 140}'[outv]`);
   const orientation = decision.aspectRatio === "9:16" ? "vertical" : decision.aspectRatio === "16:9" ? "landscape" : "square";
   const outputFile = path.join(paths.output, `promo-${orientation}-${Math.round(decision.durationTargetMs / 1000)}s${options.draft ? "-draft" : ""}.mp4`);
+  const temporaryOutputFile = outputFile.replace(/\.mp4$/i, ".part.mp4");
   args.push(
     "-filter_complex", filters.join(";"),
     "-map", "[outv]", "-map", "[outa]",
     "-c:v", "libx264", "-preset", options.draft ? "veryfast" : "medium", "-crf", options.draft ? "28" : "20",
-    "-c:a", "aac", "-b:a", "160k", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-shortest", outputFile,
+    "-c:a", "aac", "-b:a", "160k", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-shortest", temporaryOutputFile,
   );
-  return { args, outputFile, width, height };
+  return { args, outputFile, temporaryOutputFile, width, height };
 }
 
 export async function renderJob(job: CookingVideoJob, paths: JobPaths, options: RenderOptions = {}): Promise<RenderResult> {
@@ -110,9 +112,11 @@ export async function renderJob(job: CookingVideoJob, paths: JobPaths, options: 
   const built = buildRenderArgs(job, paths, decision, manifest, options);
   try {
     await runChecked(options.runner ?? runProcess, options.ffmpegCommand ?? "ffmpeg", built.args, { signal: options.signal });
-    const outputStat = await stat(built.outputFile);
+    const outputStat = await stat(built.temporaryOutputFile);
     if (!outputStat.isFile() || outputStat.size === 0) throw new Error("output is empty");
+    await rename(built.temporaryOutputFile, built.outputFile);
   } catch (error) {
+    await rm(built.temporaryOutputFile, { force: true });
     if (error instanceof CookingVideoError && error.code === "MEDIA_TOOL_MISSING") throw error;
     throw new CookingVideoError("RENDER_FAILED", `Video render failed: ${error instanceof Error ? error.message : String(error)}`);
   }

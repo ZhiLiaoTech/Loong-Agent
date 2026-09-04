@@ -1,4 +1,5 @@
 import path from "node:path";
+import { realpath } from "node:fs/promises";
 import { CookingVideoError } from "./errors.js";
 import { assertSafeId } from "./validation.js";
 
@@ -24,6 +25,16 @@ export function resolveWithin(root: string, candidate: string): string {
     return resolved;
   }
   throw new CookingVideoError("PATH_OUTSIDE_JOB", `Path escapes approved root: ${candidate}.`);
+}
+
+export async function resolveExistingWithin(root: string, candidate: string): Promise<string> {
+  const lexicalPath = resolveWithin(root, candidate);
+  const [realRoot, realCandidate] = await Promise.all([realpath(root), realpath(lexicalPath)]);
+  try {
+    return resolveWithin(realRoot, realCandidate);
+  } catch {
+    throw new CookingVideoError("PATH_OUTSIDE_JOB", `Path resolves outside approved root: ${candidate}.`);
+  }
 }
 
 export function jobPaths(jobsRoot: string, jobId: string): JobPaths {

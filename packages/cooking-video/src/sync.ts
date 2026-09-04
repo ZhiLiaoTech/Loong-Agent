@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
+import { validateMediaManifest } from "./artifact-validation.js";
 import { CookingVideoError } from "./errors.js";
 import { readJsonFile, writeJsonAtomic } from "./json-files.js";
 import type { JobPaths } from "./paths.js";
@@ -18,6 +19,7 @@ export interface SyncOptions {
   audioSampleRate?: number;
   audioMaxSeconds?: number;
   audioMaxLagMs?: number;
+  allowAlignedStart?: boolean;
 }
 
 export interface AudioOffsetEstimate {
@@ -177,6 +179,20 @@ function timecodeSync(manifest: MediaManifest, referenceCameraId: string, now: D
   };
 }
 
+export function buildAlignedStartSyncMap(manifest: MediaManifest, referenceCameraId?: string, now = new Date()): SyncMap {
+  if (manifest.sources.length < 2) throw new CookingVideoError("SYNC_INPUT_INVALID", "At least two media sources are required for synchronization.");
+  const reference = selectReference(manifest, referenceCameraId);
+  return {
+    schemaVersion: "1.0",
+    jobId: manifest.jobId,
+    referenceCameraId: reference,
+    method: "aligned_start",
+    confidence: 0.25,
+    cameras: Object.fromEntries(manifest.sources.map(source => [source.cameraId, { offsetMs: 0 }])),
+    generatedAt: now.toISOString(),
+  };
+}
+
 export function buildSyncMap(manifest: MediaManifest, options: SyncOptions = {}): SyncMap {
   if (manifest.sources.length < 2) {
     throw new CookingVideoError("SYNC_INPUT_INVALID", "At least two media sources are required for synchronization.");
@@ -196,7 +212,7 @@ export function buildSyncMap(manifest: MediaManifest, options: SyncOptions = {})
 export async function synchronizeJob(paths: JobPaths, options: SyncOptions = {}): Promise<SyncMap> {
   let manifest: MediaManifest;
   try {
-    manifest = await readJsonFile<MediaManifest>(path.join(paths.analysis, "media-manifest.json"));
+    manifest = validateMediaManifest(await readJsonFile<unknown>(path.join(paths.analysis, "media-manifest.json")));
   } catch (error) {
     throw new CookingVideoError("SYNC_INPUT_INVALID", "media-manifest.json is missing or invalid.", {
       cause: error instanceof Error ? error.message : String(error),
@@ -210,11 +226,16 @@ export async function synchronizeJob(paths: JobPaths, options: SyncOptions = {})
       syncMap = buildSyncMap(manifest, options);
     } catch (error) {
       if (!(error instanceof CookingVideoError) || error.code !== "SYNC_INPUT_INVALID") throw error;
-      const reference = selectReference(manifest, options.referenceCameraId);
-      syncMap = await audioSync(manifest, paths, reference, options, options.now ?? new Date());
-      const minimum = options.minimumConfidence ?? 0.70;
-      if (syncMap.confidence < minimum) {
-        throw new CookingVideoError("SYNC_LOW_CONFIDENCE", `Audio synchronization confidence ${syncMap.confidence} is below ${minimum}.`);
+      try {
+        const reference = selectReference(manifest, options.referenceCameraId);
+        syncMap = await audioSync(manifest, paths, reference, options, options.now ?? new Date());
+        const minimum = options.minimumConfidence ?? 0.70;
+        if (syncMap.confidence < minimum) {
+          throw new CookingVideoError("SYNC_LOW_CONFIDENCE", `Audio synchronization confidence ${syncMap.confidence} is below ${minimum}.`);
+        }
+      } catch (audioError) {
+        if (options.allowAlignedStart !== true) throw audioError;
+        syncMap = buildAlignedStartSyncMap(manifest, options.referenceCameraId, options.now ?? new Date());
       }
     }
   }

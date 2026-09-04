@@ -31,7 +31,15 @@ export interface CookingVideoJob {
   brand?: {
     logo?: string;
     primaryColor?: string;
+    accentColor?: string;
+    textColor?: string;
+    fontFamily?: string;
     endCardText?: string;
+  };
+  audio?: {
+    musicPath?: string;
+    sourceGainDb?: number;
+    musicGainDb?: number;
   };
 }
 
@@ -129,7 +137,7 @@ export interface SceneAnalysis {
   sources: CameraSceneAnalysis[];
 }
 
-export type SyncMethod = "timecode" | "machine_event" | "audio_cross_correlation" | "manual";
+export type SyncMethod = "timecode" | "machine_event" | "audio_cross_correlation" | "manual" | "aligned_start";
 
 export interface CameraSync {
   offsetMs: number;
@@ -178,7 +186,7 @@ export interface EventTimeline {
   schemaVersion: "1.0";
   jobId: string;
   generatedAt: string;
-  source: "machine_events" | "vision" | "hybrid";
+  source: "machine_events" | "vision" | "hybrid" | "heuristic";
   events: DetectedEvent[];
 }
 
@@ -223,7 +231,11 @@ export interface ShotScores {
   saturation: number;
   sharpness: number;
   motion: number;
+  stability: number;
   continuity: number;
+  verticalCrop: number;
+  occlusionPenalty: number;
+  repetitionPenalty: number;
   total: number;
 }
 

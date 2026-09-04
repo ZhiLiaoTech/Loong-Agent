@@ -7,7 +7,29 @@
     "schemaVersion": { "const": "1.0" },
     "jobId": { "type": "string" },
     "generatedAt": { "type": "string", "format": "date-time" },
-    "sources": { "type": "array", "minItems": 2, "items": { "type": "object" } },
+    "sources": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["cameraId", "path", "byteSize", "sha256", "durationMs", "streams"],
+        "properties": {
+          "cameraId": { "type": "string", "minLength": 1 },
+          "role": { "type": "string" },
+          "path": { "type": "string", "pattern": "^input/" },
+          "byteSize": { "type": "integer", "minimum": 1 },
+          "sha256": { "type": "string", "minLength": 1 },
+          "durationMs": { "type": "integer", "minimum": 1 },
+          "creationTime": { "type": "string", "format": "date-time" },
+          "formatName": { "type": "string" },
+          "streams": { "type": "array", "minItems": 1, "items": { "type": "object" } },
+          "proxyPath": { "type": "string", "pattern": "^proxy/" },
+          "contactSheetPath": { "type": "string", "pattern": "^frames/" }
+        },
+        "additionalProperties": false
+      }
+    },
     "warnings": { "type": "array", "items": { "type": "string" } }
   },
   "additionalProperties": false

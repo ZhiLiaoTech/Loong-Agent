@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.intake.v1",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "batchId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$" },
+    "sources": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["cameraId", "file"],
+        "additionalProperties": false,
+        "properties": {
+          "cameraId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+          "file": { "type": "string", "pattern": "^[^/\\\\]+\\.(mp4|mov|mkv|avi|m4v)$" },
+          "role": { "type": "string" }
+        }
+      }
+    },
+    "machineEventsFile": { "type": "string", "pattern": "^[^/\\\\]+$" },
+    "dish": { "type": "object" },
+    "machine": { "type": "object" },
+    "brief": { "type": "object" },
+    "brand": { "type": "object" }
+  },
+  "additionalProperties": false
+}

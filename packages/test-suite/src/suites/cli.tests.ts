@@ -218,6 +218,8 @@ async function testCliCookingVideoHelp(): Promise<void> {
   const result = await runCli(["cooking-video", "--help"]);
   assert(result.stdout.includes("loong cooking-video"), "CLI help should expose the cooking-video command");
   assert(result.stdout.includes("prepare-vision"), "CLI help should list the vision evidence workflow");
+  assert(result.stdout.includes("consume-inbox"), "CLI help should list directory consumption");
+  assert(result.stdout.includes("process-inbox"), "CLI help should list one-command inbox processing");
 }
 
 

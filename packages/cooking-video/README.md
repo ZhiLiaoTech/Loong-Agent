@@ -13,6 +13,43 @@ Windows 可使用 Scoop：
 scoop install ffmpeg
 ```
 
+## 指定目录消费
+
+普通网络摄像头可以先通过摄像头自带录像程序、NVR 或 RTSP 录制工具把文件写入 inbox；用户拍摄好的视频也使用同一目录结构。每次炒菜对应一个批次目录，目录名会成为 `jobId`：
+
+```text
+data/inbox/
+└── cook-20260904-001/
+    ├── top.mp4
+    ├── front.mp4
+    └── _READY
+```
+
+文件名（不含扩展名）默认作为 `cameraId`。支持 MP4、MOV、MKV、AVI 和 M4V，每批必须包含 2–4 路视频。录像完成后创建空的 `_READY` 文件可立即消费；没有标记时，所有输入必须保持默认 60 秒未修改：
+
+```powershell
+loong cooking-video scan-inbox --inbox data/inbox --jobs-root data/jobs
+loong cooking-video consume-inbox --inbox data/inbox --jobs-root data/jobs
+```
+
+也可以周期执行一条命令完成“扫描、消费、分析、生成 EDL”：
+
+```powershell
+loong cooking-video process-inbox `
+  --inbox data/inbox `
+  --jobs-root data/jobs `
+  --allow-aligned-start `
+  --draft
+```
+
+未传 `--approved` 时，启发式作业会停在 `awaiting_review`；人工确认 EDL 后再用带 `--approved` 的 `run` 或 `process-inbox` 继续渲染。
+
+消费过程把视频复制到隔离的作业目录，不删除 inbox 原文件；`state/intake-receipt.json` 保证重复扫描不会重复创建作业。需要自定义机位角色、菜名或输出格式时，可在批次目录放置符合 `intake.schema.json` 的 `intake.json`。
+
+如果批次没有机器事件日志，`detect`/`run` 会使用本地场景变化和运动量生成低置信度候选，所有事件写入 `heuristic_unverified` 与 `human_review_required` 标签，并强制要求人审。该模式用于在客户协议和云视觉授权缺失时继续打通流程，不代表已经准确识别投料、翻炒或成品语义。
+
+若摄像头文件既没有统一时间码也没有可用音轨，可在确认各路录像大致同时启动后显式增加 `--allow-aligned-start`。系统会以零偏移继续处理，并把同步方式记录为低置信度 `aligned_start`；默认情况下不会自动采用该降级。
+
 ## 快速开始
 
 ```powershell

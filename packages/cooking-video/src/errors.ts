@@ -19,7 +19,11 @@ export type CookingVideoErrorCode =
   | "RENDER_FAILED"
   | "QUALITY_GATE_FAILED"
   | "PROCESS_FAILED"
-  | "JOB_CANCELLED";
+  | "JOB_CANCELLED"
+  | "ARTIFACT_INVALID"
+  | "INTAKE_INVALID"
+  | "INTAKE_NOT_READY"
+  | "INTAKE_LOCKED";
 
 export class CookingVideoError extends Error {
   readonly code: CookingVideoErrorCode;

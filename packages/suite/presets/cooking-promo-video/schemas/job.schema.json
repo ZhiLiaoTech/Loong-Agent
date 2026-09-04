@@ -49,7 +49,27 @@
       },
       "additionalProperties": true
     },
-    "brand": { "type": "object" }
+    "brand": {
+      "type": "object",
+      "properties": {
+        "logo": { "type": "string", "pattern": "^input/" },
+        "primaryColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "accentColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "textColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "fontFamily": { "type": "string" },
+        "endCardText": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "musicPath": { "type": "string", "pattern": "^input/" },
+        "sourceGainDb": { "type": "number", "minimum": -60, "maximum": 12 },
+        "musicGainDb": { "type": "number", "minimum": -60, "maximum": 12 }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

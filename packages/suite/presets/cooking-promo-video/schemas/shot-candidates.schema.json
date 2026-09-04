@@ -2,11 +2,54 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "loong.cooking-video.shot-candidates.v1",
   "type": "object",
-  "required": ["schemaVersion", "jobId", "candidates"],
+  "required": ["schemaVersion", "jobId", "generatedAt", "candidates"],
   "properties": {
     "schemaVersion": { "const": "1.0" },
-    "jobId": { "type": "string" },
-    "candidates": { "type": "array", "items": { "type": "object", "required": ["occurrenceId", "cameraId", "event", "rank", "selected", "scores"], "properties": { "occurrenceId": { "type": "string" }, "cameraId": { "type": "string" }, "event": { "type": "string" }, "rank": { "type": "integer", "minimum": 1 }, "selected": { "type": "boolean" }, "scores": { "type": "object", "required": ["eventConfidence", "roleFit", "resolution", "durationFit", "exposure", "dynamicRange", "saturation", "sharpness", "motion", "continuity", "total"], "properties": { "eventConfidence": { "type": "number" }, "roleFit": { "type": "number" }, "resolution": { "type": "number" }, "durationFit": { "type": "number" }, "exposure": { "type": "number" }, "dynamicRange": { "type": "number" }, "saturation": { "type": "number" }, "sharpness": { "type": "number" }, "motion": { "type": "number" }, "continuity": { "type": "number" }, "total": { "type": "number" } }, "additionalProperties": false } }, "additionalProperties": true } }
+    "jobId": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["occurrenceId", "cameraId", "startMs", "endMs", "event", "confidence", "evidenceFrames", "rank", "selected", "scores"],
+        "properties": {
+          "occurrenceId": { "type": "string", "minLength": 1 },
+          "cameraId": { "type": "string", "minLength": 1 },
+          "startMs": { "type": "number", "minimum": 0 },
+          "endMs": { "type": "number", "exclusiveMinimum": 0 },
+          "event": { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "evidenceFrames": { "type": "array", "items": { "type": "string" } },
+          "problems": { "type": "array", "items": { "type": "string" } },
+          "rank": { "type": "integer", "minimum": 1 },
+          "selected": { "type": "boolean" },
+          "scores": {
+            "type": "object",
+            "required": ["eventConfidence", "roleFit", "resolution", "durationFit", "exposure", "dynamicRange", "saturation", "sharpness", "motion", "stability", "continuity", "verticalCrop", "occlusionPenalty", "repetitionPenalty", "total"],
+            "properties": {
+              "eventConfidence": { "$ref": "#/$defs/score" },
+              "roleFit": { "$ref": "#/$defs/score" },
+              "resolution": { "$ref": "#/$defs/score" },
+              "durationFit": { "$ref": "#/$defs/score" },
+              "exposure": { "$ref": "#/$defs/score" },
+              "dynamicRange": { "$ref": "#/$defs/score" },
+              "saturation": { "$ref": "#/$defs/score" },
+              "sharpness": { "$ref": "#/$defs/score" },
+              "motion": { "$ref": "#/$defs/score" },
+              "stability": { "$ref": "#/$defs/score" },
+              "continuity": { "$ref": "#/$defs/score" },
+              "verticalCrop": { "$ref": "#/$defs/score" },
+              "occlusionPenalty": { "$ref": "#/$defs/score" },
+              "repetitionPenalty": { "$ref": "#/$defs/score" },
+              "total": { "$ref": "#/$defs/score" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
   },
+  "$defs": { "score": { "type": "number", "minimum": 0, "maximum": 1 } },
   "additionalProperties": false
 }

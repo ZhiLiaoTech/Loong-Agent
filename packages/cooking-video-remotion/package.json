@@ -1,0 +1,26 @@
+{
+  "name": "@loong/cooking-video-remotion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "studio": "remotion studio src/index.tsx",
+    "render:15": "remotion render src/index.tsx CookingPromo15",
+    "render:30": "remotion render src/index.tsx CookingPromo30"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.520",
+    "@remotion/media": "4.0.520",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.520"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.6",
+    "typescript": "5.9.3"
+  }
+}

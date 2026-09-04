@@ -4,6 +4,7 @@ import { readJsonFile, writeJsonAtomic } from "./json-files.js";
 import { resolveWithin, type JobPaths } from "./paths.js";
 import { runChecked, runProcess, type ProcessRunner } from "./process-runner.js";
 import type { EditDecision, QualityCheck, QualityReport } from "./types.js";
+import { validateJob } from "./validation.js";
 
 export interface QualityOptions {
   runner?: ProcessRunner;
@@ -50,7 +51,10 @@ export async function reviewVideo(
     throw new CookingVideoError("PATH_OUTSIDE_JOB", "Quality review video must be inside output/.");
   }
   const videoFile = resolveWithin(paths.output, path.basename(relativeVideoPath));
-  const decision = await readJsonFile<EditDecision>(path.join(paths.edit, "edit-decision.json"));
+  const [decision, job] = await Promise.all([
+    readJsonFile<EditDecision>(path.join(paths.edit, "edit-decision.json")),
+    readJsonFile<unknown>(paths.jobFile).then(value => validateJob(value)),
+  ]);
   if (decision.jobId !== jobId) throw new CookingVideoError("QUALITY_GATE_FAILED", "EDL belongs to a different job.");
   const runner = options.runner ?? runProcess;
   const probeResult = await runChecked(runner, options.ffprobeCommand ?? "ffprobe", [
@@ -129,6 +133,23 @@ export async function reviewVideo(
   checks.push(hasResult
     ? { id: "result-coverage", status: "pass", message: "The EDL includes a completed-dish event." }
     : { id: "result-coverage", status: "fail", message: "The EDL has no completed-dish event.", remediation: "Add a plating or completed-dish shot." });
+
+  const captions = decision.segments.map(segment => segment.caption ?? "").filter(Boolean);
+  const captionsSafe = captions.every(caption => [...caption].length <= 24 && !/[\r\n{}]/.test(caption));
+  checks.push(captionsSafe
+    ? { id: "subtitle-safe-area", status: "pass", message: "Subtitle text fits the configured lower safe area." }
+    : { id: "subtitle-safe-area", status: "fail", message: "A subtitle is too long or contains unsafe control characters.", remediation: "Shorten or sanitize the subtitle." });
+  const logoBox = { left: 0.06, top: 0.04, right: 0.24, bottom: 0.16 };
+  const subtitleBox = { left: 0.08, top: 0.76, right: 0.92, bottom: 0.92 };
+  const overlaps = logoBox.left < subtitleBox.right && logoBox.right > subtitleBox.left && logoBox.top < subtitleBox.bottom && logoBox.bottom > subtitleBox.top;
+  checks.push(!overlaps
+    ? { id: "logo-overlap", status: "pass", message: job.brand?.logo ? "Logo and subtitle safe areas do not overlap." : "No logo configured; reserved logo area does not overlap subtitles." }
+    : { id: "logo-overlap", status: "fail", message: "Logo overlaps the subtitle safe area.", remediation: "Move the logo or subtitle region." });
+  const normalizedCaptions = captions.join(" ");
+  const uncovered = (job.brief.sellingPoints ?? []).filter(point => !normalizedCaptions.includes(point));
+  checks.push(uncovered.length === 0
+    ? { id: "selling-point-coverage", status: "pass", message: job.brief.sellingPoints?.length ? "All configured selling points appear in subtitles." : "No mandatory selling points were configured." }
+    : { id: "selling-point-coverage", status: "fail", message: `Missing configured selling points: ${uncovered.join("、")}.`, remediation: "Add the missing verified selling points to the EDL." });
 
   const report: QualityReport = {
     schemaVersion: "1.0",

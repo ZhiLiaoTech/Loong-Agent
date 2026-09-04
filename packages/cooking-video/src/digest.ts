@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { CookingVideoError } from "./errors.js";
-import { resolveWithin, type JobPaths } from "./paths.js";
+import { resolveExistingWithin, type JobPaths } from "./paths.js";
 import type { CookingVideoJob } from "./types.js";
 
 async function updateFromFile(hash: ReturnType<typeof createHash>, file: string): Promise<void> {
@@ -16,11 +16,11 @@ async function updateFromFile(hash: ReturnType<typeof createHash>, file: string)
 export async function computeJobInputDigest(job: CookingVideoJob, paths: JobPaths): Promise<string> {
   const hash = createHash("sha256");
   hash.update(JSON.stringify(job));
-  const files = [
-    ...job.sources.map(source => resolveWithin(paths.root, source.path)),
-    ...(job.machineEventsPath ? [resolveWithin(paths.root, job.machineEventsPath)] : []),
-  ];
   try {
+    const files = await Promise.all([
+      ...job.sources.map(source => resolveExistingWithin(paths.root, source.path)),
+      ...(job.machineEventsPath ? [resolveExistingWithin(paths.root, job.machineEventsPath)] : []),
+    ]);
     for (const file of files.sort()) {
       hash.update("\0");
       hash.update(file.toLowerCase());

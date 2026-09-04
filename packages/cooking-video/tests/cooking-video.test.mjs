@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
   CookingVideoError,
+  cleanupJobTemporaryFiles,
   computeJobInputDigest,
+  consumeInbox,
   JobStore,
   buildSyncMap,
   buildRenderArgs,
   captionsToSrt,
   createEditDecision,
   deduplicateEvidenceFiles,
+  detectHeuristicEvents,
+  detectJobEvents,
   detectMachineEvents,
   estimateEnvelopeOffset,
   ingestMedia,
@@ -25,7 +29,12 @@ import {
   reviewVideo,
   runProcess,
   sanitizeCaption,
+  scanInbox,
   selectShots,
+  synchronizeJob,
+  validateMediaManifest,
+  validatePromotionalCopy,
+  validateShotCandidates,
   validateJob,
 } from "../dist/index.js";
 
@@ -64,6 +73,65 @@ test("resolveWithin blocks path traversal", () => {
   assert.throws(() => resolveWithin(root, "../outside.mp4"), error => error instanceof CookingVideoError && error.code === "PATH_OUTSIDE_JOB");
 });
 
+test("validates media manifests and shot candidates against job boundaries", () => {
+  const manifest = {
+    schemaVersion: "1.0", jobId: "cook-001", generatedAt: "2026-09-04T00:00:00.000Z", warnings: [],
+    sources: [
+      { cameraId: "top", path: "input/top.mp4", byteSize: 1, sha256: "a", durationMs: 5000, streams: [{ index: 0, codecType: "video" }] },
+      { cameraId: "front", path: "input/front.mp4", byteSize: 1, sha256: "b", durationMs: 5000, streams: [{ index: 0, codecType: "video" }] },
+    ],
+  };
+  assert.equal(validateMediaManifest(manifest, "cook-001").sources.length, 2);
+  assert.throws(() => validateMediaManifest({ ...manifest, jobId: "other" }, "cook-001"), error => error instanceof CookingVideoError && error.code === "ARTIFACT_INVALID");
+  assert.throws(() => validateMediaManifest({ ...manifest, sources: [{ ...manifest.sources[0], path: "../other/input.mp4" }, manifest.sources[1]] }), error => error instanceof CookingVideoError && error.code === "ARTIFACT_INVALID");
+  assert.throws(() => validateMediaManifest({ ...manifest, sources: [{ ...manifest.sources[0], path: "analysis/top.mp4" }, manifest.sources[1]] }), error => error instanceof CookingVideoError && error.code === "ARTIFACT_INVALID");
+
+  const candidate = {
+    occurrenceId: "evt-1", cameraId: "top", startMs: 0, endMs: 1000, event: "stir_fry", confidence: 0.9,
+    evidenceFrames: [], rank: 1, selected: true, problems: [],
+    scores: { eventConfidence: 0.9, roleFit: 1, resolution: 1, durationFit: 1, exposure: 1, dynamicRange: 1, saturation: 1, sharpness: 1, motion: 1, stability: 1, continuity: 1, verticalCrop: 1, occlusionPenalty: 0, repetitionPenalty: 0, total: 0.99 },
+  };
+  const candidates = { schemaVersion: "1.0", jobId: "cook-001", generatedAt: "2026-09-04T00:00:00.000Z", candidates: [candidate] };
+  assert.equal(validateShotCandidates(candidates, manifest).candidates.length, 1);
+  assert.throws(() => validateShotCandidates({ ...candidates, candidates: [{ ...candidate, endMs: 6000 }] }, manifest), error => error instanceof CookingVideoError && error.code === "ARTIFACT_INVALID");
+  assert.throws(() => validateShotCandidates({ ...candidates, candidates: [candidate, { ...candidate, cameraId: "front" }] }, manifest), error => error instanceof CookingVideoError && error.code === "ARTIFACT_INVALID");
+  assert.throws(() => validateShotCandidates({ ...candidates, candidates: [candidate, { ...candidate, cameraId: "front", selected: false }] }, manifest), error => error instanceof CookingVideoError && error.code === "ARTIFACT_INVALID");
+});
+
+test("cleans only temporary artifacts and preserves inputs and completed outputs", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-cleanup-"));
+  try {
+    const created = await new JobStore(root).create(sampleJob());
+    await Promise.all([
+      writeFile(path.join(created.paths.input, "camera.part.mp4"), "recording-input"),
+      writeFile(path.join(created.paths.proxy, "top.part.mp4"), "partial"),
+      writeFile(path.join(created.paths.analysis, "manifest.abc.tmp"), "partial"),
+      writeFile(path.join(created.paths.output, "promo.mp4"), "complete"),
+    ]);
+    assert.deepEqual(await cleanupJobTemporaryFiles(created.paths), ["analysis/manifest.abc.tmp", "proxy/top.part.mp4"]);
+    assert.equal(await readFile(path.join(created.paths.input, "camera.part.mp4"), "utf8"), "recording-input");
+    assert.equal(await readFile(path.join(created.paths.output, "promo.mp4"), "utf8"), "complete");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("keeps identical job ids isolated across tenant roots", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-tenants-"));
+  try {
+    const tenantA = new JobStore(path.join(root, "tenant-a"));
+    const tenantB = new JobStore(path.join(root, "tenant-b"));
+    const [jobA, jobB] = await Promise.all([tenantA.create(sampleJob()), tenantB.create(sampleJob())]);
+    await Promise.all([writeFile(path.join(jobA.paths.input, "top.mp4"), "tenant-a"), writeFile(path.join(jobB.paths.input, "top.mp4"), "tenant-b")]);
+    assert.notEqual(jobA.paths.root, jobB.paths.root);
+    assert.equal(await readFile(path.join((await tenantA.load("cook-001")).paths.input, "top.mp4"), "utf8"), "tenant-a");
+    assert.equal(await readFile(path.join((await tenantB.load("cook-001")).paths.input, "top.mp4"), "utf8"), "tenant-b");
+    assert.throws(() => resolveWithin(jobA.paths.root, jobB.paths.root), error => error instanceof CookingVideoError && error.code === "PATH_OUTSIDE_JOB");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("process runner terminates commands that exceed the output limit", async () => {
   await assert.rejects(
     () => runProcess(process.execPath, ["-e", "process.stdout.write('x'.repeat(2048))"], { maxOutputBytes: 1024 }),
@@ -86,6 +154,56 @@ test("job store creates layout and enforces state transitions", async () => {
     assert.equal(ingested.stages.some(stage => stage.status === "running"), false);
     assert.equal(ingested.stages[0].status, "completed");
     await assert.rejects(() => store.transition("cook-001", "completed"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("scans stable camera folders and consumes each batch exactly once", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-intake-"));
+  const inbox = path.join(root, "inbox");
+  const jobs = path.join(root, "jobs");
+  try {
+    const readyBatch = path.join(inbox, "cook-20260904-001");
+    const waitingBatch = path.join(inbox, "cook-20260904-002");
+    await Promise.all([mkdir(readyBatch, { recursive: true }), mkdir(waitingBatch, { recursive: true }), mkdir(jobs, { recursive: true })]);
+    await Promise.all([
+      writeFile(path.join(readyBatch, "top.mp4"), "top-video"),
+      writeFile(path.join(readyBatch, "front.mp4"), "front-video"),
+      writeFile(path.join(readyBatch, "_READY"), ""),
+      writeFile(path.join(waitingBatch, "top.mp4"), "top-video"),
+      writeFile(path.join(waitingBatch, "front.mp4"), "front-video"),
+    ]);
+    const scanned = await scanInbox(inbox, jobs, { stableSeconds: 86_400 });
+    assert.equal(scanned.find(batch => batch.batchId.endsWith("001")).status, "ready");
+    assert.equal(scanned.find(batch => batch.batchId.endsWith("002")).status, "waiting");
+
+    const consumed = await consumeInbox(inbox, jobs, { stableSeconds: 86_400, batchId: "cook-20260904-001", now: new Date("2026-09-04T00:00:00.000Z") });
+    assert.equal(consumed.consumed.length, 1);
+    const loaded = await new JobStore(jobs).load("cook-20260904-001");
+    assert.equal(loaded.job.brief.requireHumanApproval, true);
+    assert.equal(await readFile(path.join(loaded.paths.input, "top.mp4"), "utf8"), "top-video");
+    assert.equal((await scanInbox(inbox, jobs, { batchId: "cook-20260904-001" }))[0].status, "consumed");
+    const repeated = await consumeInbox(inbox, jobs, { batchId: "cook-20260904-001" });
+    assert.deepEqual(repeated.consumed, []);
+    assert.equal(repeated.skipped[0].status, "consumed");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("does not adopt an unrelated existing job with the same inbox batch id", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-intake-collision-"));
+  const inbox = path.join(root, "inbox");
+  const jobs = path.join(root, "jobs");
+  try {
+    const batch = path.join(inbox, "cook-001");
+    await mkdir(batch, { recursive: true });
+    await Promise.all([writeFile(path.join(batch, "top.mp4"), "top"), writeFile(path.join(batch, "front.mp4"), "front"), writeFile(path.join(batch, "_READY"), "")]);
+    await new JobStore(jobs).create(sampleJob());
+    const scanned = await scanInbox(inbox, jobs, { batchId: "cook-001" });
+    assert.equal(scanned[0].status, "invalid");
+    assert.match(scanned[0].reason, /was not created by inbox consumption/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -191,6 +309,27 @@ test("builds timecode synchronization and rejects incomplete timecodes", () => {
   assert.throws(() => buildSyncMap(manifest), error => error instanceof CookingVideoError && error.code === "SYNC_INPUT_INVALID");
 });
 
+test("uses explicit low-confidence aligned-start fallback for silent camera files", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-aligned-start-"));
+  try {
+    const created = await new JobStore(root).create(sampleJob());
+    await writeFile(path.join(created.paths.analysis, "media-manifest.json"), JSON.stringify({
+      schemaVersion: "1.0", jobId: "cook-001", generatedAt: "2026-09-04T00:00:00.000Z", warnings: [],
+      sources: [
+        { cameraId: "top", path: "input/top.mp4", byteSize: 1, sha256: "a", durationMs: 5000, streams: [{ index: 0, codecType: "video" }] },
+        { cameraId: "front", role: "machine_full", path: "input/front.mp4", byteSize: 1, sha256: "b", durationMs: 5000, streams: [{ index: 0, codecType: "video" }] },
+      ],
+    }));
+    await assert.rejects(() => synchronizeJob(created.paths), error => error instanceof CookingVideoError && error.code === "SYNC_INPUT_INVALID");
+    const sync = await synchronizeJob(created.paths, { allowAlignedStart: true, now: new Date("2026-09-04T00:00:00.000Z") });
+    assert.equal(sync.method, "aligned_start");
+    assert.equal(sync.confidence, 0.25);
+    assert.deepEqual(sync.cameras, { top: { offsetMs: 0 }, front: { offsetMs: 0 } });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("parses and normalizes machine event aliases", () => {
   const events = parseMachineEvents('{"timeMs":2000,"event":"stir_fry_started"}\n{"timeMs":1000,"event":"ingredient_added"}\n');
   assert.deepEqual(events.map(event => event.event), ["ingredient_added", "stir_fry"]);
@@ -245,6 +384,44 @@ test("maps machine events through synchronization offsets and extracts evidence"
     assert.equal(timeline.events.find(event => event.cameraId === "top").endMs, 3750);
     assert.equal(calls.find(call => call.args.includes(path.join(created.paths.proxy, "top.mp4"))).args.includes("0.750"), true);
     assert.equal(timeline.events.every(event => event.evidenceFrames.length === 3), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("creates explicitly unverified offline events when machine logs and cloud vision are unavailable", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-heuristic-"));
+  try {
+    const job = sampleJob();
+    delete job.machineEventsPath;
+    const created = await new JobStore(root).create(job);
+    await writeFile(path.join(created.paths.analysis, "media-manifest.json"), JSON.stringify({
+      schemaVersion: "1.0", jobId: job.jobId, generatedAt: "2026-09-04T00:00:00.000Z", warnings: [],
+      sources: [
+        { cameraId: "top", path: "input/top.mp4", proxyPath: "proxy/top.mp4", byteSize: 1, sha256: "a", durationMs: 10_000, streams: [] },
+        { cameraId: "front", path: "input/front.mp4", proxyPath: "proxy/front.mp4", byteSize: 1, sha256: "b", durationMs: 10_000, streams: [] },
+      ],
+    }));
+    await writeFile(path.join(created.paths.analysis, "scene-cuts.json"), JSON.stringify({
+      schemaVersion: "1.0", jobId: job.jobId, generatedAt: "2026-09-04T00:00:00.000Z",
+      sources: [
+        { cameraId: "top", cutsMs: [], motionSamples: [{ timeMs: 2600, score: 3 }, { timeMs: 6200, score: 12 }] },
+        { cameraId: "front", cutsMs: [], motionSamples: [{ timeMs: 5000, score: 8 }] },
+      ],
+    }));
+    const calls = [];
+    const timeline = await detectJobEvents(job, created.paths, {
+      runner: async (command, args) => { calls.push({ command, args }); return { exitCode: 0, stdout: "", stderr: "" }; },
+      now: new Date("2026-09-04T00:00:00.000Z"),
+    });
+    assert.equal(timeline.source, "heuristic");
+    assert.equal(timeline.events.length, 12);
+    assert.equal(timeline.events.every(event => event.confidence === 0.35 && event.problems.includes("human_review_required")), true);
+    assert.equal(calls.some(call => call.args.includes("6.200")), true, "stir-fry window should use the strongest motion sample");
+    await assert.rejects(
+      () => detectHeuristicEvents({ ...job, brief: { ...job.brief, requireHumanApproval: false } }, created.paths),
+      error => error instanceof CookingVideoError && error.code === "APPROVAL_REQUIRED",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -348,6 +525,46 @@ test("uses motion and scene continuity to rank otherwise equal camera candidates
   assert.ok(result.candidates.find(candidate => candidate.cameraId === "front").problems.includes("multiple_scene_cuts"));
 });
 
+test("penalizes shaky, occluded, repetitive, and unsafe vertical candidates", () => {
+  const manifest = {
+    schemaVersion: "1.0", jobId: "cook-001", generatedAt: "2026-09-04T00:00:00.000Z", warnings: [],
+    sources: [
+      { cameraId: "wide", role: "machine_full", path: "input/wide.mp4", byteSize: 1, sha256: "a", durationMs: 8000, streams: [{ index: 0, codecType: "video", width: 3840, height: 1080 }] },
+      { cameraId: "close", role: "food_closeup", path: "input/close.mp4", byteSize: 1, sha256: "b", durationMs: 8000, streams: [{ index: 0, codecType: "video", width: 1080, height: 1920 }] },
+    ],
+  };
+  const events = ["ingredient_added", "stir_fry"].flatMap((event, occurrence) => manifest.sources.map(source => ({
+    occurrenceId: `evt-${occurrence}`, cameraId: source.cameraId, startMs: occurrence * 3000, endMs: occurrence * 3000 + 2500,
+    event, confidence: 0.9, evidenceFrames: [], problems: source.cameraId === "wide" ? ["occluded"] : [],
+  })));
+  const scene = {
+    schemaVersion: "1.0", jobId: manifest.jobId, generatedAt: manifest.generatedAt,
+    sources: [
+      { cameraId: "wide", cutsMs: [], motionSamples: [{ timeMs: 0, score: 0 }, { timeMs: 1000, score: 12 }, { timeMs: 3000, score: 0 }, { timeMs: 4000, score: 12 }] },
+      { cameraId: "close", cutsMs: [], motionSamples: [{ timeMs: 0, score: 6 }, { timeMs: 1000, score: 7 }, { timeMs: 3000, score: 6 }, { timeMs: 4000, score: 7 }] },
+    ],
+  };
+  const result = selectShots({ schemaVersion: "1.0", jobId: manifest.jobId, generatedAt: manifest.generatedAt, source: "vision", events }, manifest, new Date(manifest.generatedAt), new Map(), scene);
+  const wide = result.candidates.find(candidate => candidate.cameraId === "wide");
+  const secondClose = result.candidates.find(candidate => candidate.cameraId === "close" && candidate.occurrenceId === "evt-1");
+  assert.equal(wide.problems.includes("shaky"), true);
+  assert.equal(wide.scores.occlusionPenalty, 0.25);
+  assert.ok(wide.scores.verticalCrop < 0.5);
+  assert.ok(secondClose.scores.repetitionPenalty > 0);
+  assert.equal(result.candidates.filter(candidate => candidate.selected).every(candidate => candidate.cameraId === "close"), true);
+});
+
+test("rejects prohibited promotional claims and unsupported event captions", () => {
+  const decision = {
+    schemaVersion: "1.0", jobId: "cook-001", templateId: "fixture", fps: 30, aspectRatio: "9:16", durationTargetMs: 2500,
+    segments: [{ id: "seg-1", cameraId: "top", sourceStartMs: 0, sourceEndMs: 1000, timelineStartMs: 0, event: "stir_fry", caption: "自动翻炒", transition: "cut", crop: { mode: "cover", focusX: 0.5, focusY: 0.5 } }],
+    audio: { retainSourceAudio: true, sourceGainDb: -8, musicGainDb: -14 }, endCard: { durationMs: 1500, headline: "品牌展示" },
+  };
+  assert.doesNotThrow(() => validatePromotionalCopy(sampleJob(), decision));
+  assert.throws(() => validatePromotionalCopy(sampleJob(), { ...decision, segments: [{ ...decision.segments[0], caption: "效率提升100%" }] }), error => error instanceof CookingVideoError && error.code === "EDIT_CONSTRAINT_VIOLATION");
+  assert.throws(() => validatePromotionalCopy(sampleJob(), { ...decision, segments: [{ ...decision.segments[0], event: "machine_intro", caption: "自动投料" }] }), error => error instanceof CookingVideoError && error.code === "EDIT_CONSTRAINT_VIOLATION");
+});
+
 test("creates a constrained 15-second EDL and SRT", () => {
   const makeCandidate = (occurrenceId, cameraId, event, startMs, endMs) => ({
     occurrenceId, cameraId, event, startMs, endMs, confidence: 0.95, evidenceFrames: [], problems: [],
@@ -365,7 +582,7 @@ test("creates a constrained 15-second EDL and SRT", () => {
   }, "15s");
   assert.equal(decision.durationTargetMs, 15000);
   assert.equal(decision.segments.length, 5);
-  assert.equal(decision.segments[0].caption, "成品稳定，出餐更高效");
+  assert.equal(decision.segments[0].caption, "成品出锅，过程清晰");
   assert.match(captionsToSrt(decision.segments), /00:00:00,000 --> 00:00:02,000/);
   assert.equal(sanitizeCaption("卖点{\\an5}\n测试"), "卖点 \\an5 测试");
   assert.match(captionsToSrt(decision.segments, decision.endCard), /\{\\an5\}让每一道菜都稳定出品/);
@@ -404,7 +621,8 @@ test("builds a controlled render command and rejects out-of-bounds clips", async
     const built = buildRenderArgs(created.job, created.paths, decision, manifest, { draft: true });
     assert.deepEqual([built.width, built.height], [360, 640]);
     assert.equal(built.args.includes("-filter_complex"), true);
-    assert.equal(built.args.at(-1).endsWith("promo-vertical-3s-draft.mp4"), true);
+    assert.equal(built.outputFile.endsWith("promo-vertical-3s-draft.mp4"), true);
+    assert.equal(built.args.at(-1).endsWith("promo-vertical-3s-draft.part.mp4"), true);
     const invalid = { ...decision, segments: [{ ...decision.segments[0], sourceEndMs: 6000 }], durationTargetMs: 7500 };
     assert.throws(() => buildRenderArgs(created.job, created.paths, invalid, manifest), error => error instanceof CookingVideoError && error.code === "EDIT_CONSTRAINT_VIOLATION");
   } finally {
@@ -433,7 +651,7 @@ test("produces a structured quality report from deterministic probes", async () 
     };
     const report = await reviewVideo("cook-001", created.paths, "promo.mp4", { runner, now: new Date("2026-09-04T00:00:00.000Z") });
     assert.equal(report.status, "pass");
-    assert.equal(report.checks.length, 11);
+    assert.equal(report.checks.length, 14);
     assert.equal(JSON.parse(await readFile(path.join(created.paths.output, "quality-report.json"), "utf8")).status, "pass");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -459,6 +677,8 @@ test("ingest writes a deterministic manifest and controlled media commands", asy
           stderr: "",
         };
       }
+      const output = args.at(-1);
+      if (typeof output === "string" && output !== "-" && /\.(?:mp4|jpg)$/i.test(output)) await writeFile(output, "generated-fixture");
       return { exitCode: 0, stdout: "", stderr: "" };
     };
     const manifest = await ingestMedia(created.job, created.paths, { runner });
@@ -470,6 +690,26 @@ test("ingest writes a deterministic manifest and controlled media commands", asy
     for (const call of calls) assert.equal(call.args.some(arg => arg.includes("..")), false);
     const written = JSON.parse(await readFile(path.join(created.paths.analysis, "media-manifest.json"), "utf8"));
     assert.equal(written.jobId, "cook-001");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ingest reports duration mismatch and preserves cameras without audio", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-ingest-edge-"));
+  try {
+    const created = await new JobStore(root).create(sampleJob());
+    await Promise.all([writeFile(path.join(created.paths.input, "top.mp4"), "top"), writeFile(path.join(created.paths.input, "front.mp4"), "front")]);
+    const runner = async (command, args) => {
+      if (command === "ffprobe") {
+        const isTop = args.at(-1).endsWith("top.mp4");
+        return { exitCode: 0, stdout: JSON.stringify({ format: { duration: isTop ? "30" : "12" }, streams: [{ index: 0, codec_type: "video", codec_name: "h264", width: 1280, height: 720, avg_frame_rate: "30/1" }] }), stderr: "" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    const manifest = await ingestMedia(created.job, created.paths, { runner, generateProxy: false, generateContactSheet: false });
+    assert.equal(manifest.warnings.length, 1);
+    assert.equal(manifest.sources.every(source => source.streams.every(stream => stream.codecType !== "audio")), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

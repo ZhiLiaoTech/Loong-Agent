@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { CookingVideoError } from "./errors.js";
+import { validateMediaManifest } from "./artifact-validation.js";
 import { writeJsonAtomic } from "./json-files.js";
-import { resolveWithin, type JobPaths } from "./paths.js";
+import { resolveExistingWithin, type JobPaths } from "./paths.js";
 import { runChecked, runProcess, type ProcessRunner } from "./process-runner.js";
 import type { CookingVideoJob, MediaManifest, MediaSourceManifest, MediaStreamInfo } from "./types.js";
 import { analyzeMediaDynamics } from "./scene-analysis.js";
@@ -103,9 +104,10 @@ export async function ingestMedia(job: CookingVideoJob, paths: JobPaths, options
   await Promise.all([mkdir(paths.proxy, { recursive: true }), mkdir(paths.frames, { recursive: true }), mkdir(paths.analysis, { recursive: true })]);
 
   for (const source of job.sources) {
-    const sourceFile = resolveWithin(paths.root, source.path);
+    let sourceFile: string;
     let fileStat;
     try {
+      sourceFile = await resolveExistingWithin(paths.root, source.path);
       fileStat = await stat(sourceFile);
     } catch (error) {
       throw new CookingVideoError("MEDIA_UNREADABLE", `Cannot read media for camera ${source.cameraId}.`, {
@@ -121,20 +123,32 @@ export async function ingestMedia(job: CookingVideoJob, paths: JobPaths, options
     const metadata = parseFfprobePayload(probeResult.stdout);
     const proxyFile = path.join(paths.proxy, `${source.cameraId}.mp4`);
     const contactFile = path.join(paths.frames, `${source.cameraId}-contact.jpg`);
+    const proxyTemp = path.join(paths.proxy, `${source.cameraId}.part.mp4`);
+    const contactTemp = path.join(paths.frames, `${source.cameraId}-contact.part.jpg`);
     if (options.generateProxy !== false) {
-      await runChecked(runner, ffmpeg, [
-        "-y", "-i", sourceFile, "-map", "0:v:0", "-map", "0:a?", "-vf", "scale=-2:720",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "96k",
-        "-movflags", "+faststart", proxyFile,
-      ], { signal: options.signal });
+      try {
+        await runChecked(runner, ffmpeg, [
+          "-y", "-i", sourceFile, "-map", "0:v:0", "-map", "0:a?", "-vf", "scale=-2:720",
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "96k",
+          "-movflags", "+faststart", proxyTemp,
+        ], { signal: options.signal });
+        await rename(proxyTemp, proxyFile);
+      } finally {
+        await rm(proxyTemp, { force: true });
+      }
     }
     if (options.generateContactSheet !== false) {
       const contactSheetFps = Math.max(0.01, 12_000 / metadata.durationMs).toFixed(6);
-      await runChecked(runner, ffmpeg, [
-        "-y", "-i", sourceFile,
-        "-vf", `fps=${contactSheetFps},scale=320:-2,tile=4x3:nb_frames=12:padding=4:margin=4,format=yuvj420p`,
-        "-frames:v", "1", "-update", "1", contactFile,
-      ], { signal: options.signal });
+      try {
+        await runChecked(runner, ffmpeg, [
+          "-y", "-i", sourceFile,
+          "-vf", `fps=${contactSheetFps},scale=320:-2,tile=4x3:nb_frames=12:padding=4:margin=4,format=yuvj420p`,
+          "-frames:v", "1", "-update", "1", contactTemp,
+        ], { signal: options.signal });
+        await rename(contactTemp, contactFile);
+      } finally {
+        await rm(contactTemp, { force: true });
+      }
     }
     sources.push({
       cameraId: source.cameraId,
@@ -164,6 +178,7 @@ export async function ingestMedia(job: CookingVideoJob, paths: JobPaths, options
     sources,
     warnings,
   };
+  validateMediaManifest(manifest, job.jobId);
   await writeJsonAtomic(path.join(paths.analysis, "media-manifest.json"), manifest);
   await analyzeMediaDynamics(manifest, paths, runner, ffmpeg, options.signal);
   return manifest;

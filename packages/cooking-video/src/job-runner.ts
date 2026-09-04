@@ -1,7 +1,8 @@
 import path from "node:path";
+import { cleanupJobTemporaryFiles } from "./cleanup.js";
 import { CookingVideoError } from "./errors.js";
 import { computeJobInputDigest } from "./digest.js";
-import { detectMachineEvents } from "./event-detection.js";
+import { detectJobEvents } from "./event-detection.js";
 import { createJobEdit } from "./editing.js";
 import { JobStore } from "./job-store.js";
 import { readJsonFile } from "./json-files.js";
@@ -19,6 +20,7 @@ export interface RunJobOptions {
   approved?: boolean;
   draft?: boolean;
   signal?: AbortSignal;
+  allowAlignedStart?: boolean;
 }
 
 export interface RunJobResult {
@@ -74,11 +76,11 @@ export async function runJobPipeline(store: JobStore, jobId: string, options: Ru
         await store.transition(jobId, "ingested", { outputFiles: ["analysis/media-manifest.json", "analysis/scene-cuts.json", ...manifest.sources.flatMap(source => [source.proxyPath, source.contactSheetPath].filter((value): value is string => Boolean(value)))] });
       } else if (status === "ingested") {
         await store.transition(jobId, "syncing");
-        await synchronizeJob(loaded.paths, { referenceCameraId: options.referenceCameraId, manualOffsets: options.manualOffsets });
+        await synchronizeJob(loaded.paths, { referenceCameraId: options.referenceCameraId, manualOffsets: options.manualOffsets, allowAlignedStart: options.allowAlignedStart });
         await store.transition(jobId, "synced", { outputFiles: ["analysis/sync-map.json"] });
       } else if (status === "synced") {
         await store.transition(jobId, "analyzing");
-        const timeline = await detectMachineEvents(loaded.job, loaded.paths, { signal: options.signal });
+        const timeline = await detectJobEvents(loaded.job, loaded.paths, { signal: options.signal });
         await store.transition(jobId, "analyzed", { outputFiles: ["analysis/event-timeline.json", ...timeline.events.flatMap(event => event.evidenceFrames)] });
       } else if (status === "analyzed") {
         await store.transition(jobId, "selecting");
@@ -111,6 +113,7 @@ export async function runJobPipeline(store: JobStore, jobId: string, options: Ru
         throw new CookingVideoError("JOB_STATE_INVALID", `Cannot run pipeline from state ${status}.`);
       }
     } catch (error) {
+      await cleanupJobTemporaryFiles(loaded.paths);
       const current = await store.load(jobId);
       if (current.state.status === "failed") throw error;
       if (options.signal?.aborted) {

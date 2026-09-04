@@ -2,10 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "loong.cooking-video.event-timeline.v1",
   "type": "object",
-  "required": ["schemaVersion", "jobId", "events"],
+  "required": ["schemaVersion", "jobId", "generatedAt", "source", "events"],
   "properties": {
     "schemaVersion": { "const": "1.0" },
     "jobId": { "type": "string" },
+    "generatedAt": { "type": "string" },
+    "source": { "enum": ["machine_events", "vision", "hybrid", "heuristic"] },
     "events": { "type": "array", "items": { "type": "object", "required": ["occurrenceId", "cameraId", "startMs", "endMs", "event", "confidence", "evidenceFrames"], "properties": { "occurrenceId": { "type": "string" }, "cameraId": { "type": "string" }, "startMs": { "type": "integer", "minimum": 0 }, "endMs": { "type": "integer", "minimum": 1 }, "event": { "enum": ["machine_intro", "cooking_started", "ingredient_added", "seasoning_added", "stir_fry", "steam_or_flame", "sauce_coating", "dish_completed", "plating", "finished_dish", "operator_interaction", "unusable", "unknown"] }, "confidence": { "type": "number", "minimum": 0, "maximum": 1 }, "evidenceFrames": { "type": "array", "items": { "type": "string" } }, "problems": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false } }
   },
   "additionalProperties": false

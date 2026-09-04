@@ -1,9 +1,10 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CookingVideoError } from "./errors.js";
+import { validatePromotionalCopy } from "./copy-validation.js";
 import { readJsonFile, writeJsonAtomic } from "./json-files.js";
 import type { JobPaths } from "./paths.js";
-import type { CookingEvent, CookingVideoJob, EditDecision, EditSegment, ShotCandidate, ShotCandidates } from "./types.js";
+import type { CookingEvent, CookingVideoJob, EditDecision, EditSegment, MediaManifest, ShotCandidate, ShotCandidates } from "./types.js";
 
 interface StorySlot {
   id: string;
@@ -25,7 +26,7 @@ const TEMPLATES: Record<string, StoryTemplate> = {
     durationTargetMs: 15_000,
     endCardMs: 1_500,
     slots: [
-      { id: "hook", events: ["finished_dish", "plating", "dish_completed"], durationMs: 2_000, caption: "成品稳定，出餐更高效" },
+      { id: "hook", events: ["finished_dish", "plating", "dish_completed"], durationMs: 2_000, caption: "成品出锅，过程清晰" },
       { id: "start", events: ["machine_intro", "cooking_started", "operator_interaction"], durationMs: 2_500, caption: "一键启动，自动烹饪" },
       { id: "ingredients", events: ["ingredient_added", "seasoning_added"], durationMs: 3_000, caption: "按流程自动投料" },
       { id: "action", events: ["stir_fry", "steam_or_flame", "sauce_coating"], durationMs: 3_500, caption: "稳定翻炒，均匀受热" },
@@ -67,6 +68,11 @@ function fitClip(candidate: ShotCandidate, desiredMs: number, preferTail: boolea
   return { startMs: Math.round(startMs), endMs: Math.round(startMs + duration) };
 }
 
+function evidenceSafeSlotCaption(slot: StorySlot, candidate: ShotCandidate): string {
+  if (slot.id === "start" && candidate.event === "machine_intro") return "设备展示，流程可见";
+  return slot.caption;
+}
+
 function srtTimestamp(milliseconds: number): string {
   const hours = Math.floor(milliseconds / 3_600_000);
   const minutes = Math.floor((milliseconds % 3_600_000) / 60_000);
@@ -91,6 +97,42 @@ export function captionsToSrt(segments: EditSegment[], endCard?: EditDecision["e
   return cues.map((cue, index) => `${index + 1}\n${srtTimestamp(cue.start)} --> ${srtTimestamp(cue.end)}\n${cue.text}\n`).join("\n");
 }
 
+function volumeFromDb(db: number): number {
+  return Math.round(10 ** (db / 20) * 10_000) / 10_000;
+}
+
+export function buildRemotionRenderProps(job: CookingVideoJob, decision: EditDecision, manifest: MediaManifest): Record<string, unknown> {
+  const asPublicUrl = (relativePath: string): string => `/${relativePath.replace(/\\/g, "/").replace(/^\/+/, "")}`;
+  return {
+    clips: decision.segments.map(segment => {
+      const source = manifest.sources.find(item => item.cameraId === segment.cameraId);
+      if (!source) throw new CookingVideoError("EDIT_CONSTRAINT_VIOLATION", `Unknown Remotion clip camera ${segment.cameraId}.`);
+      return {
+        id: segment.id,
+        src: asPublicUrl(source.proxyPath ?? source.path),
+        sourceStartMs: segment.sourceStartMs,
+        sourceEndMs: segment.sourceEndMs,
+        timelineStartMs: segment.timelineStartMs,
+        caption: segment.caption,
+        focusX: segment.crop.focusX,
+        focusY: segment.crop.focusY,
+        sourceVolume: volumeFromDb(decision.audio.sourceGainDb),
+      };
+    }),
+    durationMs: decision.durationTargetMs,
+    brand: {
+      primaryColor: job.brand?.primaryColor ?? "#1D1D1B",
+      accentColor: job.brand?.accentColor ?? "#E75B2A",
+      textColor: job.brand?.textColor ?? "#FFFFFF",
+      fontFamily: job.brand?.fontFamily ?? "Microsoft YaHei, sans-serif",
+      logoSrc: job.brand?.logo ? asPublicUrl(job.brand.logo) : undefined,
+      endCardHeadline: decision.endCard.headline,
+      endCardSubline: job.dish?.name,
+    },
+    music: job.audio?.musicPath ? { src: asPublicUrl(job.audio.musicPath), volume: volumeFromDb(decision.audio.musicGainDb) } : undefined,
+  };
+}
+
 export function createEditDecision(
   job: CookingVideoJob,
   shotCandidates: ShotCandidates,
@@ -113,7 +155,7 @@ export function createEditDecision(
     const clip = fitClip(candidate, slot.durationMs, slot.id === "hook" || slot.id === "result");
     const sellingPointIndex = slot.id === "ingredients" ? 0 : slot.id === "action" ? 1 : undefined;
     const sellingPoint = sellingPointIndex === undefined ? undefined : job.brief.sellingPoints?.[sellingPointIndex];
-    const caption = sellingPoint && sellingPoint.length <= 20 ? sellingPoint : slot.caption;
+    const caption = sellingPoint && sellingPoint.length <= 20 ? sellingPoint : evidenceSafeSlotCaption(slot, candidate);
     segments.push({
       id: `seg-${String(segments.length + 1).padStart(3, "0")}`,
       cameraId: candidate.cameraId,
@@ -134,7 +176,7 @@ export function createEditDecision(
       `Content duration ${timelineStartMs}ms does not satisfy template budget ${contentTarget}ms; add longer candidates or use another template.`,
     );
   }
-  return {
+  const decision: EditDecision = {
     schemaVersion: "1.0",
     jobId: job.jobId,
     templateId: template.id,
@@ -142,19 +184,29 @@ export function createEditDecision(
     aspectRatio: job.brief.formats[0]?.aspectRatio ?? "9:16",
     durationTargetMs: timelineStartMs + template.endCardMs,
     segments,
-    audio: { retainSourceAudio: true, sourceGainDb: -8, musicGainDb: -14 },
+    audio: { retainSourceAudio: true, sourceGainDb: job.audio?.sourceGainDb ?? -8, musicGainDb: job.audio?.musicGainDb ?? -14 },
     endCard: {
       durationMs: template.endCardMs,
       headline: sanitizeCaption(job.brand?.endCardText ?? "让每一道菜都稳定出品"),
     },
   };
+  validatePromotionalCopy(job, decision);
+  return decision;
 }
 
 export async function createJobEdit(paths: JobPaths, job: CookingVideoJob, templateKey?: "15s" | "30s"): Promise<EditDecision> {
-  const candidates = await readJsonFile<ShotCandidates>(path.join(paths.analysis, "shot-candidates.json"));
+  const [candidates, manifest] = await Promise.all([
+    readJsonFile<ShotCandidates>(path.join(paths.analysis, "shot-candidates.json")),
+    readJsonFile<MediaManifest>(path.join(paths.analysis, "media-manifest.json")),
+  ]);
   const decision = createEditDecision(job, candidates, templateKey);
   await writeJsonAtomic(path.join(paths.edit, "edit-decision.json"), decision);
-  await writeJsonAtomic(path.join(paths.edit, "render-props.json"), { schemaVersion: "1.0", editDecision: decision });
+  await writeJsonAtomic(path.join(paths.edit, "render-props.json"), {
+    schemaVersion: "1.0",
+    compositionId: decision.durationTargetMs <= 15_000 ? "CookingPromo15" : "CookingPromo30",
+    publicDirectory: paths.root,
+    props: buildRemotionRenderProps(job, decision, manifest),
+  });
   await writeFile(path.join(paths.edit, "captions.srt"), captionsToSrt(decision.segments, decision.endCard), "utf8");
   return decision;
 }

@@ -16,11 +16,7 @@
     "cooking-video-renderer",
     "cooking-video-reviewer"
   ],
-  "required_models": ["vision", "text"],
-  "default_model_routing": {
-    "video_analysis": "vision",
-    "copywriting": "text"
-  },
+  "required_models": [],
   "pipeline": {
     "description": "多机位炒菜录像自动剪辑与宣传视频生成",
     "stages": [
@@ -34,7 +30,7 @@
     ]
   },
   "permissions": {
-    "filesystem": ["./data/jobs/", "./assets/brand/", "./output/"],
+    "filesystem": ["./data/inbox/", "./data/jobs/", "./assets/brand/", "./output/"],
     "shell": true,
     "mcp_servers": []
   },

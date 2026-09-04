@@ -5,7 +5,7 @@ import { CookingVideoError } from "./errors.js";
 import { readJsonFile, writeJsonAtomic } from "./json-files.js";
 import { resolveWithin, type JobPaths } from "./paths.js";
 import { runChecked, runProcess, type ProcessRunner } from "./process-runner.js";
-import { COOKING_EVENTS, type CookingEvent, type CookingVideoJob, type EventTimeline, type MediaManifest, type SyncMap } from "./types.js";
+import { COOKING_EVENTS, type CookingEvent, type CookingVideoJob, type EventTimeline, type MediaManifest, type SceneAnalysis, type SyncMap } from "./types.js";
 
 interface MachineEventRecord {
   timeMs: number;
@@ -23,6 +23,15 @@ export interface EventDetectionOptions {
   evidenceFramesPerEvent?: number;
   now?: Date;
 }
+
+const HEURISTIC_PHASES: ReadonlyArray<{ event: CookingEvent; position: number }> = [
+  { event: "machine_intro", position: 0.08 },
+  { event: "cooking_started", position: 0.18 },
+  { event: "ingredient_added", position: 0.35 },
+  { event: "stir_fry", position: 0.55 },
+  { event: "dish_completed", position: 0.84 },
+  { event: "finished_dish", position: 0.94 },
+];
 
 const EVENT_ALIASES: Record<string, CookingEvent> = {
   machine_intro: "machine_intro",
@@ -178,4 +187,74 @@ export async function detectMachineEvents(
   };
   await writeJsonAtomic(path.join(paths.analysis, "event-timeline.json"), timeline);
   return timeline;
+}
+
+function strongestMotionTime(scene: SceneAnalysis, cameraId: string, durationMs: number): number | undefined {
+  const samples = scene.sources.find(source => source.cameraId === cameraId)?.motionSamples
+    .filter(sample => sample.timeMs >= durationMs * 0.2 && sample.timeMs <= durationMs * 0.8)
+    .sort((left, right) => right.score - left.score || left.timeMs - right.timeMs);
+  return samples?.[0]?.timeMs;
+}
+
+export async function detectHeuristicEvents(
+  job: CookingVideoJob,
+  paths: JobPaths,
+  options: EventDetectionOptions = {},
+): Promise<EventTimeline> {
+  if (job.brief.requireHumanApproval !== true) {
+    throw new CookingVideoError("APPROVAL_REQUIRED", "Offline heuristic detection requires brief.requireHumanApproval=true because event labels are unverified.");
+  }
+  const [manifest, scene] = await Promise.all([
+    readJsonFile<MediaManifest>(path.join(paths.analysis, "media-manifest.json")),
+    readJsonFile<SceneAnalysis>(path.join(paths.analysis, "scene-cuts.json")),
+  ]);
+  if (manifest.jobId !== job.jobId || scene.jobId !== job.jobId) throw new CookingVideoError("EVENT_INPUT_INVALID", "Heuristic inputs belong to a different job.");
+  const runner = options.runner ?? runProcess;
+  const ffmpeg = options.ffmpegCommand ?? "ffmpeg";
+  const detected: EventTimeline["events"] = [];
+  for (const source of manifest.sources) {
+    const mediaFile = resolveWithin(paths.root, source.proxyPath ?? source.path);
+    const motionTime = strongestMotionTime(scene, source.cameraId, source.durationMs);
+    for (const [index, phase] of HEURISTIC_PHASES.entries()) {
+      const centerMs = Math.round(phase.event === "stir_fry" && motionTime !== undefined ? motionTime : source.durationMs * phase.position);
+      const windowMs = Math.min(5_000, source.durationMs);
+      const startMs = phase.position <= 0.2
+        ? 0
+        : phase.position >= 0.8
+          ? source.durationMs - windowMs
+          : Math.max(0, Math.min(source.durationMs - windowMs, centerMs - Math.floor(windowMs / 2)));
+      const endMs = startMs + windowMs;
+      if (endMs - startMs < 500) continue;
+      const frameName = `heuristic-${String(index + 1).padStart(2, "0")}-${phase.event}-${source.cameraId}.jpg`;
+      const frameFile = path.join(paths.frames, frameName);
+      await runChecked(runner, ffmpeg, [
+        "-y", "-ss", (centerMs / 1000).toFixed(3), "-i", mediaFile,
+        "-frames:v", "1", "-vf", "scale=640:-2,format=yuvj420p", "-update", "1", frameFile,
+      ], { signal: options.signal });
+      detected.push({
+        occurrenceId: `heuristic-${String(index + 1).padStart(2, "0")}-${phase.event}`,
+        cameraId: source.cameraId,
+        startMs,
+        endMs,
+        event: phase.event,
+        confidence: 0.35,
+        evidenceFrames: [path.relative(paths.root, frameFile).replace(/\\/g, "/")],
+        problems: ["heuristic_unverified", "human_review_required"],
+      });
+    }
+  }
+  if (detected.length === 0) throw new CookingVideoError("EVENT_INPUT_INVALID", "No usable heuristic event windows could be created.");
+  const timeline: EventTimeline = {
+    schemaVersion: "1.0",
+    jobId: job.jobId,
+    generatedAt: (options.now ?? new Date()).toISOString(),
+    source: "heuristic",
+    events: detected.sort((left, right) => left.startMs - right.startMs || left.cameraId.localeCompare(right.cameraId)),
+  };
+  await writeJsonAtomic(path.join(paths.analysis, "event-timeline.json"), timeline);
+  return timeline;
+}
+
+export async function detectJobEvents(job: CookingVideoJob, paths: JobPaths, options: EventDetectionOptions = {}): Promise<EventTimeline> {
+  return job.machineEventsPath ? await detectMachineEvents(job, paths, options) : await detectHeuristicEvents(job, paths, options);
 }
