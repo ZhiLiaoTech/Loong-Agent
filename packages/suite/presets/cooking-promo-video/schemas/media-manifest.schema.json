@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.media-manifest.v1",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "generatedAt", "sources"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "jobId": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "sources": { "type": "array", "minItems": 2, "items": { "type": "object" } },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

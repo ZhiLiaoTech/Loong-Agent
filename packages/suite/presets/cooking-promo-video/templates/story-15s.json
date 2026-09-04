@@ -1,0 +1,12 @@
+{
+  "id": "promo-highlight-15s-v1",
+  "durationTargetMs": 15000,
+  "slots": [
+    { "id": "hook", "events": ["finished_dish"], "durationMs": 2000, "required": true },
+    { "id": "start", "events": ["machine_intro", "cooking_started"], "durationMs": 2500, "required": true },
+    { "id": "ingredients", "events": ["ingredient_added", "seasoning_added"], "durationMs": 3000, "required": true },
+    { "id": "action", "events": ["stir_fry", "steam_or_flame"], "durationMs": 3500, "required": true },
+    { "id": "result", "events": ["dish_completed", "plating", "finished_dish"], "durationMs": 2500, "required": true },
+    { "id": "end-card", "events": [], "durationMs": 1500, "required": true }
+  ]
+}

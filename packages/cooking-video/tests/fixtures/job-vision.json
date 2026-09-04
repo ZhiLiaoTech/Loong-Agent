@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "jobId": "synthetic-vision-cook",
+  "dish": { "name": "视觉识别测试菜品" },
+  "machine": { "model": "Synthetic CookBot" },
+  "sources": [
+    { "cameraId": "top", "path": "input/top.mp4", "role": "food_closeup" },
+    { "cameraId": "front", "path": "input/front.mp4", "role": "machine_full" }
+  ],
+  "brief": {
+    "objective": "验证无机器事件时的视觉证据链",
+    "formats": [{ "aspectRatio": "9:16", "durationSec": 15 }],
+    "language": "zh-CN",
+    "requireHumanApproval": true
+  }
+}

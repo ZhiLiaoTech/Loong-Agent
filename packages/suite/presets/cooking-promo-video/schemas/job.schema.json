@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.job.v1",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "sources", "brief"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "jobId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$" },
+    "dish": { "type": "object" },
+    "machine": { "type": "object" },
+    "machineEventsPath": { "type": "string", "pattern": "^input/" },
+    "sources": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["cameraId", "path"],
+        "properties": {
+          "cameraId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+          "path": { "type": "string", "minLength": 1 },
+          "role": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "brief": {
+      "type": "object",
+      "required": ["formats"],
+      "properties": {
+        "audience": { "type": "string" },
+        "objective": { "type": "string" },
+        "sellingPoints": { "type": "array", "items": { "type": "string" } },
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["aspectRatio", "durationSec"],
+            "properties": {
+              "aspectRatio": { "enum": ["9:16", "16:9", "1:1"] },
+              "durationSec": { "type": "integer", "minimum": 5, "maximum": 180 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "language": { "type": "string" },
+        "requireHumanApproval": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "brand": { "type": "object" }
+  },
+  "additionalProperties": false
+}

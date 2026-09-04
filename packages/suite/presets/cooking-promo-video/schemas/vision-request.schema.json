@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.vision-request.v1",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "intervalMs", "allowedEvents", "items"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "jobId": { "type": "string" },
+    "generatedAt": { "type": "string" },
+    "intervalMs": { "type": "integer", "minimum": 1 },
+    "allowedEvents": { "type": "array", "items": { "type": "string" } },
+    "items": { "type": "array", "minItems": 1, "maxItems": 500, "items": { "type": "object", "required": ["id", "cameraId", "sourceTimeMs", "sourceDurationMs", "timelineTimeMs", "imagePath"], "additionalProperties": false, "properties": { "id": { "type": "string" }, "cameraId": { "type": "string" }, "sourceTimeMs": { "type": "integer" }, "sourceDurationMs": { "type": "integer", "minimum": 1 }, "timelineTimeMs": { "type": "integer" }, "imagePath": { "type": "string" } } } }
+  },
+  "additionalProperties": false
+}

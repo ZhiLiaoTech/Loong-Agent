@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.edit-decision.v1",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "templateId", "fps", "aspectRatio", "durationTargetMs", "segments"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "jobId": { "type": "string" },
+    "templateId": { "type": "string" },
+    "fps": { "type": "integer", "minimum": 1, "maximum": 120 },
+    "aspectRatio": { "enum": ["9:16", "16:9", "1:1"] },
+    "durationTargetMs": { "type": "integer", "minimum": 1000 },
+    "segments": { "type": "array", "items": { "type": "object", "required": ["id", "cameraId", "sourceStartMs", "sourceEndMs", "timelineStartMs", "event"], "properties": { "id": { "type": "string" }, "cameraId": { "type": "string" }, "sourceStartMs": { "type": "integer", "minimum": 0 }, "sourceEndMs": { "type": "integer", "minimum": 1 }, "timelineStartMs": { "type": "integer", "minimum": 0 }, "event": { "type": "string" }, "caption": { "type": "string" }, "transition": { "enum": ["cut", "fade", "slide"] }, "crop": { "type": "object" } }, "additionalProperties": true } },
+    "audio": { "type": "object" },
+    "endCard": { "type": "object" }
+  },
+  "additionalProperties": false
+}

@@ -103,10 +103,11 @@ export function createBrowserPlaywrightSnapshotTool(): ToolDefinition<
           await browser.close();
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         return {
           id: invocation.id,
           ok: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: `Playwright snapshot failed: ${message} If Chromium is missing, run \`npx playwright install chromium\`.`,
         };
       }
     },

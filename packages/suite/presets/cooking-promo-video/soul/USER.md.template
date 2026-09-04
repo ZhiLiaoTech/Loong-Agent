@@ -1,0 +1,12 @@
+# 客户配置
+
+- 品牌名称：{{brand.name}}
+- 产品型号：{{machine.model}}
+- 目标受众：{{audience}}
+- 首选平台：{{platform}}
+- 首选画幅：{{aspect_ratio}}
+- 默认时长：{{duration_seconds}}
+- 必须表达的卖点：{{selling_points}}
+- 禁用宣传语：{{forbidden_claims}}
+- 是否必须人工审核：{{require_human_approval}}
+- 素材保留期限：{{retention_days}}

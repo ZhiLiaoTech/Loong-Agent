@@ -9,6 +9,7 @@ Usage:
   loong plugins list
   loong plugins install [-l|--link] <plugin-path>
   loong channels serve [--host <host>] [--port <port>] [--gateway-url <url>] [--secret <value>] [--profile <id>] [--workspace <path>]
+  loong cooking-video <create|status|ingest|sync|prepare-vision|import-vision|detect|select|edit|render|review|run|resume> [...]
 
 Provider:
   Set LOONG_OPENAI_API_KEY or OPENAI_API_KEY for the OpenAI-compatible provider.

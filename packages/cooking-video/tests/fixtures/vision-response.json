@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "jobId": "synthetic-vision-cook",
+  "detections": [
+    { "itemId": "front-00000500", "event": "cooking_started", "confidence": 0.92 },
+    { "itemId": "top-00000500", "event": "ingredient_added", "confidence": 0.90 },
+    { "itemId": "top-00002500", "event": "stir_fry", "confidence": 0.94 },
+    { "itemId": "front-00002500", "event": "dish_completed", "confidence": 0.88 }
+  ]
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { parseChannelsServeArgs, runChannelsServe } from "./channels-serve.js";
+import { runCookingVideo } from "@loong/cooking-video";
 import { runCron } from "./commands/cron.js";
 import { runPlugins } from "./commands/plugins.js";
 import { runSuite } from "./commands/suite.js";
@@ -58,6 +59,13 @@ try {
       await runSuite(args);
     }
     process.exitCode = 0;
+  } else if (command === "cooking-video") {
+    if (isHelpArgs(args)) {
+      printHelp();
+    } else {
+      await runCookingVideo(args);
+    }
+    if (process.exitCode === undefined) process.exitCode = 0;
   } else if (command === "channels") {
     const sub = args[0];
     if (sub === "serve") {

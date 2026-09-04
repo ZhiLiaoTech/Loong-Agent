@@ -3,6 +3,8 @@ import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:
 import path from "node:path";
 import { downloadAndExtractSuite, extractZipFileToTempDir, type DownloadOptions } from "./suite-fetch.js";
 import { resolveLoongDataRoot } from "./paths.js";
+import { parseSuiteManifest } from "./suite-manifest.js";
+import { buildDelegationPlan, writeDelegationPlan } from "./suite-pipeline.js";
 
 const DEFAULT_MAX_TEXT_FILE_BYTES = 256 * 1024;
 
@@ -979,7 +981,12 @@ export async function installSuite(
     installedAt: options.installedAt,
     maxTextFileBytes: options.maxTextFileBytes,
   });
-  return toInstallResult(materialized, dataDir, false);
+  const result = toInstallResult(materialized, dataDir, false);
+  const pipeline = buildDelegationPlan(parseSuiteManifest(materialized.suite.manifest.raw));
+  if (pipeline !== undefined) {
+    result.pipelinePlanFile = await writeDelegationPlan(materialized.releaseWorkspaceDir, pipeline);
+  }
+  return result;
 }
 
 export async function installSuiteFromUrl(

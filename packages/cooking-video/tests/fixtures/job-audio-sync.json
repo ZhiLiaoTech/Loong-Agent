@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "jobId": "synthetic-audio-sync",
+  "sources": [
+    { "cameraId": "front", "path": "input/front.mp4", "role": "machine_full" },
+    { "cameraId": "top", "path": "input/top.mp4", "role": "food_closeup" }
+  ],
+  "brief": {
+    "formats": [{ "aspectRatio": "9:16", "durationSec": 15 }],
+    "requireHumanApproval": true
+  }
+}

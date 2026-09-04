@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.quality-report.v1",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "generatedAt", "status", "checks"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "jobId": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["pass", "warn", "fail"] },
+    "checks": { "type": "array", "items": { "type": "object", "required": ["id", "status", "message"], "properties": { "id": { "type": "string" }, "status": { "enum": ["pass", "warn", "fail"] }, "message": { "type": "string" }, "evidenceTimeMs": { "type": "integer", "minimum": 0 }, "remediation": { "type": "string" } }, "additionalProperties": false } }
+  },
+  "additionalProperties": false
+}

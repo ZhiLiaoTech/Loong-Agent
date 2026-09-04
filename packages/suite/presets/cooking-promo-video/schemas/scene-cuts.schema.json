@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.scene-analysis.v1",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "generatedAt", "sources"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "jobId": { "type": "string" },
+    "generatedAt": { "type": "string" },
+    "sources": { "type": "array", "items": { "type": "object", "required": ["cameraId", "cutsMs", "motionSamples"], "additionalProperties": false, "properties": { "cameraId": { "type": "string" }, "cutsMs": { "type": "array", "items": { "type": "integer" } }, "motionSamples": { "type": "array", "items": { "type": "object", "required": ["timeMs", "score"], "additionalProperties": false, "properties": { "timeMs": { "type": "integer" }, "score": { "type": "number" } } } } } }
+  },
+  "additionalProperties": false
+}

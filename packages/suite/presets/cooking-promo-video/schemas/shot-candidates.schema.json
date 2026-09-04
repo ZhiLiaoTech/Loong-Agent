@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.shot-candidates.v1",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "candidates"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "jobId": { "type": "string" },
+    "candidates": { "type": "array", "items": { "type": "object", "required": ["occurrenceId", "cameraId", "event", "rank", "selected", "scores"], "properties": { "occurrenceId": { "type": "string" }, "cameraId": { "type": "string" }, "event": { "type": "string" }, "rank": { "type": "integer", "minimum": 1 }, "selected": { "type": "boolean" }, "scores": { "type": "object", "required": ["eventConfidence", "roleFit", "resolution", "durationFit", "exposure", "dynamicRange", "saturation", "sharpness", "motion", "continuity", "total"], "properties": { "eventConfidence": { "type": "number" }, "roleFit": { "type": "number" }, "resolution": { "type": "number" }, "durationFit": { "type": "number" }, "exposure": { "type": "number" }, "dynamicRange": { "type": "number" }, "saturation": { "type": "number" }, "sharpness": { "type": "number" }, "motion": { "type": "number" }, "continuity": { "type": "number" }, "total": { "type": "number" } }, "additionalProperties": false } }, "additionalProperties": true } }
+  },
+  "additionalProperties": false
+}

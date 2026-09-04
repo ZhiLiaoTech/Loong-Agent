@@ -1,0 +1,30 @@
+{
+  "name": "@loong/cooking-video",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic multi-camera cooking video job and media processing primitives.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "loong-cooking-video": "./dist/cli.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test tests/*.test.mjs",
+    "test:e2e": "tsc -p tsconfig.json && node tests/e2e-real.mjs",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

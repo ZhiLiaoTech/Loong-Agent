@@ -1160,6 +1160,7 @@ async function testAiSummarizationPipeline(): Promise<void> {
     4_000,
     { keepRecentTurns: 2, olderToolMaxChars: 400 },
     {
+      compactionPolicy: "always",
       aiSummarization: {
         enabled: true,
         provider,

@@ -1,0 +1,4 @@
+{"timeMs":500,"event":"cooking_started"}
+{"timeMs":1500,"event":"ingredient_added","ingredient":"red_pepper"}
+{"timeMs":2500,"event":"stir_fry_started"}
+{"timeMs":3500,"event":"cooking_completed"}

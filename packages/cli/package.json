@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@loong/channels": "workspace:*",
+    "@loong/cooking-video": "workspace:*",
     "@loong/core": "workspace:*",
     "@loong/cron": "workspace:*",
     "@loong/delegation": "workspace:*",

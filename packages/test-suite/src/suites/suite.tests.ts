@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os";
 import path from "node:path";
 import {
+  installSuite,
   loadSuiteWorkspace,
   LoongSuiteError,
   loadSuiteInstance,
@@ -224,6 +225,39 @@ export const suiteTestCases: TestCase[] = [
       assert.equal(thrown.path, "suite.json", "incomplete manifest error should point to suite.json");
     } finally {
       await rm(packageRoot, { recursive: true, force: true });
+    }
+  }],
+  ["suite install materializes declared pipeline plan", async () => {
+    const packageRoot = await mkdtemp(path.join(os.tmpdir(), "loong-suite-pipeline-source-"));
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "loong-suite-pipeline-data-"));
+    try {
+      await writeWorkspaceJson(packageRoot, "suite.json", {
+        id: "video-pipeline",
+        name: "Video Pipeline",
+        version: "1.0.0",
+        skills: ["ingest", "render"],
+        pipeline: {
+          description: "Ingest then render",
+          stages: [
+            { stage: "ingest", skill: "ingest", description: "Inspect media" },
+            { stage: "render", skill: "render", description: "Render output" },
+          ],
+        },
+      });
+      await writeWorkspaceFile(packageRoot, "skills/ingest/SKILL.md", "# Ingest\nInspect media.");
+      await writeWorkspaceFile(packageRoot, "skills/render/SKILL.md", "# Render\nRender output.");
+
+      const installed = await installSuite(packageRoot, { dataDir });
+      assert.ok(installed.pipelinePlanFile, "pipeline plan path should be returned");
+      const plan = JSON.parse(await readFile(installed.pipelinePlanFile, "utf8")) as {
+        tasks: Array<{ id: string; dependsOn?: string[]; metadata?: Record<string, unknown> }>;
+      };
+      assert.equal(plan.tasks.length, 2, "each stage should become one task");
+      assert.deepEqual(plan.tasks[1]?.dependsOn, ["ingest"], "manifest stages should be sequential by default");
+      assert.equal(plan.tasks[1]?.metadata?.["skill"], "render", "task metadata should retain skill id");
+    } finally {
+      await rm(packageRoot, { recursive: true, force: true });
+      await rm(dataDir, { recursive: true, force: true });
     }
   }],
 ];

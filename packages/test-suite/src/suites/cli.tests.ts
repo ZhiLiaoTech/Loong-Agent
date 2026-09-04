@@ -214,6 +214,12 @@ async function testCliCronOnce(): Promise<void> {
   }
 }
 
+async function testCliCookingVideoHelp(): Promise<void> {
+  const result = await runCli(["cooking-video", "--help"]);
+  assert(result.stdout.includes("loong cooking-video"), "CLI help should expose the cooking-video command");
+  assert(result.stdout.includes("prepare-vision"), "CLI help should list the vision evidence workflow");
+}
+
 
 async function testCliModelProviderPlugin(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "loong-cli-provider-plugin-"));
@@ -347,6 +353,7 @@ async function testCliPluginsInstallLink(): Promise<void> {
 
 export const cliTestCases: TestCase[] = [
   ["cli skills slash command", testCliSkillsSlashCommand],
+  ["cli cooking video help", testCliCookingVideoHelp],
   ["cli cron once", testCliCronOnce],
   ["cli model provider plugin", testCliModelProviderPlugin],
   ["cli model provider config", testCliModelProviderConfig],

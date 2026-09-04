@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "jobId": "synthetic-cook",
+  "dish": { "name": "测试菜品", "ingredients": ["红椒", "青椒"] },
+  "machine": { "model": "Synthetic CookBot" },
+  "machineEventsPath": "input/machine-events.jsonl",
+  "sources": [
+    { "cameraId": "top", "path": "input/top.mp4", "role": "food_closeup" },
+    { "cameraId": "front", "path": "input/front.mp4", "role": "machine_full" }
+  ],
+  "brief": {
+    "objective": "验证媒体处理管线",
+    "sellingPoints": ["自动投料", "稳定翻炒"],
+    "formats": [{ "aspectRatio": "9:16", "durationSec": 15 }],
+    "language": "zh-CN",
+    "requireHumanApproval": true
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "id": "cooking-promo-video",
+  "name": "自动炒菜机宣传视频助手",
+  "version": "0.1.0",
+  "icon": "video",
+  "color": "#E75B2A",
+  "description": "从自动炒菜机多机位录像中识别关键片段并生成宣传视频",
+  "author": "ClawWorks",
+  "license": "proprietary",
+  "skills": [
+    "cooking-media-ingest",
+    "cooking-multicam-sync",
+    "cooking-event-detector",
+    "cooking-shot-selector",
+    "cooking-promo-editor",
+    "cooking-video-renderer",
+    "cooking-video-reviewer"
+  ],
+  "required_models": ["vision", "text"],
+  "default_model_routing": {
+    "video_analysis": "vision",
+    "copywriting": "text"
+  },
+  "pipeline": {
+    "description": "多机位炒菜录像自动剪辑与宣传视频生成",
+    "stages": [
+      { "stage": "ingest", "skill": "cooking-media-ingest", "description": "创建素材清单并生成代理素材" },
+      { "stage": "sync", "skill": "cooking-multicam-sync", "description": "同步多机位时间轴" },
+      { "stage": "detect", "skill": "cooking-event-detector", "description": "识别炒菜事件与精彩时刻" },
+      { "stage": "select", "skill": "cooking-shot-selector", "description": "选择每个事件的最佳机位" },
+      { "stage": "edit", "skill": "cooking-promo-editor", "description": "生成文案和结构化剪辑决策表" },
+      { "stage": "render", "skill": "cooking-video-renderer", "description": "渲染目标画幅宣传视频" },
+      { "stage": "review", "skill": "cooking-video-reviewer", "description": "执行技术与内容质量检查" }
+    ]
+  },
+  "permissions": {
+    "filesystem": ["./data/jobs/", "./assets/brand/", "./output/"],
+    "shell": true,
+    "mcp_servers": []
+  },
+  "onboarding": {
+    "enabled": true,
+    "template": "soul/USER.md.template",
+    "first_task_after_onboarding": true
+  }
+}
