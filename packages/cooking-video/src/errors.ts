@@ -28,7 +28,10 @@ export type CookingVideoErrorCode =
   | "ARTIFACT_INVALID"
   | "INTAKE_INVALID"
   | "INTAKE_NOT_READY"
-  | "INTAKE_LOCKED";
+  | "INTAKE_LOCKED"
+  | "UPLOAD_INVALID"
+  | "UPLOAD_INTEGRITY_FAILED"
+  | "UPLOAD_PROVIDER_FAILED";
 
 export class CookingVideoError extends Error {
   readonly code: CookingVideoErrorCode;

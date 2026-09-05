@@ -15,6 +15,7 @@ export * from "./intake.js";
 export * from "./json-files.js";
 export * from "./media.js";
 export * from "./observability.js";
+export * from "./object-storage.js";
 export * from "./paths.js";
 export * from "./process-runner.js";
 export * from "./quality.js";

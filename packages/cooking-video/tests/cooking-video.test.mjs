@@ -8,6 +8,8 @@ import {
   CookingVideoQueue,
   CookingVideoMetricsStore,
   CookingVideoFeedbackStore,
+  MultipartUploadCoordinator,
+  buildTenantObjectKey,
   classifyReviewFailureModes,
   cleanupJobTemporaryFiles,
   computeJobInputDigest,
@@ -51,6 +53,82 @@ import {
   validateJob,
   validateGoldenAnnotation,
 } from "../dist/index.js";
+
+function fakeMultipartProvider() {
+  const uploaded = new Map();
+  let completedSha256;
+  return {
+    uploaded,
+    setCompletedSha256(value) { completedSha256 = value; },
+    async createMultipartUpload() { return { providerUploadId: "provider-upload-1" }; },
+    async signPartUpload(input) {
+      return { url: `https://storage.example.test/${input.objectKey}?part=${input.partNumber}`, method: "PUT", headers: { "x-content-sha256": input.sha256 }, expiresAt: new Date(Date.now() + 900_000).toISOString() };
+    },
+    async inspectUploadedPart(input) {
+      const part = uploaded.get(input.partNumber);
+      if (!part) throw new Error("part missing");
+      return { partNumber: input.partNumber, ...part };
+    },
+    async completeMultipartUpload(input) {
+      return { objectKey: input.objectKey, byteSize: input.byteSize, sha256: completedSha256 ?? input.sha256, etag: "complete-etag" };
+    },
+    async abortMultipartUpload() {},
+  };
+}
+
+test("coordinates resumable direct multipart uploads and verifies every checksum", async () => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "cooking-upload-"));
+  try {
+    const provider = fakeMultipartProvider();
+    const coordinator = new MultipartUploadCoordinator(stateRoot, provider);
+    const fullDigest = "a".repeat(64);
+    const firstDigest = "b".repeat(64);
+    const secondDigest = "c".repeat(64);
+    const session = await coordinator.create({ tenantId: "tenant-a", jobId: "job-1", assetId: "camera-top", fileName: "source.mp4", contentType: "video/mp4", byteSize: 1_500_000, sha256: fullDigest, partSize: 1_048_576 });
+    assert.equal(session.objectKey, "tenant-a/job-1/camera-top/source.mp4");
+    assert.equal(session.partCount, 2);
+
+    const signed = await coordinator.signPart(session.uploadId, 1, firstDigest);
+    assert.equal(signed.method, "PUT");
+    assert.match(signed.url, /^https:\/\//);
+    provider.uploaded.set(1, { byteSize: 1_048_576, sha256: firstDigest, etag: "part-1" });
+    await coordinator.confirmPart(session.uploadId, 1);
+    await coordinator.signPart(session.uploadId, 2, secondDigest);
+    provider.uploaded.set(2, { byteSize: 451_424, sha256: secondDigest, etag: "part-2" });
+    await coordinator.confirmPart(session.uploadId, 2);
+
+    const resumed = new MultipartUploadCoordinator(stateRoot, provider);
+    const restored = await resumed.get(session.uploadId);
+    assert.equal(restored.parts.filter(part => part.status === "verified").length, 2);
+    const completed = await resumed.complete(session.uploadId);
+    assert.equal(completed.sha256, fullDigest);
+    assert.equal((await resumed.get(session.uploadId)).status, "completed");
+    assert.deepEqual(await resumed.complete(session.uploadId), completed);
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("rejects unsafe multipart keys, wrong parts, incomplete uploads, and final digest mismatches", async () => {
+  assert.throws(() => buildTenantObjectKey({ tenantId: "tenant-a", jobId: "job-1", assetId: "source", fileName: "../escape.mp4" }), error => error instanceof CookingVideoError && error.code === "UPLOAD_INVALID");
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "cooking-upload-invalid-"));
+  try {
+    const provider = fakeMultipartProvider();
+    const coordinator = new MultipartUploadCoordinator(stateRoot, provider);
+    const session = await coordinator.create({ tenantId: "tenant-a", jobId: "job-1", assetId: "source", fileName: "input.mp4", contentType: "video/mp4", byteSize: 1_048_576, sha256: "d".repeat(64) });
+    await assert.rejects(() => coordinator.complete(session.uploadId), error => error instanceof CookingVideoError && /Every expected part/.test(error.message));
+    await coordinator.signPart(session.uploadId, 1, "e".repeat(64));
+    provider.uploaded.set(1, { byteSize: 1_048_575, sha256: "e".repeat(64), etag: "bad-size" });
+    await assert.rejects(() => coordinator.confirmPart(session.uploadId, 1), error => error instanceof CookingVideoError && error.code === "UPLOAD_INTEGRITY_FAILED");
+    provider.uploaded.set(1, { byteSize: 1_048_576, sha256: "e".repeat(64), etag: "part-1" });
+    await coordinator.confirmPart(session.uploadId, 1);
+    provider.setCompletedSha256("f".repeat(64));
+    await assert.rejects(() => coordinator.complete(session.uploadId), error => error instanceof CookingVideoError && error.code === "UPLOAD_INTEGRITY_FAILED");
+    assert.equal((await coordinator.get(session.uploadId)).status, "failed");
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
 
 test("validates reviewed golden annotations and cross-field labeling rules", async () => {
   const fixture = JSON.parse(await readFile(path.join("tests", "fixtures", "golden-annotation.json"), "utf8"));
