@@ -431,6 +431,19 @@ test("production health rejects corrupt metric windows and treats no traffic as 
   assert.throws(() => evaluateProductionHealth({ ...empty, apiErrors: 1 }), error => error instanceof CookingVideoError && error.code === "JOB_INVALID");
 });
 
+test("production, customer, and upgrade manuals contain required operational gates", async () => {
+  const docsRoot = path.join("..", "..", "docs");
+  const deployment = await readFile(path.join(docsRoot, "COOKING_PROMO_VIDEO_PRODUCTION_DEPLOYMENT.md"), "utf8");
+  const customer = await readFile(path.join(docsRoot, "COOKING_PROMO_VIDEO_CUSTOMER_OPERATIONS.md"), "utf8");
+  const upgrade = await readFile(path.join(docsRoot, "COOKING_PROMO_VIDEO_UPGRADE.md"), "utf8");
+  assert.match(deployment, /镜像按 digest 发布/);
+  assert.match(deployment, /备份与恢复/);
+  assert.match(customer, /_READY/);
+  assert.match(customer, /quality report/);
+  assert.match(upgrade, /租约安全到期/);
+  assert.match(upgrade, /不可逆迁移/);
+});
+
 test("validates reviewed golden annotations and cross-field labeling rules", async () => {
   const fixture = JSON.parse(await readFile(path.join("tests", "fixtures", "golden-annotation.json"), "utf8"));
   const annotation = validateGoldenAnnotation(fixture, "cook-001");

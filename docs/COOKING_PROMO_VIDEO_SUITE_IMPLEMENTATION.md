@@ -706,6 +706,8 @@ MVP 建议门槛：
 
 `CVS-909` 的默认月度 SLO 为 API 可用率 99.5%、作业成功率 95%、模型成功率 90%、作业 P95 30 分钟、最老排队任务 10 分钟、Worker 心跳 120 秒。`evaluateProductionHealth` 把窗口指标评估为 healthy/degraded/unhealthy，并为 API、作业、模型、队列、死信和 Worker 心跳生成 warning/critical 告警及固定 Runbook 锚点；`renderPrometheusMetrics` 输出可直接抓取的指标文本。无流量窗口保持中性，不可能的计数或倒置时间窗口拒绝进入监控。处置步骤见 `COOKING_PROMO_VIDEO_RUNBOOK.md`。
 
+`CVS-910` 交付三份面向不同角色的手册：`COOKING_PROMO_VIDEO_PRODUCTION_DEPLOYMENT.md` 覆盖构建、canary、滚动发布、备份恢复和回滚；`COOKING_PROMO_VIDEO_CUSTOMER_OPERATIONS.md` 覆盖 inbox 投递、同步确认、审核、质检、删除和报障；`COOKING_PROMO_VIDEO_UPGRADE.md` 覆盖兼容性、迁移顺序、可逆/不可逆回滚和版本检查表。自动测试检查关键操作门禁不会在后续编辑中丢失。
+
 `CVS-905` 使用 `deploy/cooking-video/Dockerfile` 作为三类 Worker 的共同镜像。Node 基础镜像同时固定精确版本和 OCI digest，Debian 软件源固定到不可变 snapshot 时间点，pnpm、Remotion、React 和 TypeScript 固定精确版本；构建阶段使用 frozen lockfile。运行层安装 FFmpeg/ffprobe、Chromium、Noto CJK、DejaVu 和 tini，并由 `verify-runtime.mjs` 在构建时逐项验证。容器以 uid/gid 10001 非 root 用户运行，只有 `/data` 作为持久化卷。
 
 镜像验证命令：
