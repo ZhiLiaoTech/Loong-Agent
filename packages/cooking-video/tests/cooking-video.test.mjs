@@ -27,6 +27,7 @@ import {
   detectJobEvents,
   detectMachineEvents,
   enforceJobRetention,
+  evaluateProductionHealth,
   estimateEnvelopeOffset,
   executeCookingVideoWorkerTask,
   ingestMedia,
@@ -42,6 +43,7 @@ import {
   parseFfprobePayload,
   resolveWithin,
   reviewVideo,
+  renderPrometheusMetrics,
   runPersistentWorkerOnce,
   remotionCompositionId,
   runCopyAdapter,
@@ -402,6 +404,31 @@ test("persistent worker claims, executes, and commits an idempotent result diges
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("production health evaluates healthy SLO windows and exports Prometheus metrics", () => {
+  const metrics = { windowStartedAt: "2026-09-05T00:00:00.000Z", windowEndedAt: "2026-09-05T01:00:00.000Z", apiRequests: 1000, apiErrors: 1, jobsCompleted: 99, jobsFailed: 1, jobDurationP95Ms: 600_000, queueDepth: 2, queueOldestAgeMs: 30_000, deadLetterDepth: 0, modelCalls: 100, modelFailures: 2, workerHeartbeatAgeMs: { media: 10_000, render: 20_000 } };
+  const health = evaluateProductionHealth(metrics, undefined, new Date("2026-09-05T01:00:01.000Z"));
+  assert.equal(health.status, "healthy");
+  assert.equal(health.alerts.length, 0);
+  const prometheus = renderPrometheusMetrics(health);
+  assert.match(prometheus, /cooking_video_api_availability 0\.999/);
+  assert.match(prometheus, /worker="render"/);
+});
+
+test("production health raises critical backlog, dead-letter, and stale-worker alerts", () => {
+  const metrics = { windowStartedAt: "2026-09-05T00:00:00.000Z", windowEndedAt: "2026-09-05T01:00:00.000Z", apiRequests: 100, apiErrors: 5, jobsCompleted: 70, jobsFailed: 30, jobDurationP95Ms: 2_000_000, queueDepth: 50, queueOldestAgeMs: 2_000_000, deadLetterDepth: 3, modelCalls: 10, modelFailures: 2, workerHeartbeatAgeMs: { render: 500_000 } };
+  const health = evaluateProductionHealth(metrics);
+  assert.equal(health.status, "unhealthy");
+  assert.deepEqual(new Set(health.alerts.filter(alert => alert.severity === "critical").map(alert => alert.code)), new Set(["API_AVAILABILITY", "JOB_SUCCESS_RATE", "QUEUE_BACKLOG", "DEAD_LETTER", "WORKER_HEARTBEAT"]));
+  assert(health.alerts.every(alert => alert.runbook.startsWith("COOKING_PROMO_VIDEO_RUNBOOK.md#")));
+});
+
+test("production health rejects corrupt metric windows and treats no traffic as neutral", () => {
+  const empty = { windowStartedAt: "2026-09-05T00:00:00.000Z", windowEndedAt: "2026-09-05T01:00:00.000Z", apiRequests: 0, apiErrors: 0, jobsCompleted: 0, jobsFailed: 0, jobDurationP95Ms: 0, queueDepth: 0, queueOldestAgeMs: 0, deadLetterDepth: 0, modelCalls: 0, modelFailures: 0, workerHeartbeatAgeMs: {} };
+  assert.equal(evaluateProductionHealth(empty).status, "healthy");
+  assert.throws(() => evaluateProductionHealth({ ...empty, apiErrors: -1 }), error => error instanceof CookingVideoError && error.code === "JOB_INVALID");
+  assert.throws(() => evaluateProductionHealth({ ...empty, apiErrors: 1 }), error => error instanceof CookingVideoError && error.code === "JOB_INVALID");
 });
 
 test("validates reviewed golden annotations and cross-field labeling rules", async () => {

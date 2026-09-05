@@ -20,6 +20,7 @@ export * from "./observability.js";
 export * from "./object-storage.js";
 export * from "./paths.js";
 export * from "./process-runner.js";
+export * from "./production-monitoring.js";
 export * from "./quality.js";
 export * from "./review-workflow.js";
 export * from "./render.js";
