@@ -26,6 +26,13 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .job span, .jobActive span, .job time, .jobActive time { color: var(--muted); font-size: 11px; font-family: var(--font-mono); }
 .reviewPane { min-width: 0; padding: 16px; background: var(--surface); }
 .blank { min-height: 500px; display: grid; place-items: center; color: var(--muted); }
+.metricsPanel { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 16px; align-items: center; margin-bottom: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); }
+.metricsPanel > div { display: grid; gap: 2px; }
+.metricsPanel span, .metricsPanel dt { color: var(--muted); font-size: 10px; }
+.metricsPanel strong { font: 18px var(--font-mono); }
+.metricsPanel dl { display: grid; grid-template-columns: repeat(5, minmax(90px, 1fr)); gap: 12px; margin: 0; }
+.metricsPanel dl div { min-width: 0; }
+.metricsPanel dd { margin: 3px 0 0; font: 12px var(--font-mono); }
 .overviewGrid { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(280px, 1fr) minmax(300px, 1.3fr); gap: 12px; }
 .panel, .preview, .timelinePanel, .reviewPanel { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); }
 .panel { padding: 14px; }
@@ -68,5 +75,5 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .skeletonLarge { width: 70%; height: 280px; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton, .skeletonLarge { animation: none; } }
-@media (max-width: 1100px) { .overviewGrid { grid-template-columns: 1fr 1fr; } .preview { grid-column: 1 / -1; } .segment { grid-template-columns: 130px 1fr 1fr 1fr; } .captionField { grid-column: 2 / -1; } }
-@media (max-width: 760px) { .page { padding: 12px; } .header { align-items: flex-start; flex-direction: column; } .workspace { grid-template-columns: 1fr; } .jobRail { border-right: 0; border-bottom: 1px solid var(--line); max-height: 180px; overflow: auto; } .overviewGrid { grid-template-columns: 1fr; } .preview { grid-column: auto; } .segment { grid-template-columns: 1fr 1fr; } .segmentIdentity, .captionField { grid-column: 1 / -1; } .reviewPanel, .reviewFields { grid-template-columns: 1fr; } .reviewActions { justify-content: flex-start; } }
+@media (max-width: 1100px) { .metricsPanel dl { grid-template-columns: repeat(3, 1fr); } .overviewGrid { grid-template-columns: 1fr 1fr; } .preview { grid-column: 1 / -1; } .segment { grid-template-columns: 130px 1fr 1fr 1fr; } .captionField { grid-column: 2 / -1; } }
+@media (max-width: 760px) { .page { padding: 12px; } .header { align-items: flex-start; flex-direction: column; } .workspace { grid-template-columns: 1fr; } .jobRail { border-right: 0; border-bottom: 1px solid var(--line); max-height: 180px; overflow: auto; } .metricsPanel { grid-template-columns: 1fr; } .metricsPanel dl { grid-template-columns: 1fr 1fr; } .overviewGrid { grid-template-columns: 1fr; } .preview { grid-column: auto; } .segment { grid-template-columns: 1fr 1fr; } .segmentIdentity, .captionField { grid-column: 1 / -1; } .reviewPanel, .reviewFields { grid-template-columns: 1fr; } .reviewActions { justify-content: flex-start; } }

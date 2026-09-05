@@ -1,6 +1,8 @@
 import { assertPromotionalText, hasDirectVisualSupport } from "./copy-validation.js";
 import { CookingVideoError } from "./errors.js";
+import { modelMetricErrorCode, modelMetricStatus } from "./observability.js";
 import { COOKING_EVENTS, type CookingEvent } from "./types.js";
+import type { ModelCallMetric } from "./types.js";
 
 export interface CopyGenerationRequest {
   schemaVersion: "1.0";
@@ -28,7 +30,20 @@ export interface CopyAdapterOptions {
   maxAttempts?: number;
   maxInputCharacters?: number;
   maxOutputCharacters?: number;
+  estimatedCostPerCallUsd?: number;
+  maxBudgetUsd?: number;
   signal?: AbortSignal;
+  onMetric?: (metric: ModelCallMetric) => void | Promise<void>;
+}
+
+export interface CopyAdapterResult {
+  copy: GeneratedCopy;
+  attempts: number;
+  metrics: { calls: number; failedCalls: number; inputCharacters: number; outputCharacters: number; estimatedCostUsd: number; durationMs: number };
+}
+
+async function emitMetric(sink: CopyAdapterOptions["onMetric"], metric: ModelCallMetric): Promise<void> {
+  try { await sink?.(metric); } catch { /* telemetry must not change model-call behavior */ }
 }
 
 function parse(raw: unknown): GeneratedCopy {
@@ -70,12 +85,13 @@ export function validateGeneratedCopy(request: CopyGenerationRequest, value: Gen
   return { schemaVersion: "1.0", jobId: request.jobId, title: value.title, captions, cta: value.cta };
 }
 
-export async function runCopyAdapter(request: CopyGenerationRequest, client: CopyModelClient, options: CopyAdapterOptions): Promise<{ copy: GeneratedCopy; attempts: number }> {
+export async function runCopyAdapter(request: CopyGenerationRequest, client: CopyModelClient, options: CopyAdapterOptions): Promise<CopyAdapterResult> {
   if (!options.allowModelCall) throw new CookingVideoError("MODEL_CALL_FAILED", "Text model use requires explicit authorization.");
   const timeoutMs = options.timeoutMs ?? 30_000;
   const maxAttempts = options.maxAttempts ?? 2;
   const maxInputCharacters = options.maxInputCharacters ?? 4000;
   const maxOutputCharacters = options.maxOutputCharacters ?? 1000;
+  const estimatedCostPerCallUsd = options.estimatedCostPerCallUsd ?? 0;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 300_000 || !Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 3) {
     throw new CookingVideoError("JOB_INVALID", "Copy model timeout or attempt limit is invalid.");
   }
@@ -83,20 +99,53 @@ export async function runCopyAdapter(request: CopyGenerationRequest, client: Cop
     throw new CookingVideoError("JOB_INVALID", "Copy model character budgets must be integers of at least 100.");
   }
   if (JSON.stringify(request).length > maxInputCharacters) throw new CookingVideoError("MODEL_BUDGET_EXCEEDED", `Copy request exceeds ${maxInputCharacters} characters.`);
+  if (!Number.isFinite(estimatedCostPerCallUsd) || estimatedCostPerCallUsd < 0 || (options.maxBudgetUsd !== undefined && (!Number.isFinite(options.maxBudgetUsd) || options.maxBudgetUsd < 0))) {
+    throw new CookingVideoError("JOB_INVALID", "Copy model cost and budget must be non-negative.");
+  }
+  const inputCharacters = JSON.stringify(request).length;
   let lastError: unknown;
+  let failedCalls = 0;
+  let totalDurationMs = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (options.maxBudgetUsd !== undefined && attempt * estimatedCostPerCallUsd > options.maxBudgetUsd + Number.EPSILON) {
+      throw new CookingVideoError("MODEL_BUDGET_EXCEEDED", `Copy model attempt ${attempt} would exceed budget $${options.maxBudgetUsd}.`);
+    }
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(new CookingVideoError("MODEL_TIMEOUT", `Copy model call exceeded ${timeoutMs}ms.`)), timeoutMs);
     const signal = options.signal ? AbortSignal.any([options.signal, timeout.signal]) : timeout.signal;
+    const startedAt = new Date();
+    const startedMs = performance.now();
     try {
       if (signal.aborted) throw signal.reason;
       const raw = await Promise.race([
         client(request, { signal, attempt }),
         new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })),
       ]);
-      return { copy: validateGeneratedCopy(request, parse(raw), maxOutputCharacters), attempts: attempt };
+      const copy = validateGeneratedCopy(request, parse(raw), maxOutputCharacters);
+      const outputCharacters = JSON.stringify(copy).length;
+      const durationMs = Math.max(0, Math.round(performance.now() - startedMs));
+      totalDurationMs += durationMs;
+      await emitMetric(options.onMetric, {
+        schemaVersion: "1.0", jobId: request.jobId, operation: "copy", status: "succeeded", attempt,
+        startedAt: startedAt.toISOString(), durationMs, inputUnits: inputCharacters, outputUnits: outputCharacters,
+        estimatedCostUsd: estimatedCostPerCallUsd,
+      });
+      return { copy, attempts: attempt, metrics: {
+        calls: attempt, failedCalls, inputCharacters, outputCharacters,
+        estimatedCostUsd: Math.round(attempt * estimatedCostPerCallUsd * 1_000_000) / 1_000_000,
+        durationMs: totalDurationMs,
+      } };
     } catch (error) {
       lastError = error;
+      failedCalls += 1;
+      const durationMs = Math.max(0, Math.round(performance.now() - startedMs));
+      const metricStatus = modelMetricStatus(error, options.signal);
+      totalDurationMs += durationMs;
+      await emitMetric(options.onMetric, {
+        schemaVersion: "1.0", jobId: request.jobId, operation: "copy", status: metricStatus, attempt,
+        startedAt: startedAt.toISOString(), durationMs, inputUnits: inputCharacters, outputUnits: 0,
+        estimatedCostUsd: estimatedCostPerCallUsd, errorCode: modelMetricErrorCode(error, metricStatus),
+      });
       if (options.signal?.aborted) throw new CookingVideoError("JOB_CANCELLED", "Copy model call was cancelled.");
     } finally {
       clearTimeout(timer);

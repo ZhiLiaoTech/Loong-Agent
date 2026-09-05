@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   CookingVideoQueue,
+  CookingVideoMetricsStore,
   JobStore,
   listReviewJobs,
   loadReviewWorkspace,
@@ -66,6 +67,7 @@ export class CookingVideoGatewayService {
       }});
     }
     if (type === "cooking.video.workspace.get") return loadReviewWorkspace(store, jobId);
+    if (type === "cooking.video.metrics.get") return new CookingVideoMetricsStore(store.jobsRoot).summary(jobId);
     if (type === "cooking.video.edit.save") {
       if (typeof params.decision !== "object" || params.decision === null) throw new Error("cooking.video.edit.save requires params.decision.");
       return saveReviewEdit(store, jobId, requiredRevision(params), params.decision as EditDecision);

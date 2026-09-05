@@ -567,6 +567,7 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
       "cooking.video.jobs.list", "cooking.video.workspace.get", "cooking.video.edit.save",
       "cooking.video.review.submit", "cooking.video.rerender", "cooking.video.preview.read",
       "cooking.video.queue.list", "cooking.video.queue.enqueue", "cooking.video.queue.cancel",
+      "cooking.video.metrics.get",
     ]);
     if (!supported.has(value.type)) badRequest(`Unsupported cooking video RPC: ${value.type}.`);
     if (!isRecord(value.params)) badRequest(`${value.type} params must be an object.`);

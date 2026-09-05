@@ -1,5 +1,6 @@
 import { CookingVideoError } from "./errors.js";
-import type { VisionEvidenceRequest, VisionEvidenceResponse } from "./types.js";
+import { modelMetricErrorCode, modelMetricStatus } from "./observability.js";
+import type { ModelCallMetric, VisionEvidenceRequest, VisionEvidenceResponse } from "./types.js";
 import { validateVisionResponse } from "./vision-evidence.js";
 
 export interface VisionModelCallContext {
@@ -19,11 +20,16 @@ export interface VisionAdapterOptions {
   estimatedCostPerItemUsd?: number;
   maxBudgetUsd?: number;
   signal?: AbortSignal;
+  onMetric?: (metric: ModelCallMetric) => void | Promise<void>;
 }
 
 export interface VisionAdapterResult {
   response: VisionEvidenceResponse;
-  metrics: { calls: number; attempts: number; itemCount: number; estimatedCostUsd: number };
+  metrics: { calls: number; attempts: number; failedCalls: number; itemCount: number; estimatedCostUsd: number; durationMs: number };
+}
+
+async function emitMetric(sink: VisionAdapterOptions["onMetric"], metric: ModelCallMetric): Promise<void> {
+  try { await sink?.(metric); } catch { /* telemetry must not change model-call behavior */ }
 }
 
 function parseResponse(raw: unknown): VisionEvidenceResponse {
@@ -79,6 +85,8 @@ export async function runVisionAdapter(request: VisionEvidenceRequest, client: V
   const detections: VisionEvidenceResponse["detections"] = [];
   let attempts = 0;
   let calls = 0;
+  let failedCalls = 0;
+  let durationMs = 0;
   let estimatedCostUsd = 0;
   for (let offset = 0, batchIndex = 0; offset < request.items.length; offset += maxItemsPerCall, batchIndex += 1) {
     const batch: VisionEvidenceRequest = { ...request, items: request.items.slice(offset, offset + maxItemsPerCall) };
@@ -91,13 +99,32 @@ export async function runVisionAdapter(request: VisionEvidenceRequest, client: V
       attempts += 1;
       calls += 1;
       estimatedCostUsd = Math.round((estimatedCostUsd + callCost) * 1_000_000) / 1_000_000;
+      const startedAt = new Date();
+      const startedMs = performance.now();
       try {
         const raw = await withTimeout(signal => client(batch, { signal, attempt, batchIndex }), timeoutMs, options.signal);
-        detections.push(...validateVisionResponse(batch, parseResponse(raw)).detections);
+        const batchDetections = validateVisionResponse(batch, parseResponse(raw)).detections;
+        const callDurationMs = Math.max(0, Math.round(performance.now() - startedMs));
+        durationMs += callDurationMs;
+        await emitMetric(options.onMetric, {
+          schemaVersion: "1.0", jobId: request.jobId, operation: "vision", status: "succeeded", attempt, batchIndex,
+          startedAt: startedAt.toISOString(), durationMs: callDurationMs, inputUnits: batch.items.length,
+          outputUnits: batchDetections.length, estimatedCostUsd: callCost,
+        });
+        detections.push(...batchDetections);
         lastError = undefined;
         break;
       } catch (error) {
         lastError = error;
+        failedCalls += 1;
+        const callDurationMs = Math.max(0, Math.round(performance.now() - startedMs));
+        const metricStatus = modelMetricStatus(error, options.signal);
+        durationMs += callDurationMs;
+        await emitMetric(options.onMetric, {
+          schemaVersion: "1.0", jobId: request.jobId, operation: "vision", status: metricStatus, attempt, batchIndex,
+          startedAt: startedAt.toISOString(), durationMs: callDurationMs, inputUnits: batch.items.length,
+          outputUnits: 0, estimatedCostUsd: callCost, errorCode: modelMetricErrorCode(error, metricStatus),
+        });
         if (options.signal?.aborted) throw new CookingVideoError("JOB_CANCELLED", "Vision model call was cancelled.");
         if (attempt === maxAttempts) break;
       }
@@ -108,5 +135,5 @@ export async function runVisionAdapter(request: VisionEvidenceRequest, client: V
     }
   }
   const response = validateVisionResponse(request, { schemaVersion: "1.0", jobId: request.jobId, detections });
-  return { response, metrics: { calls, attempts, itemCount: request.items.length, estimatedCostUsd } };
+  return { response, metrics: { calls, attempts, failedCalls, itemCount: request.items.length, estimatedCostUsd, durationMs } };
 }

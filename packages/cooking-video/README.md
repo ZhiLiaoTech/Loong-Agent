@@ -86,6 +86,10 @@ loong gateway --cooking-video-concurrency 2
 
 允许范围为 1-8，也可设置 `LOONG_COOKING_VIDEO_CONCURRENCY`。生产队列持久化、Worker 接管、自动重试和死信处理属于后续生产化任务。
 
+## 模型调用指标
+
+视觉与文案模型适配器可通过 `onMetric` 接收逐次调用指标。将 `new CookingVideoMetricsStore(jobsRoot).record` 作为回调后，指标会追加写入作业的 `state/model-metrics.jsonl`。Studio 通过 `cooking.video.metrics.get` 显示调用量、估算费用、平均耗时、失败/超时和流水线耗时。视觉输入输出以关键帧/检测数计量，文案以字符数计量；费用使用适配器配置的估算单价，不等同于供应商最终账单。
+
 ## 无机器事件日志
 
 ```powershell

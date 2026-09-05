@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   CookingVideoError,
   CookingVideoQueue,
+  CookingVideoMetricsStore,
   cleanupJobTemporaryFiles,
   computeJobInputDigest,
   consumeInbox,
@@ -595,14 +596,17 @@ test("vision adapter batches requests and retries invalid JSON within limits", a
   const items = Array.from({ length: 3 }, (_, index) => ({ id: `frame-${index}`, cameraId: "top", sourceTimeMs: index * 1000, sourceDurationMs: 5000, timelineTimeMs: index * 1000, imagePath: `frames/vision/frame-${index}.jpg` }));
   const request = { schemaVersion: "1.0", jobId: "cook-001", generatedAt: "2026-09-04T00:00:00.000Z", intervalMs: 1000, allowedEvents: ["stir_fry", "unknown"], items };
   const calls = [];
+  const metrics = [];
   const result = await runVisionAdapter(request, async (batch, context) => {
     calls.push({ ids: batch.items.map(item => item.id), ...context });
     if (context.batchIndex === 0 && context.attempt === 1) return "not-json";
     return JSON.stringify({ schemaVersion: "1.0", jobId: batch.jobId, detections: batch.items.map(item => ({ itemId: item.id, event: "stir_fry", confidence: 0.9 })) });
-  }, { allowFrameTransfer: true, maxItemsPerCall: 2, maxAttempts: 2, estimatedCostPerItemUsd: 0.01, maxBudgetUsd: 0.05 });
+  }, { allowFrameTransfer: true, maxItemsPerCall: 2, maxAttempts: 2, estimatedCostPerItemUsd: 0.01, maxBudgetUsd: 0.05, onMetric: metric => metrics.push(metric) });
   assert.equal(result.response.detections.length, 3);
   assert.equal(result.metrics.attempts, 3);
   assert.equal(result.metrics.estimatedCostUsd, 0.05);
+  assert.equal(result.metrics.failedCalls, 1);
+  assert.deepEqual(metrics.map(metric => metric.status), ["failed", "succeeded", "succeeded"]);
   assert.deepEqual(calls.map(call => call.ids.length), [2, 2, 1]);
 });
 
@@ -717,16 +721,46 @@ test("copy adapter retries structured output and enforces evidence-backed claims
     verifiedSellingPoints: ["自动翻炒"], evidenceEvents: ["stir_fry", "finished_dish"],
   };
   let calls = 0;
+  const metrics = [];
   const result = await runCopyAdapter(request, async () => {
     calls += 1;
     if (calls === 1) return "invalid";
     return { schemaVersion: "1.0", jobId: "cook-001", title: "宫保鸡丁制作过程", captions: [{ event: "stir_fry", text: "自动翻炒，过程可见" }], cta: "了解设备详情" };
-  }, { allowModelCall: true, maxAttempts: 2 });
+  }, { allowModelCall: true, maxAttempts: 2, estimatedCostPerCallUsd: 0.002, maxBudgetUsd: 0.004, onMetric: metric => metrics.push(metric) });
   assert.equal(result.attempts, 2);
+  assert.equal(result.metrics.failedCalls, 1);
+  assert.equal(result.metrics.estimatedCostUsd, 0.004);
+  assert.deepEqual(metrics.map(metric => metric.status), ["failed", "succeeded"]);
   assert.equal(result.copy.captions[0].event, "stir_fry");
   await assert.rejects(() => runCopyAdapter(request, async () => ({ schemaVersion: "1.0", jobId: "cook-001", title: "行业第一", captions: [{ event: "stir_fry", text: "自动翻炒" }], cta: "了解详情" }), { allowModelCall: true, maxAttempts: 1 }), error => error instanceof CookingVideoError && error.code === "EDIT_CONSTRAINT_VIOLATION");
   await assert.rejects(() => runCopyAdapter(request, async () => ({ schemaVersion: "1.0", jobId: "cook-001", title: "设备展示", captions: [{ event: "ingredient_added", text: "自动投料" }], cta: "了解详情" }), { allowModelCall: true, maxAttempts: 1 }), error => error instanceof CookingVideoError && error.code === "MODEL_CALL_FAILED");
   await assert.rejects(() => runCopyAdapter(request, async () => ({ schemaVersion: "1.0", jobId: "cook-001", title: "超级节能设备", captions: [{ event: "stir_fry", text: "自动翻炒" }], cta: "了解详情" }), { allowModelCall: true, maxAttempts: 1 }), error => error instanceof CookingVideoError && error.code === "EDIT_CONSTRAINT_VIOLATION");
+});
+
+test("persists and summarizes model-call cost, latency, and failures per job", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-metrics-"));
+  try {
+    const store = new JobStore(root);
+    await store.create(sampleJob());
+    const metrics = new CookingVideoMetricsStore(root);
+    await Promise.all([
+      metrics.record({ schemaVersion: "1.0", jobId: "cook-001", operation: "vision", status: "succeeded", attempt: 1, batchIndex: 0, startedAt: "2026-09-04T00:00:00.000Z", durationMs: 100, inputUnits: 3, outputUnits: 3, estimatedCostUsd: 0.03 }),
+      metrics.record({ schemaVersion: "1.0", jobId: "cook-001", operation: "vision", status: "timeout", attempt: 2, batchIndex: 0, startedAt: "2026-09-04T00:00:01.000Z", durationMs: 300, inputUnits: 3, outputUnits: 0, estimatedCostUsd: 0.03, errorCode: "MODEL_TIMEOUT" }),
+      metrics.record({ schemaVersion: "1.0", jobId: "cook-001", operation: "copy", status: "failed", attempt: 1, startedAt: "2026-09-04T00:00:02.000Z", durationMs: 200, inputUnits: 120, outputUnits: 0, estimatedCostUsd: 0.002, errorCode: "MODEL_CALL_FAILED" }),
+    ]);
+    const summary = await metrics.summary("cook-001", new Date("2026-09-04T00:01:00.000Z"));
+    assert.equal(summary.model.calls, 3);
+    assert.equal(summary.model.succeeded, 1);
+    assert.equal(summary.model.failed, 1);
+    assert.equal(summary.model.timedOut, 1);
+    assert.equal(summary.model.estimatedCostUsd, 0.062);
+    assert.equal(summary.model.averageDurationMs, 200);
+    assert.equal(summary.model.p95DurationMs, 300);
+    assert.equal(summary.model.byOperation.vision.calls, 2);
+    assert.equal((await metrics.list("cook-001")).length, 3);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("creates a constrained 15-second EDL and SRT", () => {

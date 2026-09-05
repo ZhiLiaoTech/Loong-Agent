@@ -331,3 +331,46 @@ export interface QualityReport {
   videoPath: string;
   checks: QualityCheck[];
 }
+
+export type ModelOperation = "vision" | "copy";
+export type ModelCallStatus = "succeeded" | "failed" | "timeout" | "cancelled";
+
+export interface ModelCallMetric {
+  schemaVersion: "1.0";
+  jobId: string;
+  operation: ModelOperation;
+  status: ModelCallStatus;
+  attempt: number;
+  batchIndex?: number;
+  startedAt: string;
+  durationMs: number;
+  inputUnits: number;
+  outputUnits: number;
+  estimatedCostUsd: number;
+  errorCode?: string;
+}
+
+export interface CookingVideoMetricsSummary {
+  schemaVersion: "1.0";
+  jobId: string;
+  generatedAt: string;
+  model: {
+    calls: number;
+    succeeded: number;
+    failed: number;
+    timedOut: number;
+    cancelled: number;
+    inputUnits: number;
+    outputUnits: number;
+    estimatedCostUsd: number;
+    totalDurationMs: number;
+    averageDurationMs: number;
+    p95DurationMs: number;
+    byOperation: Record<ModelOperation, { calls: number; failed: number; estimatedCostUsd: number; totalDurationMs: number }>;
+  };
+  pipeline: {
+    stageAttempts: number;
+    failedStages: number;
+    totalDurationMs: number;
+  };
+}

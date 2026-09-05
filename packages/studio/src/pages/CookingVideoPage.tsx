@@ -32,6 +32,10 @@ interface Workspace {
   previewPath?: string;
 }
 interface QueueItem { queueId: string; jobId: string; status: string; position: number; stage?: string; error?: string }
+interface MetricsSummary {
+  model: { calls: number; succeeded: number; failed: number; timedOut: number; cancelled: number; estimatedCostUsd: number; averageDurationMs: number; p95DurationMs: number };
+  pipeline: { stageAttempts: number; failedStages: number; totalDurationMs: number };
+}
 
 const TEXT = {
   "zh-CN": {
@@ -41,7 +45,8 @@ const TEXT = {
     camera: "机位", start: "入点 ms", end: "出点 ms", caption: "字幕", remove: "删除", review: "审核", reviewer: "审核人",
     note: "审核意见", approve: "批准", changes: "要求返修", reject: "驳回", rerender: "再次渲染", pending: "待审核", approved: "已批准",
     changes_requested: "待返修", rejected: "已驳回", saving: "处理中", revision: "修订", confidence: "置信度", reference: "参考机位",
-    queue: "渲染队列", cancel: "取消任务", connected: "进度已连接",
+    queue: "渲染队列", cancel: "取消任务", connected: "进度已连接", metrics: "运行指标", calls: "模型调用", cost: "估算费用",
+    average: "平均耗时", failures: "失败 / 超时", pipeline: "流水线耗时",
   },
   en: {
     title: "Promo video review", lead: "Confirm camera sync, refine the timeline, and approve a new render.", root: "Jobs directory", load: "Load jobs",
@@ -50,7 +55,8 @@ const TEXT = {
     camera: "Camera", start: "In ms", end: "Out ms", caption: "Caption", remove: "Delete", review: "Review", reviewer: "Reviewer",
     note: "Review note", approve: "Approve", changes: "Request changes", reject: "Reject", rerender: "Render again", pending: "Pending", approved: "Approved",
     changes_requested: "Changes requested", rejected: "Rejected", saving: "Working", revision: "Revision", confidence: "Confidence", reference: "Reference camera",
-    queue: "Render queue", cancel: "Cancel job", connected: "Progress connected",
+    queue: "Render queue", cancel: "Cancel job", connected: "Progress connected", metrics: "Runtime metrics", calls: "Model calls", cost: "Estimated cost",
+    average: "Average latency", failures: "Failed / timed out", pipeline: "Pipeline time",
   },
 } as const;
 
@@ -82,14 +88,19 @@ export function CookingVideoPage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [queueItem, setQueueItem] = useState<QueueItem>();
+  const [metrics, setMetrics] = useState<MetricsSummary>();
 
   const loadWorkspace = useCallback(async (jobId: string) => {
     setBusy("workspace"); setError(""); setPreviewUrl(undefined);
     try {
-      const result = await client.gateway.rpc<Workspace>("cooking.video.workspace.get", { jobsRoot, jobId });
+      const [result, queue] = await Promise.all([
+        client.gateway.rpc<Workspace>("cooking.video.workspace.get", { jobsRoot, jobId }),
+        client.gateway.rpc<{ items: QueueItem[] }>("cooking.video.queue.list", { jobsRoot }),
+      ]);
       setWorkspace(result); setDraft(result.decision); setSelectedJobId(jobId);
-      const queue = await client.gateway.rpc<{ items: QueueItem[] }>("cooking.video.queue.list", { jobsRoot });
       setQueueItem(queue.items.find(item => item.jobId === jobId && ["queued", "running", "cancelling"].includes(item.status)));
+      const metricResult = await client.gateway.rpc<MetricsSummary>("cooking.video.metrics.get", { jobsRoot, jobId }).catch(() => undefined);
+      setMetrics(metricResult);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(""); }
   }, [client, jobsRoot]);
@@ -102,7 +113,7 @@ export function CookingVideoPage() {
       setJobs(result.jobs);
       const firstJob = result.jobs[0];
       if (firstJob) await loadWorkspace(firstJob.jobId);
-      else { setWorkspace(undefined); setDraft(undefined); setSelectedJobId(""); }
+      else { setWorkspace(undefined); setDraft(undefined); setMetrics(undefined); setSelectedJobId(""); }
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(""); }
   }, [client, jobsRoot, loadWorkspace]);
@@ -209,6 +220,10 @@ export function CookingVideoPage() {
 
       <main className={styles.reviewPane}>
         {!workspace || !draft ? <div className={styles.blank}>{busy === "workspace" ? <div className={styles.skeletonLarge} /> : copy.selectJob}</div> : <>
+          {metrics ? <section className={styles.metricsPanel} aria-label={copy.metrics}>
+            <div><span>{copy.metrics}</span><strong>{metrics.model.succeeded}/{metrics.model.calls}</strong></div>
+            <dl><div><dt>{copy.calls}</dt><dd>{metrics.model.calls}</dd></div><div><dt>{copy.cost}</dt><dd>${metrics.model.estimatedCostUsd.toFixed(4)}</dd></div><div><dt>{copy.average}</dt><dd>{metrics.model.averageDurationMs} ms</dd></div><div><dt>{copy.failures}</dt><dd>{metrics.model.failed} / {metrics.model.timedOut}</dd></div><div><dt>{copy.pipeline}</dt><dd>{formatMs(metrics.pipeline.totalDurationMs)}</dd></div></dl>
+          </section> : null}
           <div className={styles.overviewGrid}>
             <section className={styles.panel}><h2>{copy.sync}</h2>{workspace.sync ? <>
               <dl className={styles.facts}><div><dt>{copy.reference}</dt><dd>{workspace.sync.referenceCameraId}</dd></div><div><dt>{copy.confidence}</dt><dd>{Math.round(workspace.sync.confidence * 100)}%</dd></div><div><dt>Method</dt><dd>{workspace.sync.method}</dd></div></dl>
