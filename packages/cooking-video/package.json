@@ -13,7 +13,8 @@
     }
   },
   "bin": {
-    "loong-cooking-video": "./dist/cli.js"
+    "loong-cooking-video": "./dist/cli.js",
+    "loong-cooking-video-worker": "./dist/worker-cli.js"
   },
   "files": ["dist"],
   "scripts": {

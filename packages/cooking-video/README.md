@@ -86,6 +86,18 @@ loong gateway --cooking-video-concurrency 2
 
 允许范围为 1-8，也可设置 `LOONG_COOKING_VIDEO_CONCURRENCY`。生产队列持久化、Worker 接管、自动重试和死信处理属于后续生产化任务。
 
+## 独立 Worker
+
+生产部署保留 Gateway 作为 API 进程，并分别启动 `media`、`model`、`render` Worker。Worker 每次只执行任务指定的一个阶段，并强制核对角色与作业当前状态。例如：
+
+```powershell
+loong-cooking-video-worker --role media --action ingest `
+  --jobs-root data/jobs --job cook-001 --task-id task-001 `
+  --expected-status created
+```
+
+阶段归属为：media=`ingest/sync`，model=`detect/select/edit`，render=`render/validate`。队列消费者应直接把持久化任务字段映射为这些参数，不能由外部请求自由选择 Worker 角色。
+
 ## 模型调用指标
 
 视觉与文案模型适配器可通过 `onMetric` 接收逐次调用指标。将 `new CookingVideoMetricsStore(jobsRoot).record` 作为回调后，指标会追加写入作业的 `state/model-metrics.jsonl`。Studio 通过 `cooking.video.metrics.get` 显示调用量、估算费用、平均耗时、失败/超时和流水线耗时。视觉输入输出以关键帧/检测数计量，文案以字符数计量；费用使用适配器配置的估算单价，不等同于供应商最终账单。

@@ -31,4 +31,5 @@ export * from "./types.js";
 export * from "./validation.js";
 export * from "./vision-evidence.js";
 export * from "./vision-adapter.js";
+export * from "./worker-runtime.js";
 export { runCookingVideo } from "./cli.js";

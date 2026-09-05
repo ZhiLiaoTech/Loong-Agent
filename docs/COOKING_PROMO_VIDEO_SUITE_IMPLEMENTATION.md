@@ -690,6 +690,10 @@ MVP 建议门槛：
 - 每个阶段幂等，Worker 崩溃后能被其他 Worker 接管。
 - 渲染镜像固定 FFmpeg、字体、浏览器和 npm 依赖版本。
 
+`CVS-904` 已把可部署职责固定为四类进程：现有 Gateway 只承担 API、身份校验、审核和任务编排；`media` Worker 执行 ingest/sync；`model` Worker 执行 detect/select/edit；`render` Worker 执行 render/validate。`planNextWorkerTask` 根据持久化作业状态生成带 `expectedStatus` 的任务，Worker 会同时校验自身角色、动作归属和预期状态，不能跨角色执行或在过期状态上写结果。
+
+三个 Worker 共享 `loong-cooking-video-worker` 入口，可分别设置 `LOONG_COOKING_VIDEO_WORKER_ROLE` 与 `LOONG_COOKING_VIDEO_JOBS_ROOT`，并由任务参数提供 action、job id、task id 和 expected status。每次进程只执行一个明确阶段，成功后只推进一个状态边界，失败时落合法 running/failed 轨迹。生产队列如何投递、租约、重试和接管由 `CVS-906` 实现；本任务先冻结进程边界，避免后续队列再次耦合为单体。
+
 ### 16.3 容量估算方法
 
 实际容量应以真实素材压测，不直接承诺固定数字。至少采集：

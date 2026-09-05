@@ -27,6 +27,7 @@ import {
   detectMachineEvents,
   enforceJobRetention,
   estimateEnvelopeOffset,
+  executeCookingVideoWorkerTask,
   ingestMedia,
   importVisionDetections,
   parseMachineEvents,
@@ -36,6 +37,7 @@ import {
   loadReviewWorkspace,
   prepareReviewRerender,
   prepareVisionEvidence,
+  planNextWorkerTask,
   parseFfprobePayload,
   resolveWithin,
   reviewVideo,
@@ -55,6 +57,7 @@ import {
   validateShotCandidates,
   validateJob,
   validateGoldenAnnotation,
+  workerRoleForAction,
 } from "../dist/index.js";
 
 function fakeMultipartProvider() {
@@ -265,6 +268,38 @@ test("retention preserves active and legal-hold jobs", async () => {
     const held = await enforceJobRetention(store, "active-job", { ...policy, legalHoldJobIds: ["active-job"] }, { now: new Date("2026-09-05T00:00:00.000Z"), dryRun: false, confirmation: "DELETE_EXPIRED_ARTIFACTS" });
     assert.equal(held.skippedReason, "legal_hold");
     assert.equal((await stat(path.join(active.paths.frames, "old.jpg"))).isFile(), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("routes each pipeline boundary to an isolated worker role", () => {
+  const expected = [
+    ["created", "media", "ingest"],
+    ["ingested", "media", "sync"],
+    ["synced", "model", "detect"],
+    ["analyzed", "model", "select"],
+    ["selected", "model", "edit"],
+    ["awaiting_review", "render", "render"],
+    ["validating", "render", "validate"],
+  ];
+  for (const [status, role, action] of expected) {
+    const task = planNextWorkerTask("job-1", status, `task-${action}`);
+    assert.equal(task.role, role);
+    assert.equal(task.action, action);
+    assert.equal(task.expectedStatus, status);
+    assert.equal(workerRoleForAction(action), role);
+  }
+  assert.equal(planNextWorkerTask("job-1", "completed", "task-done"), undefined);
+  assert.throws(() => workerRoleForAction("publish"), error => error instanceof CookingVideoError && error.code === "JOB_STATE_INVALID");
+});
+
+test("worker runtime rejects cross-role tasks before accessing job data", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cooking-worker-role-"));
+  try {
+    const task = planNextWorkerTask("not-present", "created", "task-1");
+    await assert.rejects(() => executeCookingVideoWorkerTask(new JobStore(root), "model", task), error => error instanceof CookingVideoError && /configured role/.test(error.message));
+    await assert.rejects(() => executeCookingVideoWorkerTask(new JobStore(root), "media", { ...task, expectedStatus: "ingested" }), error => error instanceof CookingVideoError && /expected state/.test(error.message));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
