@@ -702,6 +702,8 @@ MVP 建议门槛：
 
 该基线只衡量队列控制面，不代表视频渲染吞吐；真实 FFmpeg 的 2/3/4 路 E2E 已单独通过。客户硬件与日均作业量确定后，应在生产等价 Linux 节点运行至少 6 小时 `--soak-seconds 21600`，并据 CPU、磁盘 IOPS 和实际视频时长冻结容量阈值。
 
+`CVS-908` 增加独立安全回归，覆盖本地路径和对象 key 穿越、跨租户/跨用户对象访问、Worker 跨角色执行、命令参数中的 shell 元字符、子进程超量输出和恶意 ffprobe 元数据。所有外部进程继续使用参数数组且 `shell: false`。ffprobe 响应限制为 16 MiB、最多 64 个流、最大 16,384 像素、最高 240 fps 和最长 24 小时；超过边界在调用 FFmpeg 前以 `MEDIA_UNREADABLE` 关闭失败。安全测试矩阵与结果见 `COOKING_PROMO_VIDEO_SECURITY_TEST.md`。
+
 `CVS-905` 使用 `deploy/cooking-video/Dockerfile` 作为三类 Worker 的共同镜像。Node 基础镜像同时固定精确版本和 OCI digest，Debian 软件源固定到不可变 snapshot 时间点，pnpm、Remotion、React 和 TypeScript 固定精确版本；构建阶段使用 frozen lockfile。运行层安装 FFmpeg/ffprobe、Chromium、Noto CJK、DejaVu 和 tini，并由 `verify-runtime.mjs` 在构建时逐项验证。容器以 uid/gid 10001 非 root 用户运行，只有 `/data` 作为持久化卷。
 
 镜像验证命令：

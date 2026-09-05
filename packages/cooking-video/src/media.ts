@@ -52,6 +52,7 @@ function secondsToMs(value: string | undefined): number | undefined {
 }
 
 export function parseFfprobePayload(raw: string): { durationMs: number; formatName?: string; creationTime?: string; streams: MediaStreamInfo[] } {
+  if (Buffer.byteLength(raw) > 16 * 1024 * 1024) throw new CookingVideoError("MEDIA_UNREADABLE", "ffprobe response exceeds the 16 MiB safety limit.");
   let payload: FfprobePayload;
   try {
     payload = JSON.parse(raw) as FfprobePayload;
@@ -59,21 +60,28 @@ export function parseFfprobePayload(raw: string): { durationMs: number; formatNa
     throw new CookingVideoError("MEDIA_UNREADABLE", "ffprobe returned invalid JSON.");
   }
   const durationMs = secondsToMs(payload.format?.duration);
-  const streams = (payload.streams ?? []).map((stream, fallbackIndex): MediaStreamInfo => {
+  if (!Array.isArray(payload.streams) || payload.streams.length > 64) throw new CookingVideoError("MEDIA_UNREADABLE", "Media stream count is invalid or exceeds 64.");
+  const streams = payload.streams.map((stream, fallbackIndex): MediaStreamInfo => {
     const rotation = stream.side_data_list?.find(item => typeof item.rotation === "number")?.rotation
       ?? (stream.tags?.rotate === undefined ? undefined : Number(stream.tags.rotate));
+    const frameRate = parseRate(stream.avg_frame_rate);
+    if ((stream.width !== undefined && (!Number.isInteger(stream.width) || stream.width < 1 || stream.width > 16_384))
+      || (stream.height !== undefined && (!Number.isInteger(stream.height) || stream.height < 1 || stream.height > 16_384))
+      || (frameRate !== undefined && (frameRate < 0.1 || frameRate > 240))) {
+      throw new CookingVideoError("MEDIA_UNREADABLE", "Media stream dimensions or frame rate exceed safety limits.");
+    }
     return {
       index: stream.index ?? fallbackIndex,
       codecType: stream.codec_type ?? "unknown",
       codecName: stream.codec_name,
       width: stream.width,
       height: stream.height,
-      frameRate: parseRate(stream.avg_frame_rate),
+      frameRate,
       durationMs: secondsToMs(stream.duration),
       rotation: Number.isFinite(rotation) ? rotation : undefined,
     };
   });
-  if (durationMs === undefined || durationMs <= 0 || !streams.some(stream => stream.codecType === "video")) {
+  if (durationMs === undefined || durationMs <= 0 || durationMs > 86_400_000 || !Number.isSafeInteger(durationMs) || !streams.some(stream => stream.codecType === "video")) {
     throw new CookingVideoError("MEDIA_UNREADABLE", "Media has no readable video stream or duration.");
   }
   const rawCreationTime = payload.format?.tags?.creation_time;
