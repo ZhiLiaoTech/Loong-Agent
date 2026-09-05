@@ -78,6 +78,7 @@ export interface MultipartUploadSession {
   uploadId: string;
   providerUploadId: string;
   tenantId: string;
+  ownerUserId?: string;
   jobId: string;
   assetId: string;
   objectKey: string;
@@ -97,6 +98,7 @@ export interface MultipartUploadSession {
 
 export interface CreateMultipartUploadInput {
   tenantId: string;
+  ownerUserId?: string;
   jobId: string;
   assetId: string;
   fileName: string;
@@ -183,6 +185,7 @@ export class MultipartUploadCoordinator {
       uploadId: randomUUID(),
       providerUploadId: remote.providerUploadId,
       tenantId: input.tenantId,
+      ...(input.ownerUserId ? { ownerUserId: input.ownerUserId } : {}),
       jobId: input.jobId,
       assetId: input.assetId,
       objectKey,

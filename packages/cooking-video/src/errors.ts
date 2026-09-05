@@ -31,7 +31,9 @@ export type CookingVideoErrorCode =
   | "INTAKE_LOCKED"
   | "UPLOAD_INVALID"
   | "UPLOAD_INTEGRITY_FAILED"
-  | "UPLOAD_PROVIDER_FAILED";
+  | "UPLOAD_PROVIDER_FAILED"
+  | "ACCESS_DENIED"
+  | "AUDIT_FAILED";
 
 export class CookingVideoError extends Error {
   readonly code: CookingVideoErrorCode;

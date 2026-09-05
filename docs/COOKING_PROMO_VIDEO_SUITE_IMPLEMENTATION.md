@@ -708,6 +708,14 @@ MVP 建议门槛：
 
 生产接入 OSS、S3 或兼容服务时，需要实现 `ObjectStorageMultipartProvider` 的创建、分片签名、分片回查、完成和中止五个动作。适配器必须从存储服务可信元数据返回 SHA-256，不能直接信任上传客户端回传的摘要。单片范围为 1～512 MiB、最多 10,000 片；签名有效期限制为 60～3,600 秒。
 
+### 16.5 租户授权、审计与签名下载
+
+`CVS-902` 通过 `TenantObjectStorageService` 把每个对象存储动作绑定到可信的 `StoragePrincipal`（`tenantId`、`userId`、角色）。`uploader` 只能管理自己创建的上传，`reviewer` 只能查看同租户状态并下载已完成对象，`operator/admin` 可管理同租户对象；任何角色都不能跨租户访问。不存在的 upload id 与其他租户的 upload id 返回相同的 `ACCESS_DENIED`，避免形成对象存在性探针。
+
+下载只能从已通过最终完整性校验的上传会话签发，GET 地址有效期限制为 60～3,600 秒。`ObjectStorageDownloadProvider` 的生产实现负责生成 OSS/S3 限时签名；返回值必须是 HTTPS，且过期时间不能超出请求窗口。`StoragePrincipal` 必须由 Gateway 验证过的身份声明构造，严禁直接接受请求正文自报的租户和角色。
+
+允许、拒绝和执行失败都会写入按租户/日期隔离的 JSONL 审计文件，内容只包括 actor、角色、动作、资源 ID、request ID、结果和错误码，不记录预签名 URL、请求头或媒体内容。审计文件以仅所有者可读写模式创建；生产环境应再转存到不可变日志系统并设置独立保留期。
+
 ## 17. 分阶段交付计划
 
 ### Phase 0：需求冻结与样本准备（约 3～5 人日）

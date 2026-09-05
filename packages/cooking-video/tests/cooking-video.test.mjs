@@ -9,6 +9,8 @@ import {
   CookingVideoMetricsStore,
   CookingVideoFeedbackStore,
   MultipartUploadCoordinator,
+  StorageAuditLog,
+  TenantObjectStorageService,
   buildTenantObjectKey,
   classifyReviewFailureModes,
   cleanupJobTemporaryFiles,
@@ -125,6 +127,78 @@ test("rejects unsafe multipart keys, wrong parts, incomplete uploads, and final 
     provider.setCompletedSha256("f".repeat(64));
     await assert.rejects(() => coordinator.complete(session.uploadId), error => error instanceof CookingVideoError && error.code === "UPLOAD_INTEGRITY_FAILED");
     assert.equal((await coordinator.get(session.uploadId)).status, "failed");
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("enforces tenant and owner isolation while auditing signed storage access", async () => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "cooking-storage-access-"));
+  const now = new Date("2026-09-05T08:00:00.000Z");
+  try {
+    const provider = fakeMultipartProvider();
+    const uploads = new MultipartUploadCoordinator(path.join(stateRoot, "state"), provider, { now: () => now });
+    const audit = new StorageAuditLog(path.join(stateRoot, "audit"));
+    const downloads = {
+      async signObjectDownload(input) {
+        return { url: `https://storage.example.test/download?key=${encodeURIComponent(input.objectKey)}`, method: "GET", headers: {}, expiresAt: new Date(now.getTime() + input.expiresInSeconds * 1000).toISOString() };
+      },
+    };
+    const service = new TenantObjectStorageService(uploads, downloads, audit, { now: () => now });
+    const owner = { tenantId: "tenant-a", userId: "camera.agent", roles: ["uploader"] };
+    const session = await service.createUpload(owner, { jobId: "job-1", assetId: "top-camera", fileName: "clip.mp4", contentType: "video/mp4", byteSize: 1_048_576, sha256: "1".repeat(64) }, "request-create");
+    assert.equal(session.ownerUserId, owner.userId);
+
+    const intruder = { tenantId: "tenant-b", userId: "other", roles: ["operator"] };
+    let crossTenantMessage = "";
+    await assert.rejects(() => service.getUpload(intruder, session.uploadId, "request-cross-tenant"), error => {
+      crossTenantMessage = error.message;
+      return error instanceof CookingVideoError && error.code === "ACCESS_DENIED";
+    });
+    await assert.rejects(() => service.getUpload(intruder, "00000000-0000-0000-0000-000000000000"), error => error instanceof CookingVideoError && error.code === "ACCESS_DENIED" && error.message === crossTenantMessage);
+    const otherUploader = { tenantId: "tenant-a", userId: "other", roles: ["uploader"] };
+    await assert.rejects(() => service.signUploadPart(otherUploader, session.uploadId, 1, "2".repeat(64)), error => error instanceof CookingVideoError && error.code === "ACCESS_DENIED");
+
+    await service.signUploadPart(owner, session.uploadId, 1, "2".repeat(64));
+    provider.uploaded.set(1, { byteSize: 1_048_576, sha256: "2".repeat(64), etag: "part-1" });
+    await service.confirmUploadPart(owner, session.uploadId, 1);
+    await service.completeUpload(owner, session.uploadId);
+    const reviewer = { tenantId: "tenant-a", userId: "reviewer-1", roles: ["reviewer"] };
+    const download = await service.signDownload(reviewer, session.uploadId, 300, "request-download");
+    assert.equal(download.method, "GET");
+    assert.match(download.url, /^https:\/\//);
+    await assert.rejects(() => service.abortUpload(reviewer, session.uploadId), error => error instanceof CookingVideoError && error.code === "ACCESS_DENIED");
+
+    const tenantAAudit = await audit.list("tenant-a", "2026-09-05");
+    assert(tenantAAudit.some(record => record.action === "download.sign" && record.outcome === "allowed" && record.requestId === "request-download"));
+    assert(tenantAAudit.some(record => record.action === "upload.part.sign" && record.outcome === "denied"));
+    const tenantBAudit = await audit.list("tenant-b", "2026-09-05");
+    assert(tenantBAudit.some(record => record.action === "upload.status" && record.outcome === "denied" && record.requestId === "request-cross-tenant"));
+    assert(!JSON.stringify([...tenantAAudit, ...tenantBAudit]).includes("https://storage.example.test"));
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("rejects invalid download expiry and provider URLs without leaking them to audit", async () => {
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "cooking-storage-signing-"));
+  const now = new Date("2026-09-05T08:00:00.000Z");
+  try {
+    const provider = fakeMultipartProvider();
+    const uploads = new MultipartUploadCoordinator(path.join(stateRoot, "state"), provider, { now: () => now });
+    const audit = new StorageAuditLog(path.join(stateRoot, "audit"));
+    const service = new TenantObjectStorageService(uploads, { async signObjectDownload() { return { url: "http://insecure.example.test/file", method: "GET", headers: {}, expiresAt: "2099-01-01T00:00:00.000Z" }; } }, audit, { now: () => now });
+    const principal = { tenantId: "tenant-a", userId: "admin", roles: ["admin"] };
+    const session = await service.createUpload(principal, { jobId: "job-2", assetId: "output", fileName: "promo.mp4", contentType: "video/mp4", byteSize: 1_048_576, sha256: "3".repeat(64) });
+    await service.signUploadPart(principal, session.uploadId, 1, "4".repeat(64));
+    provider.uploaded.set(1, { byteSize: 1_048_576, sha256: "4".repeat(64), etag: "part-1" });
+    await service.confirmUploadPart(principal, session.uploadId, 1);
+    await service.completeUpload(principal, session.uploadId);
+    await assert.rejects(() => service.signDownload(principal, session.uploadId, 30), error => error instanceof CookingVideoError && error.code === "UPLOAD_INVALID");
+    await assert.rejects(() => service.signDownload(principal, session.uploadId, 300), error => error instanceof CookingVideoError && error.code === "UPLOAD_PROVIDER_FAILED");
+    const records = await audit.list("tenant-a", "2026-09-05");
+    assert.equal(records.filter(record => record.action === "download.sign" && record.outcome === "failed").length, 2);
+    assert(!JSON.stringify(records).includes("insecure.example.test"));
   } finally {
     await rm(stateRoot, { recursive: true, force: true });
   }

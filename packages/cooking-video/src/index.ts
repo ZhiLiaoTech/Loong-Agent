@@ -24,6 +24,7 @@ export * from "./render.js";
 export * from "./scene-analysis.js";
 export * from "./shot-selection.js";
 export * from "./shot-quality-adapter.js";
+export * from "./storage-access.js";
 export * from "./sync.js";
 export * from "./types.js";
 export * from "./validation.js";
