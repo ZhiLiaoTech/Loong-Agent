@@ -305,6 +305,20 @@ test("worker runtime rejects cross-role tasks before accessing job data", async 
   }
 });
 
+test("production media image pins its base, package snapshot, browser, fonts, and render dependencies", async () => {
+  const dockerfile = await readFile(path.join("..", "..", "deploy", "cooking-video", "Dockerfile"), "utf8");
+  const verifier = await readFile(path.join("..", "..", "deploy", "cooking-video", "verify-runtime.mjs"), "utf8");
+  assert.match(dockerfile, /^FROM node:24\.8\.0-bookworm-slim@sha256:[a-f0-9]{64} AS build/m);
+  assert.match(dockerfile, /ARG DEBIAN_SNAPSHOT=\d{8}T\d{6}Z/);
+  assert.match(dockerfile, /! grep -Eq 'URIs: https\?\:\/\//);
+  assert.match(dockerfile, /chromium ffmpeg fonts-dejavu-core fonts-noto-cjk tini/);
+  assert.match(dockerfile, /USER 10001:10001/);
+  assert.match(dockerfile, /pnpm install --frozen-lockfile/);
+  assert.match(verifier, /remotion: "4\.0\.520"/);
+  assert.match(verifier, /command\("ffmpeg", \["-version"\]\)/);
+  assert.match(verifier, /command\("chromium", \["--version"\]\)/);
+});
+
 test("validates reviewed golden annotations and cross-field labeling rules", async () => {
   const fixture = JSON.parse(await readFile(path.join("tests", "fixtures", "golden-annotation.json"), "utf8"));
   const annotation = validateGoldenAnnotation(fixture, "cook-001");

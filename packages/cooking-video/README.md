@@ -98,6 +98,15 @@ loong-cooking-video-worker --role media --action ingest `
 
 阶段归属为：media=`ingest/sync`，model=`detect/select/edit`，render=`render/validate`。队列消费者应直接把持久化任务字段映射为这些参数，不能由外部请求自由选择 Worker 角色。
 
+三类 Worker 使用同一个固定运行时镜像：
+
+```powershell
+docker build -f deploy/cooking-video/Dockerfile -t loong/cooking-video-worker:0.1.0 .
+docker run --rm loong/cooking-video-worker:0.1.0 node deploy/cooking-video/verify-runtime.mjs
+```
+
+镜像固定 Node digest 和 Debian snapshot，并在构建时检查 pnpm、FFmpeg、ffprobe、Chromium、中英文字体及 Remotion 版本。生产环境只需用不同的 Worker role 和队列订阅启动同一镜像。
+
 ## 模型调用指标
 
 视觉与文案模型适配器可通过 `onMetric` 接收逐次调用指标。将 `new CookingVideoMetricsStore(jobsRoot).record` 作为回调后，指标会追加写入作业的 `state/model-metrics.jsonl`。Studio 通过 `cooking.video.metrics.get` 显示调用量、估算费用、平均耗时、失败/超时和流水线耗时。视觉输入输出以关键帧/检测数计量，文案以字符数计量；费用使用适配器配置的估算单价，不等同于供应商最终账单。

@@ -694,6 +694,17 @@ MVP 建议门槛：
 
 三个 Worker 共享 `loong-cooking-video-worker` 入口，可分别设置 `LOONG_COOKING_VIDEO_WORKER_ROLE` 与 `LOONG_COOKING_VIDEO_JOBS_ROOT`，并由任务参数提供 action、job id、task id 和 expected status。每次进程只执行一个明确阶段，成功后只推进一个状态边界，失败时落合法 running/failed 轨迹。生产队列如何投递、租约、重试和接管由 `CVS-906` 实现；本任务先冻结进程边界，避免后续队列再次耦合为单体。
 
+`CVS-905` 使用 `deploy/cooking-video/Dockerfile` 作为三类 Worker 的共同镜像。Node 基础镜像同时固定精确版本和 OCI digest，Debian 软件源固定到不可变 snapshot 时间点，pnpm、Remotion、React 和 TypeScript 固定精确版本；构建阶段使用 frozen lockfile。运行层安装 FFmpeg/ffprobe、Chromium、Noto CJK、DejaVu 和 tini，并由 `verify-runtime.mjs` 在构建时逐项验证。容器以 uid/gid 10001 非 root 用户运行，只有 `/data` 作为持久化卷。
+
+镜像验证命令：
+
+```bash
+docker build -f deploy/cooking-video/Dockerfile -t loong/cooking-video-worker:0.1.0 .
+docker run --rm loong/cooking-video-worker:0.1.0 node deploy/cooking-video/verify-runtime.mjs
+```
+
+升级任一运行时组件时，必须同时更新 Dockerfile 固定值、lockfile、验证脚本和版本升级说明，并重新跑真实 FFmpeg/Remotion E2E。当前开发电脑未安装 Docker，静态固定项和 TypeScript 测试已验证，首次发布仍须在有 Docker 的 CI/构建机执行上述镜像构建门禁。
+
 ### 16.3 容量估算方法
 
 实际容量应以真实素材压测，不直接承诺固定数字。至少采集：
