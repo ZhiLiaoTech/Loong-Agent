@@ -21,6 +21,7 @@ export * from "./process-runner.js";
 export * from "./quality.js";
 export * from "./review-workflow.js";
 export * from "./render.js";
+export * from "./retention.js";
 export * from "./scene-analysis.js";
 export * from "./shot-selection.js";
 export * from "./shot-quality-adapter.js";

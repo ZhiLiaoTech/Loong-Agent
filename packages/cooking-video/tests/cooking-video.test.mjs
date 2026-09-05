@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -25,6 +25,7 @@ import {
   detectHeuristicEvents,
   detectJobEvents,
   detectMachineEvents,
+  enforceJobRetention,
   estimateEnvelopeOffset,
   ingestMedia,
   importVisionDetections,
@@ -201,6 +202,71 @@ test("rejects invalid download expiry and provider URLs without leaking them to 
     assert(!JSON.stringify(records).includes("insecure.example.test"));
   } finally {
     await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("plans and explicitly applies independent artifact retention windows", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cooking-retention-"));
+  try {
+    const store = new JobStore(root);
+    const created = await store.create(sampleJob("retention-job"));
+    const old = new Date("2026-08-01T00:00:00.000Z");
+    const recent = new Date("2026-09-04T12:00:00.000Z");
+    const files = [
+      [path.join(created.paths.input, "top.mp4"), old],
+      [path.join(created.paths.proxy, "top.mp4"), old],
+      [path.join(created.paths.frames, "top-001.jpg"), old],
+      [path.join(created.paths.output, "promo-old.mp4"), old],
+      [path.join(created.paths.output, "promo-new.mp4"), recent],
+    ];
+    for (const [file, modified] of files) {
+      await writeFile(file, "artifact");
+      await utimes(file, modified, modified);
+    }
+    const state = JSON.parse(await readFile(created.paths.stateFile, "utf8"));
+    await writeFile(created.paths.stateFile, JSON.stringify({ ...state, status: "completed", updatedAt: "2026-09-05T00:00:00.000Z" }));
+    const policy = { schemaVersion: "1.0", originalDays: 30, proxyDays: 7, frameDays: 1, outputDays: 14 };
+    const now = new Date("2026-09-05T00:00:00.000Z");
+    const planned = await enforceJobRetention(store, "retention-job", policy, { now });
+    assert.equal(planned.mode, "dry_run");
+    assert.equal(planned.candidates.length, 4);
+    assert.equal((await stat(path.join(created.paths.input, "top.mp4"))).isFile(), true);
+    await assert.rejects(() => enforceJobRetention(store, "retention-job", policy, { now, dryRun: false }), error => error instanceof CookingVideoError && error.code === "RETENTION_BLOCKED");
+    const applied = await enforceJobRetention(store, "retention-job", policy, { now, dryRun: false, confirmation: "DELETE_EXPIRED_ARTIFACTS" });
+    assert.equal(applied.status, "applied");
+    assert.equal(applied.deleted.length, 4);
+    await assert.rejects(() => stat(path.join(created.paths.frames, "top-001.jpg")), error => error.code === "ENOENT");
+    assert.equal((await stat(path.join(created.paths.output, "promo-new.mp4"))).isFile(), true);
+    assert.equal((await stat(created.paths.jobFile)).isFile(), true);
+    const audit = await readFile(path.join(created.paths.state, "retention-events.jsonl"), "utf8");
+    assert.match(audit, /"mode":"dry_run"/);
+    assert.match(audit, /"status":"planned"/);
+    assert.match(audit, /"status":"applied"/);
+    assert.match(audit, /"deletedCount":4/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("retention preserves active and legal-hold jobs", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cooking-retention-hold-"));
+  try {
+    const store = new JobStore(root);
+    const active = await store.create(sampleJob("active-job"));
+    await writeFile(path.join(active.paths.frames, "old.jpg"), "frame");
+    const old = new Date("2020-01-01T00:00:00.000Z");
+    await utimes(path.join(active.paths.frames, "old.jpg"), old, old);
+    const policy = { schemaVersion: "1.0", originalDays: 0, proxyDays: 0, frameDays: 0, outputDays: null };
+    const activeResult = await enforceJobRetention(store, "active-job", policy, { now: new Date("2026-09-05T00:00:00.000Z"), dryRun: false, confirmation: "DELETE_EXPIRED_ARTIFACTS" });
+    assert.equal(activeResult.skippedReason, "job_status:created");
+    assert.equal((await stat(path.join(active.paths.frames, "old.jpg"))).isFile(), true);
+    const state = JSON.parse(await readFile(active.paths.stateFile, "utf8"));
+    await writeFile(active.paths.stateFile, JSON.stringify({ ...state, status: "failed" }));
+    const held = await enforceJobRetention(store, "active-job", { ...policy, legalHoldJobIds: ["active-job"] }, { now: new Date("2026-09-05T00:00:00.000Z"), dryRun: false, confirmation: "DELETE_EXPIRED_ARTIFACTS" });
+    assert.equal(held.skippedReason, "legal_hold");
+    assert.equal((await stat(path.join(active.paths.frames, "old.jpg"))).isFile(), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
