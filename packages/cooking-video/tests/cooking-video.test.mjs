@@ -37,6 +37,7 @@ import {
   remotionCompositionId,
   runCopyAdapter,
   runVisionAdapter,
+  runShotQualityAdapter,
   saveReviewEdit,
   submitReview,
   runProcess,
@@ -681,8 +682,23 @@ test("selects the best camera per event occurrence with explainable scores", () 
   assert.equal(result.candidates.find(candidate => candidate.occurrenceId === "evt-1" && candidate.selected).cameraId, "top");
   assert.equal(result.candidates.find(candidate => candidate.occurrenceId === "evt-2" && candidate.selected).cameraId, "front");
   assert.equal(result.candidates.every(candidate => candidate.rank > 0), true);
+  assert.equal(result.candidates.every(candidate => ["foodAppeal", "actionSalience", "productVisibility", "composition"].every(key => candidate.scores[key] >= 0 && candidate.scores[key] <= 1)), true);
   const invalidTimeline = { ...timeline, events: [{ ...timeline.events[0], occurrenceId: "" }] };
   assert.throws(() => selectShots(invalidTimeline, manifest), error => error instanceof CookingVideoError && error.code === "EVENT_INPUT_INVALID");
+});
+
+test("validates bounded shot-quality model scores and retries malformed output", async () => {
+  const request = { schemaVersion: "1.0", jobId: "cook-001", items: [{ candidateId: "evt-1/top", imagePath: "frames/top.jpg", event: "stir_fry", cameraRole: "food_closeup" }] };
+  let calls = 0;
+  const result = await runShotQualityAdapter(request, async () => {
+    calls += 1;
+    if (calls === 1) return "invalid";
+    return { schemaVersion: "1.0", jobId: "cook-001", scores: [{ candidateId: "evt-1/top", foodAppeal: 0.9, actionSalience: 0.8, productVisibility: 0.6, composition: 0.85 }] };
+  }, { allowFrameTransfer: true, maxAttempts: 2 });
+  assert.equal(result.attempts, 2);
+  assert.equal(result.response.scores[0].foodAppeal, 0.9);
+  await assert.rejects(() => runShotQualityAdapter(request, async () => ({ schemaVersion: "1.0", jobId: "cook-001", scores: [] }), { allowFrameTransfer: true, maxAttempts: 1 }), error => error instanceof CookingVideoError && /every requested candidate/.test(error.message));
+  await assert.rejects(() => runShotQualityAdapter(request, async () => ({}), { allowFrameTransfer: false }), error => error instanceof CookingVideoError && error.code === "VISION_RESPONSE_REQUIRED");
 });
 
 test("uses motion and scene continuity to rank otherwise equal camera candidates", () => {

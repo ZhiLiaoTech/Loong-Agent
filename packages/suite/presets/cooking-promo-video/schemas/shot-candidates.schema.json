@@ -39,6 +39,10 @@
               "stability": { "$ref": "#/$defs/score" },
               "continuity": { "$ref": "#/$defs/score" },
               "verticalCrop": { "$ref": "#/$defs/score" },
+              "foodAppeal": { "$ref": "#/$defs/score" },
+              "actionSalience": { "$ref": "#/$defs/score" },
+              "productVisibility": { "$ref": "#/$defs/score" },
+              "composition": { "$ref": "#/$defs/score" },
               "occlusionPenalty": { "$ref": "#/$defs/score" },
               "repetitionPenalty": { "$ref": "#/$defs/score" },
               "total": { "$ref": "#/$defs/score" }

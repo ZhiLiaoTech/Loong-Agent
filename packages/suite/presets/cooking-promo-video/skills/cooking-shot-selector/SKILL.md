@@ -6,3 +6,5 @@ description: 对同一事件的多机位候选镜头进行技术和营销价值�
 # 镜头选择
 
 结合算法指标与视觉判断，评估清晰度、亮度、遮挡、食物吸引力、动作明显度、机器露出和竖版裁切安全性。执行重复惩罚和连续机位约束，输出 `analysis/shot-candidates.json`。不得选择标记为 `unusable` 或源时间越界的片段。
+
+允许传帧时，营销质量模型必须为每个候选恰好返回一次 `foodAppeal`、`actionSalience`、`productVisibility` 和 `composition` 的 0～1 分数，并符合 `shot-quality-response.schema.json`。模型不可用、未授权或输出无效时使用本地确定性后备分数，且不得因此绕过人工审核。

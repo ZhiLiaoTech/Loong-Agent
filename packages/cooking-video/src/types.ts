@@ -234,9 +234,33 @@ export interface ShotScores {
   stability: number;
   continuity: number;
   verticalCrop: number;
+  foodAppeal: number;
+  actionSalience: number;
+  productVisibility: number;
+  composition: number;
   occlusionPenalty: number;
   repetitionPenalty: number;
   total: number;
+}
+
+export interface ShotQualityScore {
+  candidateId: string;
+  foodAppeal: number;
+  actionSalience: number;
+  productVisibility: number;
+  composition: number;
+}
+
+export interface ShotQualityRequest {
+  schemaVersion: "1.0";
+  jobId: string;
+  items: Array<{ candidateId: string; imagePath: string; event: CookingEvent; cameraRole?: string }>;
+}
+
+export interface ShotQualityResponse {
+  schemaVersion: "1.0";
+  jobId: string;
+  scores: ShotQualityScore[];
 }
 
 export interface ShotCandidate extends DetectedEvent {
@@ -332,7 +356,7 @@ export interface QualityReport {
   checks: QualityCheck[];
 }
 
-export type ModelOperation = "vision" | "copy";
+export type ModelOperation = "vision" | "shot_quality" | "copy";
 export type ModelCallStatus = "succeeded" | "failed" | "timeout" | "cancelled";
 
 export interface ModelCallMetric {

@@ -95,6 +95,11 @@ export function validateShotCandidates(value: unknown, manifest?: MediaManifest)
       finite(rawCandidate.scores[key], `candidate[${index}].scores.${key}`, 0);
       if ((rawCandidate.scores[key] as number) > 1) throw new CookingVideoError("ARTIFACT_INVALID", `candidate[${index}].scores.${key} must be <= 1.`);
     }
+    for (const key of ["foodAppeal", "actionSalience", "productVisibility", "composition"] as const) {
+      if (rawCandidate.scores[key] === undefined) continue;
+      finite(rawCandidate.scores[key], `candidate[${index}].scores.${key}`, 0);
+      if ((rawCandidate.scores[key] as number) > 1) throw new CookingVideoError("ARTIFACT_INVALID", `candidate[${index}].scores.${key} must be <= 1.`);
+    }
     const source = manifest?.sources.find(item => item.cameraId === rawCandidate.cameraId);
     if (manifest !== undefined && (!source || rawCandidate.endMs > source.durationMs)) {
       throw new CookingVideoError("ARTIFACT_INVALID", `Candidate ${index} references an unknown camera or exceeds source duration.`);

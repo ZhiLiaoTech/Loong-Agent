@@ -4,7 +4,7 @@ import { JobStore } from "./job-store.js";
 import type { CookingVideoMetricsSummary, JobState, ModelCallMetric, ModelCallStatus, ModelOperation } from "./types.js";
 
 const MAX_METRICS_BYTES = 8 * 1024 * 1024;
-const OPERATIONS: readonly ModelOperation[] = ["vision", "copy"];
+const OPERATIONS: readonly ModelOperation[] = ["vision", "shot_quality", "copy"];
 const STATUSES: readonly ModelCallStatus[] = ["succeeded", "failed", "timeout", "cancelled"];
 
 function rounded(value: number): number {
@@ -28,7 +28,7 @@ function emptyOperation(): CookingVideoMetricsSummary["model"]["byOperation"][Mo
 export function summarizeCookingVideoMetrics(jobId: string, state: JobState, metrics: readonly ModelCallMetric[], now = new Date()): CookingVideoMetricsSummary {
   const durations = metrics.map(metric => metric.durationMs).sort((a, b) => a - b);
   const totalDurationMs = metrics.reduce((sum, metric) => sum + metric.durationMs, 0);
-  const byOperation: CookingVideoMetricsSummary["model"]["byOperation"] = { vision: emptyOperation(), copy: emptyOperation() };
+  const byOperation: CookingVideoMetricsSummary["model"]["byOperation"] = { vision: emptyOperation(), shot_quality: emptyOperation(), copy: emptyOperation() };
   for (const metric of metrics) {
     const operation = byOperation[metric.operation];
     operation.calls += 1;

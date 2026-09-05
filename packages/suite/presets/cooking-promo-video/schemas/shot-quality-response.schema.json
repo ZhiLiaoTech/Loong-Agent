@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.shot-quality-response.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "jobId", "scores"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "jobId": { "type": "string", "minLength": 1 },
+    "scores": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["candidateId", "foodAppeal", "actionSalience", "productVisibility", "composition"],
+        "properties": {
+          "candidateId": { "type": "string", "minLength": 1 },
+          "foodAppeal": { "$ref": "#/$defs/score" },
+          "actionSalience": { "$ref": "#/$defs/score" },
+          "productVisibility": { "$ref": "#/$defs/score" },
+          "composition": { "$ref": "#/$defs/score" }
+        }
+      }
+    }
+  },
+  "$defs": { "score": { "type": "number", "minimum": 0, "maximum": 1 } }
+}

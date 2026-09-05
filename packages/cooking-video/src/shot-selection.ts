@@ -5,7 +5,7 @@ import { readJsonFile, writeJsonAtomic } from "./json-files.js";
 import type { JobPaths } from "./paths.js";
 import { resolveWithin } from "./paths.js";
 import { runChecked, runProcess, type ProcessRunner } from "./process-runner.js";
-import type { CookingEvent, EventTimeline, MediaManifest, MediaSourceManifest, SceneAnalysis, ShotCandidate, ShotCandidates } from "./types.js";
+import type { CookingEvent, EventTimeline, MediaManifest, MediaSourceManifest, SceneAnalysis, ShotCandidate, ShotCandidates, ShotQualityScore } from "./types.js";
 
 const FOOD_EVENTS = new Set<CookingEvent>([
   "ingredient_added", "seasoning_added", "stir_fry", "steam_or_flame", "sauce_coating", "dish_completed", "plating", "finished_dish",
@@ -24,6 +24,7 @@ export interface ShotSelectionOptions {
   runner?: ProcessRunner;
   ffmpegCommand?: string;
   signal?: AbortSignal;
+  modelScores?: ReadonlyMap<string, Omit<ShotQualityScore, "candidateId">>;
 }
 
 function clamp01(value: number): number {
@@ -145,6 +146,7 @@ export function selectShots(
   now = new Date(),
   frameMetrics: ReadonlyMap<string, FrameMetrics> = new Map(),
   sceneAnalysis?: SceneAnalysis,
+  modelScores: ReadonlyMap<string, Omit<ShotQualityScore, "candidateId">> = new Map(),
 ): ShotCandidates {
   if (timeline.jobId !== manifest.jobId) {
     throw new CookingVideoError("EVENT_INPUT_INVALID", "Event timeline and media manifest belong to different jobs.");
@@ -166,12 +168,19 @@ export function selectShots(
     const dynamics = dynamicsScores(sceneAnalysis, event.cameraId, event.startMs, event.endMs);
     const verticalCrop = verticalCropScore(source);
     const occlusionPenalty = hasOcclusion(event.problems) ? 0.25 : 0;
+    const fallbackMarketing = {
+      foodAppeal: FOOD_EVENTS.has(event.event) ? roundScore((technical.scores.saturation + technical.scores.exposure + technical.scores.sharpness) / 3) : 0.4,
+      actionSalience: FOOD_EVENTS.has(event.event) ? dynamics.scores.motion : 0.5,
+      productVisibility: roundScore(clamp01((source.role === "machine_full" ? 1 : source.role === "action_side" ? 0.75 : 0.45) - occlusionPenalty)),
+      composition: roundScore((verticalCrop + dynamics.scores.stability + technical.scores.sharpness) / 3),
+    };
+    const marketing = modelScores.get(`${event.occurrenceId}/${event.cameraId}`) ?? fallbackMarketing;
     const total = roundScore(clamp01(
-      eventConfidence * 0.22 + eventRoleFit * 0.15 + resolution * 0.06 + durationFit * 0.07
-      + technical.scores.exposure * 0.07 + technical.scores.dynamicRange * 0.03
-      + technical.scores.saturation * 0.03 + technical.scores.sharpness * 0.08
-      + dynamics.scores.motion * 0.08 + dynamics.scores.stability * 0.07 + dynamics.scores.continuity * 0.05
-      + verticalCrop * 0.09 - occlusionPenalty,
+      eventConfidence * 0.16 + eventRoleFit * 0.10 + resolution * 0.04 + durationFit * 0.05
+      + technical.scores.exposure * 0.04 + technical.scores.dynamicRange * 0.02 + technical.scores.saturation * 0.02 + technical.scores.sharpness * 0.05
+      + dynamics.scores.motion * 0.05 + dynamics.scores.stability * 0.04 + dynamics.scores.continuity * 0.04 + verticalCrop * 0.05
+      + marketing.foodAppeal * 0.10 + marketing.actionSalience * 0.09 + marketing.productVisibility * 0.08 + marketing.composition * 0.07
+      - occlusionPenalty,
     ));
     const candidate: ShotCandidate = {
       ...event,
@@ -192,6 +201,10 @@ export function selectShots(
         ...technical.scores,
         ...dynamics.scores,
         verticalCrop,
+        foodAppeal: roundScore(marketing.foodAppeal),
+        actionSalience: roundScore(marketing.actionSalience),
+        productVisibility: roundScore(marketing.productVisibility),
+        composition: roundScore(marketing.composition),
         occlusionPenalty,
         repetitionPenalty: 0,
         total,
@@ -256,7 +269,7 @@ export async function selectJobShots(paths: JobPaths, now = new Date(), options:
   if (sceneAnalysis.jobId !== timeline.jobId) {
     throw new CookingVideoError("EVENT_INPUT_INVALID", "Scene analysis and event timeline belong to different jobs.");
   }
-  const result = selectShots(timeline, manifest, now, metrics, sceneAnalysis);
+  const result = selectShots(timeline, manifest, now, metrics, sceneAnalysis, options.modelScores);
   validateShotCandidates(result, manifest);
   await writeJsonAtomic(path.join(paths.analysis, "shot-candidates.json"), result);
   return result;
