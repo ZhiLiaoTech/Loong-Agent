@@ -698,6 +698,10 @@ MVP 建议门槛：
 
 可重试失败按尝试次数做有上限的指数退避，永久错误或耗尽次数进入 dead letter；人工确认后可重置次数重新排队。Worker 崩溃后，其他 Worker 可在租约过期时接管；旧 Worker 的迟到结果因 token 失效而不能覆盖新结果。队列写操作用跨进程独占锁和原子 rename，30 秒以上的孤儿写锁可回收；并发 claim 的锁竞争只跳过当前候选。完成结果保存 SHA-256，重复确认相同摘要保持幂等。
 
+`CVS-907` 增加 `pnpm --filter @loong/cooking-video test:load` 压测入口，可设置 `--tasks`、`--workers`、`--rounds`、`--soak-seconds` 和允许错误率。它同时输出完成率、错误分类、吞吐、P50/P95/max 延迟、RSS 和 heap，并在丢任务或超过错误率时返回非零。2026-09-05 Windows 本机基线：100 个持久任务、8 Worker 全部完成，0 错误，13.17 task/s，P95 1,708.84 ms；10 秒持续循环共完成 168 个任务，0 错误，16.69 task/s，P95 120 ms，RSS 93,622,272 bytes。首轮压测暴露 Windows `open(wx)` 在锁竞争时返回 EPERM，已按竞争退避修复并复测通过。
+
+该基线只衡量队列控制面，不代表视频渲染吞吐；真实 FFmpeg 的 2/3/4 路 E2E 已单独通过。客户硬件与日均作业量确定后，应在生产等价 Linux 节点运行至少 6 小时 `--soak-seconds 21600`，并据 CPU、磁盘 IOPS 和实际视频时长冻结容量阈值。
+
 `CVS-905` 使用 `deploy/cooking-video/Dockerfile` 作为三类 Worker 的共同镜像。Node 基础镜像同时固定精确版本和 OCI digest，Debian 软件源固定到不可变 snapshot 时间点，pnpm、Remotion、React 和 TypeScript 固定精确版本；构建阶段使用 frozen lockfile。运行层安装 FFmpeg/ffprobe、Chromium、Noto CJK、DejaVu 和 tini，并由 `verify-runtime.mjs` 在构建时逐项验证。容器以 uid/gid 10001 非 root 用户运行，只有 `/data` 作为持久化卷。
 
 镜像验证命令：

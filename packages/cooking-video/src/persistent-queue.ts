@@ -183,24 +183,43 @@ export class PersistentCookingVideoQueue {
   }
   async #read(id: string): Promise<PersistentWorkerTask> { return readJsonFile<PersistentWorkerTask>(this.#file(id)); }
   async #readOptional(id: string): Promise<PersistentWorkerTask | undefined> { try { return await this.#read(id); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; } }
-  async #save(item: PersistentWorkerTask): Promise<void> { await writeJsonAtomic(this.#file(item.queueTaskId), item); }
-  async #locked<T>(id: string, operation: () => Promise<T>, allowStaleRecovery = true): Promise<T> {
+  async #save(item: PersistentWorkerTask): Promise<void> {
+    for (let attempt = 0; ; attempt += 1) {
+      try { await writeJsonAtomic(this.#file(item.queueTaskId), item); return; } catch (error) {
+        if (attempt >= 9 || !["EPERM", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+        await new Promise(resolve => setTimeout(resolve, 5 * (attempt + 1)));
+      }
+    }
+  }
+  async #locked<T>(id: string, operation: () => Promise<T>, allowStaleRecovery = true, contentionAttempts = 0): Promise<T> {
     await mkdir(this.#tasksRoot(), { recursive: true });
     const lockFile = resolveWithin(this.#tasksRoot(), `${id}.lock`);
     let handle;
     try { handle = await open(lockFile, "wx"); } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      if (["EEXIST", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) {
         if (allowStaleRecovery) {
           const metadata = await stat(lockFile).catch(() => undefined);
           if (metadata && Date.now() - metadata.mtimeMs > 30_000) {
             await rm(lockFile, { force: true });
-            return this.#locked(id, operation, false);
+            return this.#locked(id, operation, false, 0);
           }
+        }
+        if (contentionAttempts < 40) {
+          await new Promise(resolve => setTimeout(resolve, 5));
+          return this.#locked(id, operation, allowStaleRecovery, contentionAttempts + 1);
         }
         throw new CookingVideoError("QUEUE_LEASE_LOST", "Queue task is being modified by another process.");
       }
       throw error;
     }
-    try { return await operation(); } finally { await handle.close(); await rm(lockFile, { force: true }); }
+    try { return await operation(); } finally {
+      await handle.close();
+      for (let attempt = 0; ; attempt += 1) {
+        try { await rm(lockFile, { force: true }); break; } catch (error) {
+          if (attempt >= 9 || !["EPERM", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? "")) break;
+          await new Promise(resolve => setTimeout(resolve, 5 * (attempt + 1)));
+        }
+      }
+    }
   }
 }

@@ -21,6 +21,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.json && node --test tests/*.test.mjs",
+    "test:load": "tsc -p tsconfig.json && node tests/load.mjs",
     "test:e2e": "tsc -p tsconfig.json && node tests/e2e-real.mjs",
     "test:e2e:matrix": "tsc -p tsconfig.json && node tests/e2e-matrix.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
