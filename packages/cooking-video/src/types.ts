@@ -429,3 +429,49 @@ export interface CookingVideoFeedbackSummary {
   failureModes: Record<FeedbackFailureMode, number>;
   qualityFailures: Record<string, number>;
 }
+
+export type GoldenAnnotationStatus = "draft" | "reviewed" | "adjudicated";
+export type GoldenCandidateExclusionReason = "blur" | "shake" | "occlusion" | "exposure" | "dirty_lens" | "unsafe_crop" | "duplicate" | "irrelevant" | "other";
+export type GoldenForbiddenReason = "privacy" | "safety" | "brand" | "food_quality" | "obstruction" | "technical" | "irrelevant" | "other";
+
+export interface GoldenAnnotation {
+  schemaVersion: "1.0";
+  sampleId: string;
+  jobId: string;
+  status: GoldenAnnotationStatus;
+  annotatedAt: string;
+  annotatorId: string;
+  sources: Array<{ cameraId: string; durationMs: number }>;
+  events: Array<{
+    id: string;
+    event: Exclude<CookingEvent, "unusable" | "unknown">;
+    startMs: number;
+    endMs: number;
+    required: boolean;
+    visibility: "clear" | "partial" | "hidden";
+  }>;
+  candidates: Array<{
+    id: string;
+    eventId: string;
+    cameraId: string;
+    startMs: number;
+    endMs: number;
+    usable: boolean;
+    exclusionReasons: GoldenCandidateExclusionReason[];
+  }>;
+  bestShots: Array<{ eventId: string; primaryCandidateId: string; alternateCandidateIds: string[] }>;
+  forbiddenRanges: Array<{
+    id: string;
+    cameraId: string;
+    startMs: number;
+    endMs: number;
+    severity: "exclude" | "warn";
+    reasons: GoldenForbiddenReason[];
+  }>;
+  review?: {
+    reviewerId: string;
+    reviewedAt: string;
+    verdict: "approved" | "changes_required";
+    issueCodes: string[];
+  };
+}

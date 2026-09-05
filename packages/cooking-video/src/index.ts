@@ -7,6 +7,7 @@ export * from "./editing.js";
 export * from "./digest.js";
 export * from "./event-detection.js";
 export * from "./feedback-analytics.js";
+export * from "./golden-annotation.js";
 export * from "./job-store.js";
 export * from "./job-runner.js";
 export * from "./job-queue.js";

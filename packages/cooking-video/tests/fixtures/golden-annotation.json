@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "1.0",
+  "sampleId": "sample-001",
+  "jobId": "cook-001",
+  "status": "reviewed",
+  "annotatedAt": "2026-09-05T08:00:00.000Z",
+  "annotatorId": "editor-01",
+  "sources": [
+    { "cameraId": "top", "durationMs": 30000 },
+    { "cameraId": "front", "durationMs": 30000 }
+  ],
+  "events": [
+    { "id": "event-001", "event": "ingredient_added", "startMs": 3000, "endMs": 6200, "required": true, "visibility": "clear" },
+    { "id": "event-002", "event": "stir_fry", "startMs": 8000, "endMs": 15000, "required": true, "visibility": "clear" }
+  ],
+  "candidates": [
+    { "id": "candidate-001-top", "eventId": "event-001", "cameraId": "top", "startMs": 2800, "endMs": 6500, "usable": true, "exclusionReasons": [] },
+    { "id": "candidate-001-front", "eventId": "event-001", "cameraId": "front", "startMs": 2800, "endMs": 6500, "usable": false, "exclusionReasons": ["occlusion"] },
+    { "id": "candidate-002-top", "eventId": "event-002", "cameraId": "top", "startMs": 8200, "endMs": 13800, "usable": true, "exclusionReasons": [] },
+    { "id": "candidate-002-front", "eventId": "event-002", "cameraId": "front", "startMs": 8200, "endMs": 13800, "usable": true, "exclusionReasons": [] }
+  ],
+  "bestShots": [
+    { "eventId": "event-001", "primaryCandidateId": "candidate-001-top", "alternateCandidateIds": [] },
+    { "eventId": "event-002", "primaryCandidateId": "candidate-002-front", "alternateCandidateIds": ["candidate-002-top"] }
+  ],
+  "forbiddenRanges": [
+    { "id": "forbidden-001", "cameraId": "front", "startMs": 2900, "endMs": 6400, "severity": "exclude", "reasons": ["obstruction"] },
+    { "id": "forbidden-002", "cameraId": "top", "startMs": 20000, "endMs": 22000, "severity": "warn", "reasons": ["technical"] }
+  ],
+  "review": {
+    "reviewerId": "reviewer-01",
+    "reviewedAt": "2026-09-05T09:00:00.000Z",
+    "verdict": "approved",
+    "issueCodes": []
+  }
+}

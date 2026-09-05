@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loong.local/schemas/cooking-promo-video/golden-annotation.schema.json",
+  "title": "Cooking Promo Video Golden Annotation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sampleId", "jobId", "status", "annotatedAt", "annotatorId", "sources", "events", "candidates", "bestShots", "forbiddenRanges"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "sampleId": { "$ref": "#/$defs/id" },
+    "jobId": { "$ref": "#/$defs/id" },
+    "status": { "enum": ["draft", "reviewed", "adjudicated"] },
+    "annotatedAt": { "type": "string", "format": "date-time" },
+    "annotatorId": { "$ref": "#/$defs/id" },
+    "sources": {
+      "type": "array", "minItems": 2, "maxItems": 4,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["cameraId", "durationMs"],
+        "properties": { "cameraId": { "$ref": "#/$defs/id" }, "durationMs": { "type": "integer", "minimum": 1 } }
+      }
+    },
+    "events": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "event", "startMs", "endMs", "required", "visibility"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "event": { "enum": ["machine_intro", "cooking_started", "ingredient_added", "seasoning_added", "stir_fry", "steam_or_flame", "sauce_coating", "dish_completed", "plating", "finished_dish", "operator_interaction"] },
+          "startMs": { "type": "integer", "minimum": 0 },
+          "endMs": { "type": "integer", "minimum": 1 },
+          "required": { "type": "boolean" },
+          "visibility": { "enum": ["clear", "partial", "hidden"] }
+        }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "eventId", "cameraId", "startMs", "endMs", "usable", "exclusionReasons"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" }, "eventId": { "$ref": "#/$defs/id" }, "cameraId": { "$ref": "#/$defs/id" },
+          "startMs": { "type": "integer", "minimum": 0 }, "endMs": { "type": "integer", "minimum": 1 },
+          "usable": { "type": "boolean" },
+          "exclusionReasons": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/exclusionReason" } }
+        }
+      }
+    },
+    "bestShots": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["eventId", "primaryCandidateId", "alternateCandidateIds"],
+        "properties": {
+          "eventId": { "$ref": "#/$defs/id" }, "primaryCandidateId": { "$ref": "#/$defs/id" },
+          "alternateCandidateIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+        }
+      }
+    },
+    "forbiddenRanges": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "cameraId", "startMs", "endMs", "severity", "reasons"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" }, "cameraId": { "$ref": "#/$defs/id" },
+          "startMs": { "type": "integer", "minimum": 0 }, "endMs": { "type": "integer", "minimum": 1 },
+          "severity": { "enum": ["exclude", "warn"] },
+          "reasons": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/forbiddenReason" } }
+        }
+      }
+    },
+    "review": {
+      "type": "object", "additionalProperties": false, "required": ["reviewerId", "reviewedAt", "verdict", "issueCodes"],
+      "properties": {
+        "reviewerId": { "$ref": "#/$defs/id" }, "reviewedAt": { "type": "string", "format": "date-time" },
+        "verdict": { "enum": ["approved", "changes_required"] },
+        "issueCodes": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$" } }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "enum": ["reviewed", "adjudicated"] } }, "required": ["status"] },
+      "then": { "required": ["review"], "properties": { "review": { "properties": { "verdict": { "const": "approved" } } } } }
+    }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+    "exclusionReason": { "enum": ["blur", "shake", "occlusion", "exposure", "dirty_lens", "unsafe_crop", "duplicate", "irrelevant", "other"] },
+    "forbiddenReason": { "enum": ["privacy", "safety", "brand", "food_quality", "obstruction", "technical", "irrelevant", "other"] }
+  }
+}

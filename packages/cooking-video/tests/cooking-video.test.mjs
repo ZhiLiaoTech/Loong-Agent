@@ -48,7 +48,30 @@ import {
   validatePromotionalCopy,
   validateShotCandidates,
   validateJob,
+  validateGoldenAnnotation,
 } from "../dist/index.js";
+
+test("validates reviewed golden annotations and cross-field labeling rules", async () => {
+  const fixture = JSON.parse(await readFile(path.join("tests", "fixtures", "golden-annotation.json"), "utf8"));
+  const annotation = validateGoldenAnnotation(fixture, "cook-001");
+  assert.equal(annotation.events.length, 2);
+  assert.equal(annotation.bestShots.length, 2);
+  assert.throws(() => validateGoldenAnnotation({ ...fixture, jobId: "other" }, "cook-001"), error => error instanceof CookingVideoError && /different job/.test(error.message));
+  assert.throws(() => validateGoldenAnnotation({ ...fixture, bestShots: fixture.bestShots.slice(0, 1) }), error => error instanceof CookingVideoError && /has no best shot/.test(error.message));
+  const overlapping = structuredClone(fixture);
+  overlapping.candidates[1].usable = true;
+  overlapping.candidates[1].exclusionReasons = [];
+  assert.throws(() => validateGoldenAnnotation(overlapping), error => error instanceof CookingVideoError && /overlaps an excluded range/.test(error.message));
+  assert.throws(() => validateGoldenAnnotation({ ...fixture, review: { ...fixture.review, reviewerId: fixture.annotatorId } }), error => error instanceof CookingVideoError && /differ from annotator/.test(error.message));
+  assert.throws(() => validateGoldenAnnotation({ ...fixture, events: [{ ...fixture.events[0], visibility: "hidden" }, fixture.events[1]] }), error => error instanceof CookingVideoError && /cannot be hidden/.test(error.message));
+  const draft = structuredClone(fixture);
+  draft.status = "draft";
+  draft.bestShots = [];
+  delete draft.review;
+  assert.equal(validateGoldenAnnotation(draft).status, "draft");
+  const schema = JSON.parse(await readFile(path.join("..", "suite", "presets", "cooking-promo-video", "schemas", "golden-annotation.schema.json"), "utf8"));
+  assert.equal(schema.properties.schemaVersion.const, "1.0");
+});
 
 test("cooking video queue enforces concurrency, deduplicates, cancels queued work, and emits progress", async () => {
   assert.throws(() => new CookingVideoQueue({ concurrency: 0 }), /integer from 1 to 8/);

@@ -15,6 +15,7 @@ import { renderJob } from "./render.js";
 import { reviewVideo } from "./quality.js";
 import { synchronizeJob } from "./sync.js";
 import { importJobVisionResponse, prepareVisionEvidence } from "./vision-evidence.js";
+import { validateGoldenAnnotation } from "./golden-annotation.js";
 
 interface CliOptions {
   command?: string;
@@ -35,6 +36,7 @@ interface CliOptions {
   stableSeconds?: number;
   batchId?: string;
   allowAlignedStart: boolean;
+  annotationFile?: string;
 }
 
 function usage(): string {
@@ -54,6 +56,7 @@ function usage(): string {
     "  loong-cooking-video edit --job <jobId> [--jobs-root <path>] [--template 15s|30s]",
     "  loong-cooking-video render --job <jobId> [--jobs-root <path>] [--approved] [--draft]",
     "  loong-cooking-video review --job <jobId> --video <output filename> [--jobs-root <path>]",
+    "  loong-cooking-video validate-gold --annotation-file <path> [--job <expectedJobId>]",
     "  loong-cooking-video run --job <jobId> [pipeline options]",
     "  loong-cooking-video resume --job <jobId> [pipeline options]",
     "Pipeline options: --reference <camera> --offset <camera>=<ms> --allow-aligned-start --template 15s|30s --approved --draft --timeout-ms <ms>",
@@ -105,6 +108,11 @@ function parseArgs(argv: string[]): CliOptions {
       options.videoFile = value;
     }
     else if (arg === "--response") options.responseFile = argv[++index];
+    else if (arg === "--annotation-file") {
+      const value = argv[++index];
+      if (!value || value.startsWith("--")) throw new CookingVideoError("JOB_INVALID", "--annotation-file requires a path value.");
+      options.annotationFile = path.resolve(value);
+    }
     else if (arg === "--inbox") {
       const value = argv[++index];
       if (!value || value.startsWith("--")) throw new CookingVideoError("INTAKE_INVALID", "--inbox requires a path value.");
@@ -133,6 +141,16 @@ function parseArgs(argv: string[]): CliOptions {
 export async function runCookingVideo(argv: string[] = process.argv.slice(2)): Promise<void> {
   const options = parseArgs(argv);
   const store = new JobStore(options.jobsRoot);
+  if (options.command === "validate-gold") {
+    if (!options.annotationFile) throw new CookingVideoError("JOB_INVALID", "--annotation-file is required.");
+    const annotation = validateGoldenAnnotation(JSON.parse(await readFile(options.annotationFile, "utf8")) as unknown, options.jobId);
+    process.stdout.write(`${JSON.stringify({
+      valid: true, sampleId: annotation.sampleId, jobId: annotation.jobId, status: annotation.status,
+      events: annotation.events.length, candidates: annotation.candidates.length, bestShots: annotation.bestShots.length,
+      forbiddenRanges: annotation.forbiddenRanges.length,
+    }, null, 2)}\n`);
+    return;
+  }
   if (options.command === "scan-inbox" || options.command === "consume-inbox" || options.command === "process-inbox") {
     if (!options.inboxRoot) throw new CookingVideoError("INTAKE_INVALID", "--inbox is required.");
     const intakeOptions = { stableSeconds: options.stableSeconds, batchId: options.batchId };

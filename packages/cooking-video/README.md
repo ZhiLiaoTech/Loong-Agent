@@ -92,6 +92,16 @@ loong gateway --cooking-video-concurrency 2
 
 人工在 Studio 保存 EDL 或提交审核后，系统会自动向 `state/human-feedback.jsonl` 写入结构化计数，不记录字幕或审核意见正文。`cooking.video.feedback.summary` 可按 `jobId` 查询单作业，也可省略 `jobId` 聚合 jobsRoot，用于计算换机位率、编辑类型、审核结果、返修原因和质检失败分布。
 
+## 黄金样本标注
+
+标注规范见 `docs/COOKING_PROMO_VIDEO_GOLDEN_ANNOTATION.md`，机器可读格式由 Suite 的 `schemas/golden-annotation.schema.json` 定义。提交标注前执行：
+
+```powershell
+loong cooking-video validate-gold --annotation-file annotation.json --job cook-001
+```
+
+运行时校验器还会检查 JSON Schema 无法表达的跨字段关系，包括引用存在性、时间范围、禁用区间重叠、可用候选和最佳镜头的一致性。
+
 ## 无机器事件日志
 
 ```powershell
