@@ -11,6 +11,8 @@ export * from "./golden-annotation.js";
 export * from "./job-store.js";
 export * from "./job-runner.js";
 export * from "./job-queue.js";
+export * from "./persistent-queue.js";
+export * from "./persistent-worker.js";
 export * from "./intake.js";
 export * from "./json-files.js";
 export * from "./media.js";

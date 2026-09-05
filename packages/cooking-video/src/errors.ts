@@ -35,7 +35,9 @@ export type CookingVideoErrorCode =
   | "ACCESS_DENIED"
   | "AUDIT_FAILED"
   | "RETENTION_INVALID"
-  | "RETENTION_BLOCKED";
+  | "RETENTION_BLOCKED"
+  | "QUEUE_TASK_INVALID"
+  | "QUEUE_LEASE_LOST";
 
 export class CookingVideoError extends Error {
   readonly code: CookingVideoErrorCode;

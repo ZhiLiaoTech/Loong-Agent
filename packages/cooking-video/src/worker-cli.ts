@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { JobStore } from "./job-store.js";
+import { PersistentCookingVideoQueue } from "./persistent-queue.js";
+import { runPersistentWorkerOnce } from "./persistent-worker.js";
 import { executeCookingVideoWorkerTask, type CookingVideoWorkerAction, type CookingVideoWorkerRole } from "./worker-runtime.js";
 
 function value(args: string[], name: string): string | undefined {
@@ -15,6 +17,13 @@ async function main(): Promise<void> {
   const jobId = value(args, "--job");
   const taskId = value(args, "--task-id");
   const expectedStatus = value(args, "--expected-status");
+  const queueRoot = value(args, "--queue-root") ?? process.env.LOONG_COOKING_VIDEO_QUEUE_ROOT;
+  const workerId = value(args, "--worker-id") ?? process.env.HOSTNAME ?? `worker-${process.pid}`;
+  if (role && jobsRoot && queueRoot) {
+    const consumed = await runPersistentWorkerOnce(new PersistentCookingVideoQueue(queueRoot), new JobStore(jobsRoot), role, workerId);
+    process.stdout.write(`${JSON.stringify(consumed ?? { idle: true })}\n`);
+    return;
+  }
   if (!role || !action || !jobsRoot || !jobId || !taskId || !expectedStatus) {
     throw new Error("Usage: loong-cooking-video-worker --role <media|model|render> --action <action> --jobs-root <path> --job <id> --task-id <id> --expected-status <status>");
   }

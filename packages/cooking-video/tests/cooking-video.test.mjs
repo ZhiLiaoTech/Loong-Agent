@@ -9,6 +9,7 @@ import {
   CookingVideoMetricsStore,
   CookingVideoFeedbackStore,
   MultipartUploadCoordinator,
+  PersistentCookingVideoQueue,
   StorageAuditLog,
   TenantObjectStorageService,
   buildTenantObjectKey,
@@ -41,6 +42,7 @@ import {
   parseFfprobePayload,
   resolveWithin,
   reviewVideo,
+  runPersistentWorkerOnce,
   remotionCompositionId,
   runCopyAdapter,
   runVisionAdapter,
@@ -317,6 +319,89 @@ test("production media image pins its base, package snapshot, browser, fonts, an
   assert.match(verifier, /remotion: "4\.0\.520"/);
   assert.match(verifier, /command\("ffmpeg", \["-version"\]\)/);
   assert.match(verifier, /command\("chromium", \["--version"\]\)/);
+});
+
+test("persistent queue retries, leases, takes over expired work, and deduplicates completion", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cooking-persistent-queue-"));
+  try {
+    const queue = new PersistentCookingVideoQueue(root, { leaseMs: 1000, retryBaseMs: 100, retryMaxMs: 1000, maxAttempts: 3 });
+    const task = planNextWorkerTask("job-1", "created", "stage-task-1");
+    const enqueued = await queue.enqueue(task, "tenant-a/job-1/ingest/v1", new Date("2026-09-05T00:00:00.000Z"));
+    assert.equal((await queue.enqueue(task, "tenant-a/job-1/ingest/v1")).queueTaskId, enqueued.queueTaskId);
+    assert.equal(await queue.claim("model", "model-1", new Date("2026-09-05T00:00:00.000Z")), undefined);
+    const first = await queue.claim("media", "media-1", new Date("2026-09-05T00:00:00.000Z"));
+    assert.equal(first.attempts, 1);
+    await assert.rejects(() => queue.renew(first.queueTaskId, "media-2", first.leaseToken, new Date("2026-09-05T00:00:00.100Z")), error => error instanceof CookingVideoError && error.code === "QUEUE_LEASE_LOST");
+    const retry = await queue.fail(first.queueTaskId, "media-1", first.leaseToken, "TRANSIENT", true, new Date("2026-09-05T00:00:00.200Z"));
+    assert.equal(retry.status, "retry_wait");
+    assert.equal(await queue.claim("media", "media-2", new Date("2026-09-05T00:00:00.250Z")), undefined);
+    const second = await queue.claim("media", "media-2", new Date("2026-09-05T00:00:00.300Z"));
+    assert.equal(second.attempts, 2);
+    const takeover = await queue.claim("media", "media-3", new Date("2026-09-05T00:00:01.301Z"));
+    assert.equal(takeover.attempts, 3);
+    assert.notEqual(takeover.leaseToken, second.leaseToken);
+    await assert.rejects(() => queue.complete(second.queueTaskId, "media-2", second.leaseToken, "a".repeat(64), new Date("2026-09-05T00:00:01.400Z")), error => error instanceof CookingVideoError && error.code === "QUEUE_LEASE_LOST");
+    const complete = await queue.complete(takeover.queueTaskId, "media-3", takeover.leaseToken, "a".repeat(64), new Date("2026-09-05T00:00:01.500Z"));
+    assert.equal(complete.status, "completed");
+    assert.equal((await queue.complete(takeover.queueTaskId, "media-3", takeover.leaseToken, "a".repeat(64))).status, "completed");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent queue dead-letters exhausted and permanent failures", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cooking-persistent-dead-"));
+  try {
+    const queue = new PersistentCookingVideoQueue(root, { leaseMs: 1000, retryBaseMs: 100, maxAttempts: 2 });
+    const task = planNextWorkerTask("job-2", "synced", "stage-task-2");
+    const item = await queue.enqueue(task, "job-2/detect/v1", new Date("2026-09-05T00:00:00.000Z"));
+    const claimed = await queue.claim("model", "model-1", new Date("2026-09-05T00:00:00.000Z"));
+    const dead = await queue.fail(item.queueTaskId, "model-1", claimed.leaseToken, "INVALID_MEDIA", false, new Date("2026-09-05T00:00:00.100Z"));
+    assert.equal(dead.status, "dead_letter");
+    const requeued = await queue.requeueDeadLetter(item.queueTaskId, new Date("2026-09-05T00:01:00.000Z"));
+    assert.equal(requeued.status, "queued");
+    assert.equal(requeued.attempts, 0);
+    assert.equal((await queue.list("queued")).length, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent queue recovers a stale mutation lock after a crashed process", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cooking-persistent-lock-"));
+  try {
+    const key = "job-3/ingest/v1";
+    const queueTaskId = (await import("node:crypto")).createHash("sha256").update(key).digest("hex");
+    const tasks = path.join(root, "tasks");
+    await mkdir(tasks, { recursive: true });
+    const lock = path.join(tasks, `${queueTaskId}.lock`);
+    await writeFile(lock, "orphan");
+    const old = new Date(Date.now() - 60_000);
+    await utimes(lock, old, old);
+    const queue = new PersistentCookingVideoQueue(root);
+    const item = await queue.enqueue(planNextWorkerTask("job-3", "created", "stage-task-3"), key);
+    assert.equal(item.queueTaskId, queueTaskId);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent worker claims, executes, and commits an idempotent result digest", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cooking-persistent-worker-"));
+  try {
+    const queue = new PersistentCookingVideoQueue(path.join(root, "queue"));
+    const task = planNextWorkerTask("job-worker", "created", "stage-worker");
+    await queue.enqueue(task, "job-worker/ingest/v1");
+    const fakeState = { schemaVersion: "1.0", jobId: "job-worker", status: "ingested", createdAt: "", updatedAt: "", stages: [] };
+    const consumed = await runPersistentWorkerOnce(queue, new JobStore(path.join(root, "jobs")), "media", "media-1", {
+      executor: async (_store, role, claimedTask) => ({ taskId: claimedTask.taskId, jobId: claimedTask.jobId, role, action: claimedTask.action, state: fakeState }),
+    });
+    assert.equal(consumed.queueItem.status, "completed");
+    assert.match(consumed.queueItem.resultDigest, /^[a-f0-9]{64}$/);
+    assert.equal(await runPersistentWorkerOnce(queue, new JobStore(path.join(root, "jobs")), "media", "media-1", { executor: async () => { throw new Error("must not run"); } }), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("validates reviewed golden annotations and cross-field labeling rules", async () => {

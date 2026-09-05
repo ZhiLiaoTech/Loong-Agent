@@ -103,7 +103,9 @@ async function failTask(store: JobStore, jobId: string, action: CookingVideoWork
 export async function executeCookingVideoWorkerTask(store: JobStore, configuredRole: CookingVideoWorkerRole, task: CookingVideoWorkerTask, options: RunJobOptions = {}): Promise<CookingVideoWorkerResult> {
   validateTask(task, configuredRole);
   const loaded = await store.load(task.jobId);
-  if (loaded.state.status !== task.expectedStatus) {
+  const lastFailedStage = [...loaded.state.stages].reverse().find(record => record.status === "failed" && record.stage !== "failed")?.stage;
+  const retryingSameStage = loaded.state.status === "failed" && lastFailedStage === RUNNING_STAGE[task.action];
+  if (loaded.state.status !== task.expectedStatus && !retryingSameStage) {
     throw new CookingVideoError("JOB_STATE_INVALID", `Worker expected ${task.expectedStatus}, found ${loaded.state.status}.`);
   }
   if (task.action === "render" && loaded.job.brief.requireHumanApproval === true && options.approved !== true) {

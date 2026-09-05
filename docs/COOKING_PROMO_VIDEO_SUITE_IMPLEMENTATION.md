@@ -694,6 +694,10 @@ MVP 建议门槛：
 
 三个 Worker 共享 `loong-cooking-video-worker` 入口，可分别设置 `LOONG_COOKING_VIDEO_WORKER_ROLE` 与 `LOONG_COOKING_VIDEO_JOBS_ROOT`，并由任务参数提供 action、job id、task id 和 expected status。每次进程只执行一个明确阶段，成功后只推进一个状态边界，失败时落合法 running/failed 轨迹。生产队列如何投递、租约、重试和接管由 `CVS-906` 实现；本任务先冻结进程边界，避免后续队列再次耦合为单体。
 
+`CVS-906` 的 `PersistentCookingVideoQueue` 以原子 JSON 文件持久化阶段任务。idempotency key 经过 SHA-256 后成为稳定 task id；同 key/同载荷重复投递返回原任务，同 key/不同载荷失败关闭。不同角色只 claim 自己的任务，claim 生成随机 lease token；renew、complete 和 fail 都必须同时匹配 worker id、token 与未过期租约。
+
+可重试失败按尝试次数做有上限的指数退避，永久错误或耗尽次数进入 dead letter；人工确认后可重置次数重新排队。Worker 崩溃后，其他 Worker 可在租约过期时接管；旧 Worker 的迟到结果因 token 失效而不能覆盖新结果。队列写操作用跨进程独占锁和原子 rename，30 秒以上的孤儿写锁可回收；并发 claim 的锁竞争只跳过当前候选。完成结果保存 SHA-256，重复确认相同摘要保持幂等。
+
 `CVS-905` 使用 `deploy/cooking-video/Dockerfile` 作为三类 Worker 的共同镜像。Node 基础镜像同时固定精确版本和 OCI digest，Debian 软件源固定到不可变 snapshot 时间点，pnpm、Remotion、React 和 TypeScript 固定精确版本；构建阶段使用 frozen lockfile。运行层安装 FFmpeg/ffprobe、Chromium、Noto CJK、DejaVu 和 tini，并由 `verify-runtime.mjs` 在构建时逐项验证。容器以 uid/gid 10001 非 root 用户运行，只有 `/data` 作为持久化卷。
 
 镜像验证命令：
