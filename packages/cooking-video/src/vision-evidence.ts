@@ -98,16 +98,9 @@ function validateDetection(raw: VisionDetection, items: Map<string, VisionEviden
 }
 
 export function importVisionDetections(request: VisionEvidenceRequest, response: VisionEvidenceResponse, now = new Date()): EventTimeline {
-  if (!response || typeof response !== "object" || Object.keys(response).some(key => !["schemaVersion", "jobId", "detections"].includes(key))
-    || response.schemaVersion !== "1.0" || response.jobId !== request.jobId || !Array.isArray(response.detections)) {
-    throw new CookingVideoError("VISION_RESPONSE_INVALID", "Vision response schema or jobId is invalid.");
-  }
+  const validated = validateVisionResponse(request, response);
   const items = new Map(request.items.map(item => [item.id, item]));
-  const seen = new Set<string>();
-  const events = response.detections.map(raw => {
-    const detection = validateDetection(raw, items);
-    if (seen.has(detection.itemId)) throw new CookingVideoError("VISION_RESPONSE_INVALID", `Duplicate vision item: ${detection.itemId}.`);
-    seen.add(detection.itemId);
+  const events = validated.detections.map(detection => {
     const item = items.get(detection.itemId)!;
     const bucket = Math.round(item.timelineTimeMs / request.intervalMs);
     const startMs = Math.max(0, item.sourceTimeMs - 2_000);
@@ -122,10 +115,6 @@ export function importVisionDetections(request: VisionEvidenceRequest, response:
       problems: detection.problems ?? [],
     };
   }).filter(event => event.confidence >= 0.5 && event.event !== "unknown");
-  if (seen.size !== request.items.length) {
-    const missing = request.items.filter(item => !seen.has(item.id)).map(item => item.id);
-    throw new CookingVideoError("VISION_RESPONSE_INVALID", `Vision response is missing ${missing.length} item(s): ${missing.slice(0, 5).join(", ")}.`);
-  }
   if (events.length === 0) throw new CookingVideoError("VISION_RESPONSE_INVALID", "Vision response contains no usable detections.");
   return {
     schemaVersion: "1.0",
@@ -133,6 +122,30 @@ export function importVisionDetections(request: VisionEvidenceRequest, response:
     generatedAt: now.toISOString(),
     source: "vision",
     events,
+  };
+}
+
+export function validateVisionResponse(request: VisionEvidenceRequest, response: VisionEvidenceResponse): VisionEvidenceResponse {
+  if (!response || typeof response !== "object" || Object.keys(response).some(key => !["schemaVersion", "jobId", "detections"].includes(key))
+    || response.schemaVersion !== "1.0" || response.jobId !== request.jobId || !Array.isArray(response.detections)) {
+    throw new CookingVideoError("VISION_RESPONSE_INVALID", "Vision response schema or jobId is invalid.");
+  }
+  const items = new Map(request.items.map(item => [item.id, item]));
+  const seen = new Set<string>();
+  const detections = response.detections.map(raw => {
+    const detection = validateDetection(raw, items);
+    if (seen.has(detection.itemId)) throw new CookingVideoError("VISION_RESPONSE_INVALID", `Duplicate vision item: ${detection.itemId}.`);
+    seen.add(detection.itemId);
+    return detection;
+  });
+  if (seen.size !== request.items.length) {
+    const missing = request.items.filter(item => !seen.has(item.id)).map(item => item.id);
+    throw new CookingVideoError("VISION_RESPONSE_INVALID", `Vision response is missing ${missing.length} item(s): ${missing.slice(0, 5).join(", ")}.`);
+  }
+  return {
+    schemaVersion: "1.0",
+    jobId: request.jobId,
+    detections,
   };
 }
 

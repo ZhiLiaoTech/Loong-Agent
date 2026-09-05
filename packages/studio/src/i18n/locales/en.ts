@@ -15,6 +15,7 @@ export const en: MessageTree = {
     connections: "Connections",
 
     observe: "Observe",
+    cookingVideo: "Video review",
 
     agents: "Agents",
 

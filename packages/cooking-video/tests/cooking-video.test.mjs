@@ -23,10 +23,18 @@ import {
   parseMachineEvents,
   parseMotionSamples,
   parseSceneCutTimes,
+  listReviewJobs,
+  loadReviewWorkspace,
+  prepareReviewRerender,
   prepareVisionEvidence,
   parseFfprobePayload,
   resolveWithin,
   reviewVideo,
+  remotionCompositionId,
+  runCopyAdapter,
+  runVisionAdapter,
+  saveReviewEdit,
+  submitReview,
   runProcess,
   sanitizeCaption,
   scanInbox,
@@ -37,6 +45,45 @@ import {
   validateShotCandidates,
   validateJob,
 } from "../dist/index.js";
+
+test("persists optimistic EDL revisions and review decisions", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-review-"));
+  try {
+    const store = new JobStore(root);
+    const created = await store.create(sampleJob());
+    const manifest = {
+      schemaVersion: "1.0", jobId: "cook-001", generatedAt: "2026-09-05T00:00:00.000Z", warnings: [],
+      sources: [
+        { cameraId: "top", path: "input/top.mp4", byteSize: 1, sha256: "a", durationMs: 5000, streams: [] },
+        { cameraId: "front", path: "input/front.mp4", byteSize: 1, sha256: "b", durationMs: 5000, streams: [] },
+      ],
+    };
+    const decision = {
+      schemaVersion: "1.0", jobId: "cook-001", templateId: "fixture", fps: 30, aspectRatio: "9:16", durationTargetMs: 2500,
+      segments: [{ id: "seg-1", cameraId: "top", sourceStartMs: 0, sourceEndMs: 1000, timelineStartMs: 0, event: "stir_fry", caption: "翻炒", transition: "cut", crop: { mode: "cover", focusX: 0.5, focusY: 0.5 } }],
+      audio: { retainSourceAudio: true, sourceGainDb: -8, musicGainDb: -14 }, endCard: { durationMs: 1500, headline: "让每一道菜都稳定出品" },
+    };
+    await mkdir(created.paths.analysis, { recursive: true });
+    await writeFile(path.join(created.paths.analysis, "media-manifest.json"), JSON.stringify(manifest));
+    await writeFile(path.join(created.paths.edit, "edit-decision.json"), JSON.stringify(decision));
+    let workspace = await loadReviewWorkspace(store, "cook-001");
+    assert.equal(workspace.review.revision, 1);
+    workspace = await saveReviewEdit(store, "cook-001", 1, { ...decision, segments: [{ ...decision.segments[0], cameraId: "front", caption: "均匀翻炒" }] });
+    assert.equal(workspace.review.revision, 2);
+    assert.equal(workspace.decision.segments[0].cameraId, "front");
+    await assert.rejects(() => saveReviewEdit(store, "cook-001", 1, decision), error => error instanceof CookingVideoError && error.code === "EDIT_REVISION_CONFLICT");
+    await assert.rejects(() => submitReview(store, "cook-001", 2, "changes_requested"), error => error instanceof CookingVideoError && error.code === "REVIEW_ACTION_INVALID");
+    const review = await submitReview(store, "cook-001", 2, "changes_requested", { note: "请缩短开场", reviewer: "operator" });
+    assert.equal(review.history.length, 1);
+    assert.equal((await listReviewJobs(store)).length, 1);
+    await store.transition("cook-001", "ingesting");
+    await store.transition("cook-001", "failed");
+    await prepareReviewRerender(store, "cook-001");
+    assert.equal((await store.load("cook-001")).state.status, "awaiting_review");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 function sampleJob(jobId = "cook-001") {
   return {
@@ -474,6 +521,35 @@ test("prepares bounded vision evidence and imports schema-constrained detections
   }
 });
 
+test("vision adapter batches requests and retries invalid JSON within limits", async () => {
+  const items = Array.from({ length: 3 }, (_, index) => ({ id: `frame-${index}`, cameraId: "top", sourceTimeMs: index * 1000, sourceDurationMs: 5000, timelineTimeMs: index * 1000, imagePath: `frames/vision/frame-${index}.jpg` }));
+  const request = { schemaVersion: "1.0", jobId: "cook-001", generatedAt: "2026-09-04T00:00:00.000Z", intervalMs: 1000, allowedEvents: ["stir_fry", "unknown"], items };
+  const calls = [];
+  const result = await runVisionAdapter(request, async (batch, context) => {
+    calls.push({ ids: batch.items.map(item => item.id), ...context });
+    if (context.batchIndex === 0 && context.attempt === 1) return "not-json";
+    return JSON.stringify({ schemaVersion: "1.0", jobId: batch.jobId, detections: batch.items.map(item => ({ itemId: item.id, event: "stir_fry", confidence: 0.9 })) });
+  }, { allowFrameTransfer: true, maxItemsPerCall: 2, maxAttempts: 2, estimatedCostPerItemUsd: 0.01, maxBudgetUsd: 0.05 });
+  assert.equal(result.response.detections.length, 3);
+  assert.equal(result.metrics.attempts, 3);
+  assert.equal(result.metrics.estimatedCostUsd, 0.05);
+  assert.deepEqual(calls.map(call => call.ids.length), [2, 2, 1]);
+});
+
+test("vision adapter enforces authorization, budget, timeout, and invalid-response failure", async () => {
+  const request = {
+    schemaVersion: "1.0", jobId: "cook-001", generatedAt: "2026-09-04T00:00:00.000Z", intervalMs: 1000,
+    allowedEvents: ["unknown"], items: [{ id: "frame-0", cameraId: "top", sourceTimeMs: 0, sourceDurationMs: 1000, timelineTimeMs: 0, imagePath: "frames/vision/frame-0.jpg" }],
+  };
+  const unused = async () => { throw new Error("must not run"); };
+  await assert.rejects(() => runVisionAdapter(request, unused, { allowFrameTransfer: false }), error => error instanceof CookingVideoError && error.code === "VISION_RESPONSE_REQUIRED");
+  await assert.rejects(() => runVisionAdapter(request, unused, { allowFrameTransfer: true, estimatedCostPerItemUsd: 1, maxBudgetUsd: 0.5 }), error => error instanceof CookingVideoError && error.code === "MODEL_BUDGET_EXCEEDED");
+  await assert.rejects(() => runVisionAdapter(request, async () => await new Promise(() => {}), { allowFrameTransfer: true, timeoutMs: 10, maxAttempts: 1 }), error => error instanceof CookingVideoError && error.code === "MODEL_TIMEOUT");
+  let attempts = 0;
+  await assert.rejects(() => runVisionAdapter(request, async () => { attempts += 1; return "invalid"; }, { allowFrameTransfer: true, maxAttempts: 2 }), error => error instanceof CookingVideoError && error.code === "VISION_RESPONSE_INVALID");
+  assert.equal(attempts, 2);
+});
+
 test("selects the best camera per event occurrence with explainable scores", () => {
   const manifest = {
     schemaVersion: "1.0", jobId: "cook-001", generatedAt: "2026-09-04T00:00:00.000Z", warnings: [],
@@ -565,6 +641,24 @@ test("rejects prohibited promotional claims and unsupported event captions", () 
   assert.throws(() => validatePromotionalCopy(sampleJob(), { ...decision, segments: [{ ...decision.segments[0], event: "machine_intro", caption: "自动投料" }] }), error => error instanceof CookingVideoError && error.code === "EDIT_CONSTRAINT_VIOLATION");
 });
 
+test("copy adapter retries structured output and enforces evidence-backed claims", async () => {
+  const request = {
+    schemaVersion: "1.0", jobId: "cook-001", language: "zh-CN", dishName: "宫保鸡丁",
+    verifiedSellingPoints: ["自动翻炒"], evidenceEvents: ["stir_fry", "finished_dish"],
+  };
+  let calls = 0;
+  const result = await runCopyAdapter(request, async () => {
+    calls += 1;
+    if (calls === 1) return "invalid";
+    return { schemaVersion: "1.0", jobId: "cook-001", title: "宫保鸡丁制作过程", captions: [{ event: "stir_fry", text: "自动翻炒，过程可见" }], cta: "了解设备详情" };
+  }, { allowModelCall: true, maxAttempts: 2 });
+  assert.equal(result.attempts, 2);
+  assert.equal(result.copy.captions[0].event, "stir_fry");
+  await assert.rejects(() => runCopyAdapter(request, async () => ({ schemaVersion: "1.0", jobId: "cook-001", title: "行业第一", captions: [{ event: "stir_fry", text: "自动翻炒" }], cta: "了解详情" }), { allowModelCall: true, maxAttempts: 1 }), error => error instanceof CookingVideoError && error.code === "EDIT_CONSTRAINT_VIOLATION");
+  await assert.rejects(() => runCopyAdapter(request, async () => ({ schemaVersion: "1.0", jobId: "cook-001", title: "设备展示", captions: [{ event: "ingredient_added", text: "自动投料" }], cta: "了解详情" }), { allowModelCall: true, maxAttempts: 1 }), error => error instanceof CookingVideoError && error.code === "MODEL_CALL_FAILED");
+  await assert.rejects(() => runCopyAdapter(request, async () => ({ schemaVersion: "1.0", jobId: "cook-001", title: "超级节能设备", captions: [{ event: "stir_fry", text: "自动翻炒" }], cta: "了解详情" }), { allowModelCall: true, maxAttempts: 1 }), error => error instanceof CookingVideoError && error.code === "EDIT_CONSTRAINT_VIOLATION");
+});
+
 test("creates a constrained 15-second EDL and SRT", () => {
   const makeCandidate = (occurrenceId, cameraId, event, startMs, endMs) => ({
     occurrenceId, cameraId, event, startMs, endMs, confidence: 0.95, evidenceFrames: [], problems: [],
@@ -628,6 +722,15 @@ test("builds a controlled render command and rejects out-of-bounds clips", async
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("routes supported aspect ratios to fixed Remotion compositions", () => {
+  const base = { aspectRatio: "9:16", durationTargetMs: 15000 };
+  assert.equal(remotionCompositionId(base), "CookingPromo15");
+  assert.equal(remotionCompositionId({ ...base, aspectRatio: "16:9", durationTargetMs: 30000 }), "CookingPromoLandscape30");
+  assert.equal(remotionCompositionId({ ...base, aspectRatio: "1:1" }), "CookingPromoSquare15");
+  assert.equal(remotionCompositionId({ ...base, aspectRatio: "1:1", durationTargetMs: 30000 }), "CookingPromoSquare30");
+  assert.throws(() => remotionCompositionId({ ...base, aspectRatio: "16:9" }), error => error instanceof CookingVideoError && error.code === "EDIT_CONSTRAINT_VIOLATION");
 });
 
 test("produces a structured quality report from deterministic probes", async () => {

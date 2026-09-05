@@ -18,4 +18,7 @@ const defaultProps: CookingPromoProps = {
 export const RemotionRoot: React.FC = () => <>
   <Composition id="CookingPromo15" component={CookingPromo} width={1080} height={1920} fps={30} durationInFrames={450} defaultProps={defaultProps} />
   <Composition id="CookingPromo30" component={CookingPromo} width={1080} height={1920} fps={30} durationInFrames={900} defaultProps={{ ...defaultProps, durationMs: 30000 }} />
+  <Composition id="CookingPromoLandscape30" component={CookingPromo} width={1920} height={1080} fps={30} durationInFrames={900} defaultProps={{ ...defaultProps, durationMs: 30000 }} />
+  <Composition id="CookingPromoSquare15" component={CookingPromo} width={1080} height={1080} fps={30} durationInFrames={450} defaultProps={defaultProps} />
+  <Composition id="CookingPromoSquare30" component={CookingPromo} width={1080} height={1080} fps={30} durationInFrames={900} defaultProps={{ ...defaultProps, durationMs: 30000 }} />
 </>;

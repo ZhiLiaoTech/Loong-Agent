@@ -562,6 +562,15 @@ export function parseGatewayRequest(value: unknown): GatewayRequest {
   if (value.type === "cron.tick") {
     return { type: "cron.tick", id: value.id };
   }
+  if (typeof value.type === "string" && value.type.startsWith("cooking.video.")) {
+    const supported = new Set([
+      "cooking.video.jobs.list", "cooking.video.workspace.get", "cooking.video.edit.save",
+      "cooking.video.review.submit", "cooking.video.rerender", "cooking.video.preview.read",
+    ]);
+    if (!supported.has(value.type)) badRequest(`Unsupported cooking video RPC: ${value.type}.`);
+    if (!isRecord(value.params)) badRequest(`${value.type} params must be an object.`);
+    return { type: value.type, id: value.id, params: value.params } as GatewayRequest;
+  }
   if (value.type === "fs.directory.browse") {
     const params = parseDirectoryBrowseParams(value.params);
     const request: GatewayRequest = {

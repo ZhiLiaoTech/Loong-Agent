@@ -9,7 +9,9 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "studio": "remotion studio src/index.tsx",
     "render:15": "remotion render src/index.tsx CookingPromo15",
-    "render:30": "remotion render src/index.tsx CookingPromo30"
+    "render:30": "remotion render src/index.tsx CookingPromo30",
+    "render:landscape": "remotion render src/index.tsx CookingPromoLandscape30",
+    "render:square": "remotion render src/index.tsx CookingPromoSquare15"
   },
   "dependencies": {
     "@remotion/cli": "4.0.520",

@@ -127,6 +127,12 @@ export type GatewayRequest =
   | { type: "cron.job.upsert"; id: string; params: GatewayCronJobUpsertParams }
   | { type: "cron.job.remove"; id: string; params: GatewayCronJobRemoveParams }
   | { type: "cron.tick"; id: string }
+  | { type: "cooking.video.jobs.list"; id: string; params: Record<string, unknown> }
+  | { type: "cooking.video.workspace.get"; id: string; params: Record<string, unknown> }
+  | { type: "cooking.video.edit.save"; id: string; params: Record<string, unknown> }
+  | { type: "cooking.video.review.submit"; id: string; params: Record<string, unknown> }
+  | { type: "cooking.video.rerender"; id: string; params: Record<string, unknown> }
+  | { type: "cooking.video.preview.read"; id: string; params: Record<string, unknown> }
   | { type: "fs.directory.browse"; id: string; params?: { path?: string } };
 
 export type GatewayResponse =

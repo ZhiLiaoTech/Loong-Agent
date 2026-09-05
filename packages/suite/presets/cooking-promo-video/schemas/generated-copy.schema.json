@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loong.cooking-video.generated-copy.v1",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "title", "captions", "cta"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "jobId": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 30 },
+    "captions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": ["event", "text"],
+        "properties": {
+          "event": { "type": "string" },
+          "text": { "type": "string", "minLength": 1, "maxLength": 24 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "cta": { "type": "string", "minLength": 1, "maxLength": 20 }
+  },
+  "additionalProperties": false
+}

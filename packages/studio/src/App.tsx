@@ -28,6 +28,7 @@ import { ObservePage } from "./pages/ObservePage.js";
 import { ModelsPage } from "./pages/ModelsPage.js";
 
 import { SettingsPage } from "./pages/SettingsPage.js";
+import { CookingVideoPage } from "./pages/CookingVideoPage.js";
 
 
 
@@ -42,6 +43,7 @@ const PATH_TO_NAV: Record<string, string> = {
   "/connections": "connections",
 
   "/observe": "observe",
+  "/cooking-video": "cooking-video",
 
   "/settings": "settings",
 
@@ -119,6 +121,8 @@ function AppRoutes() {
     { id: "org", label: t("nav.org"), path: "/org", icon: "org" as const },
 
     { id: "observe", label: t("nav.observe"), path: "/observe", icon: "observe" as const, ...(pendingApprovals > 0 ? { badge: pendingApprovals } : {}) },
+
+    { id: "cooking-video", label: t("nav.cookingVideo"), path: "/cooking-video", icon: "connections" as const },
 
     { id: "connections", label: t("nav.connections"), path: "/connections", icon: "connections" as const },
 
@@ -232,6 +236,7 @@ function AppRoutes() {
 
               <Route path="/org" element={<OrgPage />} />
               <Route path="/observe" element={<ObservePage />} />
+              <Route path="/cooking-video" element={<CookingVideoPage />} />
               <Route path="/connections" element={<ConnectionsPage />} />
               <Route path="/agents" element={<Navigate to="/org" replace />} />
 

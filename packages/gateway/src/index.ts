@@ -42,6 +42,7 @@ import {
 } from "./session-coordinator.js";
 import { executeGatewayAgentTurn } from "./gateway-agent-turn.js";
 import { browseGatewayDirectory } from "./gateway-fs-browse.js";
+import { handleCookingVideoRpc } from "./gateway-cooking-video-rpc.js";
 import {
   materializeSuiteInstance,
   materializeSuiteRelease,
@@ -867,6 +868,12 @@ export class HttpLoongGateway implements LoongGateway {
       ...(this.#trajectoryStore ? ["trajectory.list", "trajectory.get"] : []),
       ...(this.#cronStore ? ["cron.jobs.list", "cron.job.upsert", "cron.job.remove"] : []),
       ...(this.#cronRunner ? ["cron.tick"] : []),
+      "cooking.video.jobs.list",
+      "cooking.video.workspace.get",
+      "cooking.video.edit.save",
+      "cooking.video.review.submit",
+      "cooking.video.rerender",
+      "cooking.video.preview.read",
       "fs.directory.browse",
     ];
   }
@@ -948,6 +955,7 @@ export class HttpLoongGateway implements LoongGateway {
       upsertCronJob: params => this.#upsertCronJob(params as GatewayCronJobUpsertParams),
       removeCronJob: params => this.#removeCronJob(params as GatewayCronJobRemoveParams),
       tickCron: () => this.#tickCron(),
+      handleCookingVideoRpc: (type, params) => handleCookingVideoRpc(type, params),
       waitForQueuedTurn: queueTurnId => this.#sessionCoordinator.waitForQueuedTurn(queueTurnId),
       runAgent: params => this.#runAgent(params as GatewayAgentParams),
       browseDirectory: params => browseGatewayDirectory(params),

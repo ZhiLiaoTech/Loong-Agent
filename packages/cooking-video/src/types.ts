@@ -283,6 +283,38 @@ export interface EditDecision {
   };
 }
 
+export type ReviewVerdict = "pending" | "approved" | "changes_requested" | "rejected";
+
+export interface ReviewRecord {
+  id: string;
+  revision: number;
+  verdict: Exclude<ReviewVerdict, "pending">;
+  note?: string;
+  reviewer?: string;
+  createdAt: string;
+}
+
+export interface EditReviewState {
+  schemaVersion: "1.0";
+  jobId: string;
+  revision: number;
+  verdict: ReviewVerdict;
+  updatedAt: string;
+  history: ReviewRecord[];
+}
+
+export interface CookingVideoReviewWorkspace {
+  job: CookingVideoJob;
+  state: JobState;
+  review: EditReviewState;
+  manifest: MediaManifest;
+  sync?: SyncMap;
+  timeline?: EventTimeline;
+  decision: EditDecision;
+  quality?: QualityReport;
+  previewPath?: string;
+}
+
 export interface QualityCheck {
   id: string;
   status: "pass" | "warn" | "fail";

@@ -133,6 +133,13 @@ export function buildRemotionRenderProps(job: CookingVideoJob, decision: EditDec
   };
 }
 
+export function remotionCompositionId(decision: EditDecision): string {
+  if (decision.aspectRatio === "9:16") return decision.durationTargetMs <= 15_000 ? "CookingPromo15" : "CookingPromo30";
+  if (decision.aspectRatio === "16:9" && decision.durationTargetMs === 30_000) return "CookingPromoLandscape30";
+  if (decision.aspectRatio === "1:1") return decision.durationTargetMs <= 15_000 ? "CookingPromoSquare15" : "CookingPromoSquare30";
+  throw new CookingVideoError("EDIT_CONSTRAINT_VIOLATION", `No Remotion composition for ${decision.aspectRatio} at ${decision.durationTargetMs}ms.`);
+}
+
 export function createEditDecision(
   job: CookingVideoJob,
   shotCandidates: ShotCandidates,
@@ -203,7 +210,7 @@ export async function createJobEdit(paths: JobPaths, job: CookingVideoJob, templ
   await writeJsonAtomic(path.join(paths.edit, "edit-decision.json"), decision);
   await writeJsonAtomic(path.join(paths.edit, "render-props.json"), {
     schemaVersion: "1.0",
-    compositionId: decision.durationTargetMs <= 15_000 ? "CookingPromo15" : "CookingPromo30",
+    compositionId: remotionCompositionId(decision),
     publicDirectory: paths.root,
     props: buildRemotionRenderProps(job, decision, manifest),
   });

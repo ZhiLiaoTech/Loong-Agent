@@ -15,6 +15,7 @@ export const zhCN: MessageTree = {
     connections: "连接",
 
     observe: "观测",
+    cookingVideo: "视频审核",
 
     agents: "助手",
 

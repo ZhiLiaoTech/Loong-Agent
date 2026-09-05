@@ -77,6 +77,7 @@ export interface GatewayRpcHandlerDeps {
   upsertCronJob(params: unknown): Promise<unknown>;
   removeCronJob(params: unknown): Promise<unknown>;
   tickCron(): Promise<unknown>;
+  handleCookingVideoRpc(type: string, params: Record<string, unknown>): Promise<unknown>;
   waitForQueuedTurn(queueTurnId: string): Promise<unknown>;
   runAgent(params: GatewayAgentParams): Promise<unknown>;
   browseDirectory(params: unknown): Promise<unknown>;
@@ -329,6 +330,16 @@ export async function handleGatewayRpc(
       }
       if (request.type === "cron.tick") {
         return { type: "response", id: request.id, ok: true, payload: await deps.tickCron() };
+      }
+      if (
+        request.type === "cooking.video.jobs.list" ||
+        request.type === "cooking.video.workspace.get" ||
+        request.type === "cooking.video.edit.save" ||
+        request.type === "cooking.video.review.submit" ||
+        request.type === "cooking.video.rerender" ||
+        request.type === "cooking.video.preview.read"
+      ) {
+        return { type: "response", id: request.id, ok: true, payload: await deps.handleCookingVideoRpc(request.type, request.params) };
       }
       if (request.type === "fs.directory.browse") {
         return { type: "response", id: request.id, ok: true, payload: await deps.browseDirectory(request.params) };

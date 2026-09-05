@@ -16,18 +16,26 @@ const EVIDENCE_RULES: Array<{ pattern: RegExp; events: readonly CookingEvent[] }
   { pattern: /成品|出锅|完成/, events: ["dish_completed", "plating", "finished_dish"] },
 ];
 
+export function hasDirectVisualSupport(text: string, events: readonly CookingEvent[]): boolean {
+  return EVIDENCE_RULES.some(rule => rule.pattern.test(text) && events.some(event => rule.events.includes(event)));
+}
+
+export function assertPromotionalText(text: string, events: readonly CookingEvent[], maxCharacters = 24): void {
+  if ([...text].length > maxCharacters) throw new CookingVideoError("EDIT_CONSTRAINT_VIOLATION", `Promotional text exceeds ${maxCharacters} characters: ${text}`);
+  if (FORBIDDEN_CLAIMS.some(pattern => pattern.test(text))) {
+    throw new CookingVideoError("EDIT_CONSTRAINT_VIOLATION", `Promotional text contains a prohibited or unsubstantiated claim: ${text}`);
+  }
+  for (const rule of EVIDENCE_RULES) {
+    if (rule.pattern.test(text) && !events.some(event => rule.events.includes(event))) {
+      throw new CookingVideoError("EDIT_CONSTRAINT_VIOLATION", `Promotional text is not supported by its source event: ${text}`);
+    }
+  }
+}
+
 export function validatePromotionalCopy(job: CookingVideoJob, decision: EditDecision): void {
   const lines = [...decision.segments.map(segment => ({ text: segment.caption ?? "", events: [segment.event] })), { text: decision.endCard.headline, events: decision.segments.map(segment => segment.event) }];
   for (const { text, events } of lines) {
-    if ([...text].length > 24) throw new CookingVideoError("EDIT_CONSTRAINT_VIOLATION", `Promotional text exceeds 24 characters: ${text}`);
-    if (FORBIDDEN_CLAIMS.some(pattern => pattern.test(text))) {
-      throw new CookingVideoError("EDIT_CONSTRAINT_VIOLATION", `Promotional text contains a prohibited or unsubstantiated claim: ${text}`);
-    }
-    for (const rule of EVIDENCE_RULES) {
-      if (rule.pattern.test(text) && !events.some(event => rule.events.includes(event))) {
-        throw new CookingVideoError("EDIT_CONSTRAINT_VIOLATION", `Promotional text is not supported by its source event: ${text}`);
-      }
-    }
+    assertPromotionalText(text, events);
   }
   for (const sellingPoint of job.brief.sellingPoints ?? []) {
     if (FORBIDDEN_CLAIMS.some(pattern => pattern.test(sellingPoint))) {
