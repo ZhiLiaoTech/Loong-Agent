@@ -341,7 +341,8 @@ export async function handleGatewayRpc(
         request.type === "cooking.video.queue.list" ||
         request.type === "cooking.video.queue.enqueue" ||
         request.type === "cooking.video.queue.cancel" ||
-        request.type === "cooking.video.metrics.get"
+        request.type === "cooking.video.metrics.get" ||
+        request.type === "cooking.video.feedback.summary"
       ) {
         return { type: "response", id: request.id, ok: true, payload: await deps.handleCookingVideoRpc(request.type, request.params) };
       }

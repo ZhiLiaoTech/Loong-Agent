@@ -374,3 +374,58 @@ export interface CookingVideoMetricsSummary {
     totalDurationMs: number;
   };
 }
+
+export type FeedbackFailureMode = "pacing" | "camera_choice" | "image_quality" | "copy" | "brand" | "audio" | "compliance" | "sync" | "other";
+
+export interface EditFeedbackMetric {
+  schemaVersion: "1.0";
+  type: "edit_saved";
+  jobId: string;
+  recordedAt: string;
+  fromRevision: number;
+  toRevision: number;
+  beforeSegments: number;
+  afterSegments: number;
+  comparableSegments: number;
+  cameraChanges: number;
+  timingChanges: number;
+  captionChanges: number;
+  cropChanges: number;
+  transitionChanges: number;
+  addedSegments: number;
+  deletedSegments: number;
+  reorderedSegments: number;
+  audioChanged: boolean;
+  endCardChanged: boolean;
+}
+
+export interface ReviewFeedbackMetric {
+  schemaVersion: "1.0";
+  type: "review_submitted";
+  jobId: string;
+  recordedAt: string;
+  revision: number;
+  verdict: Exclude<ReviewVerdict, "pending">;
+  failureModes: FeedbackFailureMode[];
+}
+
+export type CookingVideoFeedbackMetric = EditFeedbackMetric | ReviewFeedbackMetric;
+
+export interface CookingVideoFeedbackSummary {
+  schemaVersion: "1.0";
+  generatedAt: string;
+  jobId?: string;
+  jobsAnalyzed: number;
+  jobsWithFeedback: number;
+  editSessions: number;
+  comparableSegments: number;
+  cameraChanges: number;
+  cameraChangeRate: number;
+  timingChanges: number;
+  captionChanges: number;
+  addedSegments: number;
+  deletedSegments: number;
+  reviewOutcomes: Record<Exclude<ReviewVerdict, "pending">, number>;
+  failureModes: Record<FeedbackFailureMode, number>;
+  qualityFailures: Record<string, number>;
+}

@@ -7,6 +7,8 @@ import {
   CookingVideoError,
   CookingVideoQueue,
   CookingVideoMetricsStore,
+  CookingVideoFeedbackStore,
+  classifyReviewFailureModes,
   cleanupJobTemporaryFiles,
   computeJobInputDigest,
   consumeInbox,
@@ -146,6 +148,17 @@ test("persists optimistic EDL revisions and review decisions", async () => {
     await assert.rejects(() => submitReview(store, "cook-001", 2, "changes_requested"), error => error instanceof CookingVideoError && error.code === "REVIEW_ACTION_INVALID");
     const review = await submitReview(store, "cook-001", 2, "changes_requested", { note: "请缩短开场", reviewer: "operator" });
     assert.equal(review.history.length, 1);
+    const feedbackStore = new CookingVideoFeedbackStore(root);
+    const feedback = await feedbackStore.summary("cook-001", new Date("2026-09-05T00:01:00.000Z"));
+    assert.equal(feedback.editSessions, 1);
+    assert.equal(feedback.cameraChanges, 1);
+    assert.equal(feedback.cameraChangeRate, 1);
+    assert.equal(feedback.captionChanges, 1);
+    assert.equal(feedback.failureModes.pacing, 1);
+    assert.deepEqual(classifyReviewFailureModes("镜头模糊且需要修改字幕"), ["camera_choice", "image_quality", "copy"]);
+    const feedbackLog = await readFile(created.paths.feedbackMetricsFile, "utf8");
+    assert.equal(feedbackLog.includes("请缩短开场"), false);
+    assert.equal(feedbackLog.includes("均匀翻炒"), false);
     assert.equal((await listReviewJobs(store)).length, 1);
     await store.transition("cook-001", "ingesting");
     await store.transition("cook-001", "failed");

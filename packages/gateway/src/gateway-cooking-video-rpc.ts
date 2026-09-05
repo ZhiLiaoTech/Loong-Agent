@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   CookingVideoQueue,
   CookingVideoMetricsStore,
+  CookingVideoFeedbackStore,
   JobStore,
   listReviewJobs,
   loadReviewWorkspace,
@@ -57,6 +58,10 @@ export class CookingVideoGatewayService {
 
     const store = storeFor(params);
     if (type === "cooking.video.jobs.list") return { jobs: await listReviewJobs(store) };
+    if (type === "cooking.video.feedback.summary") {
+      const jobId = typeof params.jobId === "string" && params.jobId.trim() ? params.jobId.trim() : undefined;
+      return new CookingVideoFeedbackStore(store.jobsRoot).summary(jobId);
+    }
     const jobId = requiredString(params, "jobId");
     if (type === "cooking.video.queue.enqueue") {
       await store.load(jobId);

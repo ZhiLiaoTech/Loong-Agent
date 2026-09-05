@@ -90,6 +90,8 @@ loong gateway --cooking-video-concurrency 2
 
 视觉与文案模型适配器可通过 `onMetric` 接收逐次调用指标。将 `new CookingVideoMetricsStore(jobsRoot).record` 作为回调后，指标会追加写入作业的 `state/model-metrics.jsonl`。Studio 通过 `cooking.video.metrics.get` 显示调用量、估算费用、平均耗时、失败/超时和流水线耗时。视觉输入输出以关键帧/检测数计量，文案以字符数计量；费用使用适配器配置的估算单价，不等同于供应商最终账单。
 
+人工在 Studio 保存 EDL 或提交审核后，系统会自动向 `state/human-feedback.jsonl` 写入结构化计数，不记录字幕或审核意见正文。`cooking.video.feedback.summary` 可按 `jobId` 查询单作业，也可省略 `jobId` 聚合 jobsRoot，用于计算换机位率、编辑类型、审核结果、返修原因和质检失败分布。
+
 ## 无机器事件日志
 
 ```powershell

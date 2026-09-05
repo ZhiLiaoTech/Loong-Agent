@@ -3,6 +3,7 @@ import { access, readdir } from "node:fs/promises";
 import path from "node:path";
 import { captionsToSrt, buildRemotionRenderProps, remotionCompositionId } from "./editing.js";
 import { CookingVideoError } from "./errors.js";
+import { CookingVideoFeedbackStore, compareEditDecisions, createReviewFeedback } from "./feedback-analytics.js";
 import { JobStore } from "./job-store.js";
 import { readJsonFile, writeJsonAtomic } from "./json-files.js";
 import { validateEditDecision } from "./render.js";
@@ -113,6 +114,7 @@ export async function saveReviewEdit(
     writeFile(path.join(loaded.paths.edit, "captions.srt"), captionsToSrt(decision.segments, decision.endCard), "utf8"),
     writeJsonAtomic(path.join(loaded.paths.edit, "review-state.json"), review),
   ]);
+  await new CookingVideoFeedbackStore(store.jobsRoot).record(compareEditDecisions(workspace.decision, decision, expectedRevision, now)).catch(() => undefined);
   return loadReviewWorkspace(store, jobId);
 }
 
@@ -145,6 +147,7 @@ export async function submitReview(
   };
   const paths = store.paths(jobId);
   await writeJsonAtomic(path.join(paths.edit, "review-state.json"), review);
+  await new CookingVideoFeedbackStore(store.jobsRoot).record(createReviewFeedback(jobId, expectedRevision, verdict, options.note, now)).catch(() => undefined);
   return review;
 }
 

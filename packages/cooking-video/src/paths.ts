@@ -16,6 +16,7 @@ export interface JobPaths {
   stateFile: string;
   eventsFile: string;
   modelMetricsFile: string;
+  feedbackMetricsFile: string;
 }
 
 export function resolveWithin(root: string, candidate: string): string {
@@ -54,5 +55,6 @@ export function jobPaths(jobsRoot: string, jobId: string): JobPaths {
     stateFile: path.join(root, "state", "job-state.json"),
     eventsFile: path.join(root, "state", "events.jsonl"),
     modelMetricsFile: path.join(root, "state", "model-metrics.jsonl"),
+    feedbackMetricsFile: path.join(root, "state", "human-feedback.jsonl"),
   };
 }

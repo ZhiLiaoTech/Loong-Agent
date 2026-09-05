@@ -36,6 +36,11 @@ interface MetricsSummary {
   model: { calls: number; succeeded: number; failed: number; timedOut: number; cancelled: number; estimatedCostUsd: number; averageDurationMs: number; p95DurationMs: number };
   pipeline: { stageAttempts: number; failedStages: number; totalDurationMs: number };
 }
+interface FeedbackSummary {
+  editSessions: number; comparableSegments: number; cameraChanges: number; cameraChangeRate: number; timingChanges: number; captionChanges: number;
+  reviewOutcomes: { approved: number; changes_requested: number; rejected: number };
+  failureModes: Record<string, number>;
+}
 
 const TEXT = {
   "zh-CN": {
@@ -47,6 +52,7 @@ const TEXT = {
     changes_requested: "待返修", rejected: "已驳回", saving: "处理中", revision: "修订", confidence: "置信度", reference: "参考机位",
     queue: "渲染队列", cancel: "取消任务", connected: "进度已连接", metrics: "运行指标", calls: "模型调用", cost: "估算费用",
     average: "平均耗时", failures: "失败 / 超时", pipeline: "流水线耗时",
+    feedback: "人工修改", switchRate: "换机位率", editSessions: "编辑次数", timing: "边界调整", topFailure: "主要返修原因", noFailure: "暂无返修数据",
   },
   en: {
     title: "Promo video review", lead: "Confirm camera sync, refine the timeline, and approve a new render.", root: "Jobs directory", load: "Load jobs",
@@ -57,6 +63,7 @@ const TEXT = {
     changes_requested: "Changes requested", rejected: "Rejected", saving: "Working", revision: "Revision", confidence: "Confidence", reference: "Reference camera",
     queue: "Render queue", cancel: "Cancel job", connected: "Progress connected", metrics: "Runtime metrics", calls: "Model calls", cost: "Estimated cost",
     average: "Average latency", failures: "Failed / timed out", pipeline: "Pipeline time",
+    feedback: "Human feedback", switchRate: "Camera switch rate", editSessions: "Edit sessions", timing: "Timing edits", topFailure: "Top failure mode", noFailure: "No revision data",
   },
 } as const;
 
@@ -89,6 +96,7 @@ export function CookingVideoPage() {
   const [error, setError] = useState("");
   const [queueItem, setQueueItem] = useState<QueueItem>();
   const [metrics, setMetrics] = useState<MetricsSummary>();
+  const [feedback, setFeedback] = useState<FeedbackSummary>();
 
   const loadWorkspace = useCallback(async (jobId: string) => {
     setBusy("workspace"); setError(""); setPreviewUrl(undefined);
@@ -99,8 +107,11 @@ export function CookingVideoPage() {
       ]);
       setWorkspace(result); setDraft(result.decision); setSelectedJobId(jobId);
       setQueueItem(queue.items.find(item => item.jobId === jobId && ["queued", "running", "cancelling"].includes(item.status)));
-      const metricResult = await client.gateway.rpc<MetricsSummary>("cooking.video.metrics.get", { jobsRoot, jobId }).catch(() => undefined);
-      setMetrics(metricResult);
+      const [metricResult, feedbackResult] = await Promise.all([
+        client.gateway.rpc<MetricsSummary>("cooking.video.metrics.get", { jobsRoot, jobId }).catch(() => undefined),
+        client.gateway.rpc<FeedbackSummary>("cooking.video.feedback.summary", { jobsRoot, jobId }).catch(() => undefined),
+      ]);
+      setMetrics(metricResult); setFeedback(feedbackResult);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(""); }
   }, [client, jobsRoot]);
@@ -113,7 +124,7 @@ export function CookingVideoPage() {
       setJobs(result.jobs);
       const firstJob = result.jobs[0];
       if (firstJob) await loadWorkspace(firstJob.jobId);
-      else { setWorkspace(undefined); setDraft(undefined); setMetrics(undefined); setSelectedJobId(""); }
+      else { setWorkspace(undefined); setDraft(undefined); setMetrics(undefined); setFeedback(undefined); setSelectedJobId(""); }
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(""); }
   }, [client, jobsRoot, loadWorkspace]);
@@ -187,6 +198,7 @@ export function CookingVideoPage() {
   const eventCount = workspace?.timeline?.events.length ?? 0;
   const totalContentMs = useMemo(() => draft?.segments.reduce((sum, segment) => sum + segment.sourceEndMs - segment.sourceStartMs, 0) ?? 0, [draft]);
   const editIsDirty = Boolean(workspace && draft && JSON.stringify(workspace.decision) !== JSON.stringify(draft));
+  const topFailureMode = feedback ? Object.entries(feedback.failureModes).sort((left, right) => right[1] - left[1]).find(([, count]) => count > 0)?.[0] : undefined;
   const focusEvent = (event: { event: string; cameraId: string }) => {
     const segment = draft?.segments.find(item => item.event === event.event && item.cameraId === event.cameraId)
       ?? draft?.segments.find(item => item.event === event.event);
@@ -223,6 +235,9 @@ export function CookingVideoPage() {
           {metrics ? <section className={styles.metricsPanel} aria-label={copy.metrics}>
             <div><span>{copy.metrics}</span><strong>{metrics.model.succeeded}/{metrics.model.calls}</strong></div>
             <dl><div><dt>{copy.calls}</dt><dd>{metrics.model.calls}</dd></div><div><dt>{copy.cost}</dt><dd>${metrics.model.estimatedCostUsd.toFixed(4)}</dd></div><div><dt>{copy.average}</dt><dd>{metrics.model.averageDurationMs} ms</dd></div><div><dt>{copy.failures}</dt><dd>{metrics.model.failed} / {metrics.model.timedOut}</dd></div><div><dt>{copy.pipeline}</dt><dd>{formatMs(metrics.pipeline.totalDurationMs)}</dd></div></dl>
+          </section> : null}
+          {feedback ? <section className={styles.feedbackPanel} aria-label={copy.feedback}>
+            <strong>{copy.feedback}</strong><span>{copy.switchRate} <b>{Math.round(feedback.cameraChangeRate * 100)}%</b></span><span>{copy.editSessions} <b>{feedback.editSessions}</b></span><span>{copy.timing} <b>{feedback.timingChanges}</b></span><span>{copy.topFailure} <b>{topFailureMode ?? copy.noFailure}</b></span>
           </section> : null}
           <div className={styles.overviewGrid}>
             <section className={styles.panel}><h2>{copy.sync}</h2>{workspace.sync ? <>
