@@ -4,7 +4,7 @@ export function printHelp(): void {
 Usage:
   loong chat [--session <id>] [--session-dir <path>] [--no-session] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--plugin-root <path>] [--attach <path>]... <message>
   loong agent [--session <id>] [--session-dir <path>] [--no-session] [--profile <id>] [--allow-write] [--allow-exec] [--fail-on-ask] [--query-loop] [--finish-task] [--query-loop-max-turns <n>] [--model <ref>] [--model-fallback <ref>] [--tier <fast|standard|deep>] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--attach <path>]... <message>
-  loong gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--allow-exec] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>] [--model-timeout-ms <ms>] [--model-timeout-sec <sec>]
+  loong gateway [--host <host>] [--port <port>] [--secret <value>] [--session-dir <path>] [--allow-write] [--allow-exec] [--skill-root <path>] [--plugin-root <path>] [--memory-dir <path>] [--memory-backend <id>] [--cron-jobs <path>] [--model-timeout-ms <ms>] [--model-timeout-sec <sec>] [--cooking-video-concurrency <1-8>]
   loong cron [--jobs <path>] [--gateway-url <url>] [--secret <value>] [--once] [--interval-ms <ms>]
   loong plugins list
   loong plugins install [-l|--link] <plugin-path>

@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   CookingVideoError,
+  CookingVideoQueue,
   cleanupJobTemporaryFiles,
   computeJobInputDigest,
   consumeInbox,
@@ -45,6 +46,75 @@ import {
   validateShotCandidates,
   validateJob,
 } from "../dist/index.js";
+
+test("cooking video queue enforces concurrency, deduplicates, cancels queued work, and emits progress", async () => {
+  assert.throws(() => new CookingVideoQueue({ concurrency: 0 }), /integer from 1 to 8/);
+  let active = 0;
+  let maximumActive = 0;
+  const releases = [];
+  const events = [];
+  const runner = async (_store, jobId) => {
+    active += 1;
+    maximumActive = Math.max(maximumActive, active);
+    await new Promise(resolve => releases.push(resolve));
+    active -= 1;
+    return { state: { schemaVersion: "1.0", jobId, status: "completed", createdAt: "2026-09-05T00:00:00.000Z", updatedAt: "2026-09-05T00:00:01.000Z", stages: [] }, stoppedForApproval: false };
+  };
+  const queue = new CookingVideoQueue({ concurrency: 2, runner, onEvent: event => events.push(event) });
+  const one = queue.enqueue({ jobsRoot: "queue-fixture", jobId: "job-1" });
+  const duplicate = queue.enqueue({ jobsRoot: "queue-fixture", jobId: "job-1" });
+  const two = queue.enqueue({ jobsRoot: "queue-fixture", jobId: "job-2" });
+  const three = queue.enqueue({ jobsRoot: "queue-fixture", jobId: "job-3" });
+  const four = queue.enqueue({ jobsRoot: "queue-fixture", jobId: "job-4" });
+  assert.equal(duplicate.queueId, one.queueId);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(maximumActive, 2);
+  assert.equal(queue.list().find(item => item.queueId === three.queueId).position, 1);
+  assert.equal(queue.cancel(four.queueId).status, "cancelled");
+  releases.shift()();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(active, 2);
+  for (const release of releases.splice(0)) release();
+  await new Promise(resolve => setImmediate(resolve));
+  for (const release of releases.splice(0)) release();
+  await queue.waitForIdle();
+  assert.equal(maximumActive, 2);
+  assert.equal(queue.list().filter(item => item.status === "completed").length, 3);
+  assert.equal(events.some(event => event.phase === "queued"), true);
+  assert.equal(events.some(event => event.phase === "started"), true);
+  assert.equal(events.some(event => event.phase === "completed"), true);
+  assert.equal(events.some(event => event.phase === "cancelled"), true);
+  assert.equal(two.jobId, "job-2");
+});
+
+test("cooking video queue forwards stage transitions and aborts running work", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-queue-"));
+  try {
+    const events = [];
+    const stageQueue = new CookingVideoQueue({ concurrency: 1, onEvent: event => events.push(event), runner: async (store, jobId) => {
+      const created = await store.create(sampleJob(jobId));
+      const state = await store.transition(jobId, "ingesting");
+      return { state, stoppedForApproval: false };
+    }});
+    stageQueue.enqueue({ jobsRoot: root, jobId: "queue-stage" });
+    await stageQueue.waitForIdle();
+    assert.equal(events.some(event => event.phase === "stage" && event.transition?.to === "ingesting"), true);
+
+    const abortQueue = new CookingVideoQueue({ concurrency: 1, runner: async (_store, jobId, options) => {
+      await new Promise((resolve, reject) => {
+        options.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
+      return { state: { schemaVersion: "1.0", jobId, status: "completed", createdAt: "", updatedAt: "", stages: [] }, stoppedForApproval: false };
+    }});
+    const running = abortQueue.enqueue({ jobsRoot: root, jobId: "queue-abort" });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(abortQueue.cancel(running.queueId).status, "cancelling");
+    await abortQueue.waitForIdle();
+    assert.equal(abortQueue.list().find(item => item.queueId === running.queueId).status, "cancelled");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("persists optimistic EDL revisions and review decisions", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "loong-cooking-review-"));

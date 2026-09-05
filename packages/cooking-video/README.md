@@ -78,7 +78,13 @@ node packages/cli/dist/index.js cooking-video run `
 
 时间线支持切换机位、修改入点/出点、删除片段和编辑字幕。保存时服务端重新检查素材边界、时间线连续性、总时长与宣传证据，并使用修订号阻止旧页面覆盖新修改。驳回和要求返修必须填写意见；只有批准当前修订后才能触发再次渲染。
 
-当前重渲染 RPC 为本地同步执行，适合单机试点。生产并发队列、进度推送和对象存储下载属于后续任务。
+重渲染会进入 Gateway 进程内队列，默认并发数为 1。相同作业重复提交会复用现有排队项，等待中或运行中的任务均可取消；阶段变化通过 SSE/WebSocket 推送到 Studio。并发数可在启动 Gateway 时配置：
+
+```powershell
+loong gateway --cooking-video-concurrency 2
+```
+
+允许范围为 1-8，也可设置 `LOONG_COOKING_VIDEO_CONCURRENCY`。生产队列持久化、Worker 接管、自动重试和死信处理属于后续生产化任务。
 
 ## 无机器事件日志
 

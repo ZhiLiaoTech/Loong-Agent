@@ -5,6 +5,17 @@ import { jobPaths, type JobPaths } from "./paths.js";
 import { JOB_STAGES, type CookingVideoJob, type JobStage, type JobState, type StageRecord } from "./types.js";
 import { validateJob } from "./validation.js";
 
+export interface JobStoreEvent {
+  type: string;
+  at: string;
+  jobId: string;
+  [key: string]: unknown;
+}
+
+export interface JobStoreOptions {
+  onEvent?: (event: JobStoreEvent) => void;
+}
+
 const ALLOWED_TRANSITIONS: Record<JobStage, readonly JobStage[]> = {
   created: ["ingesting", "cancelled"],
   ingesting: ["ingested", "failed", "cancelled"],
@@ -36,9 +47,11 @@ async function exists(file: string): Promise<boolean> {
 
 export class JobStore {
   readonly jobsRoot: string;
+  readonly #onEvent: ((event: JobStoreEvent) => void) | undefined;
 
-  constructor(jobsRoot: string) {
+  constructor(jobsRoot: string, options: JobStoreOptions = {}) {
     this.jobsRoot = jobsRoot;
+    this.#onEvent = options.onEvent;
   }
 
   paths(jobId: string): JobPaths {
@@ -134,11 +147,12 @@ export class JobStore {
       stages: [...stages, record],
     };
     await writeJsonAtomic(loaded.paths.stateFile, state);
-    await this.appendEvent(loaded.paths, { type: "job.transition", at: timestamp, from: loaded.state.status, to: next });
+    await this.appendEvent(loaded.paths, { type: "job.transition", at: timestamp, jobId, from: loaded.state.status, to: next });
     return state;
   }
 
-  private async appendEvent(paths: JobPaths, event: Record<string, unknown>): Promise<void> {
+  private async appendEvent(paths: JobPaths, event: JobStoreEvent): Promise<void> {
     await appendFile(paths.eventsFile, `${JSON.stringify(event)}\n`, "utf8");
+    try { this.#onEvent?.(event); } catch { /* progress observers must not break state persistence */ }
   }
 }

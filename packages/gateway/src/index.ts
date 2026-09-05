@@ -42,7 +42,7 @@ import {
 } from "./session-coordinator.js";
 import { executeGatewayAgentTurn } from "./gateway-agent-turn.js";
 import { browseGatewayDirectory } from "./gateway-fs-browse.js";
-import { handleCookingVideoRpc } from "./gateway-cooking-video-rpc.js";
+import { CookingVideoGatewayService } from "./gateway-cooking-video-rpc.js";
 import {
   materializeSuiteInstance,
   materializeSuiteRelease,
@@ -480,6 +480,7 @@ export interface HttpLoongGatewayOptions {
   suiteDataDir?: string;
   name?: string;
   pairingStore?: PairingStore;
+  cookingVideoConcurrency?: number;
 }
 
 export { FilePairingStore, defaultPairingFilePath, type PairedDeviceRecord, type PairingStore } from "./pairing.js";
@@ -532,6 +533,7 @@ export class HttpLoongGateway implements LoongGateway {
   readonly #sessionCoordinator = new SessionTurnCoordinator();
   readonly #rateLimiter = new SlidingWindowRateLimiter();
   readonly #connections: GatewayConnectionHub;
+  readonly #cookingVideo: CookingVideoGatewayService;
   readonly #runSessions = new Map<string, string>();
   readonly #runs = new Map<string, GatewayRunRecord>();
   readonly #runControllers = new Map<string, AbortController>();
@@ -594,6 +596,17 @@ export class HttpLoongGateway implements LoongGateway {
       tryConsumeWebSocket: request => this.#rateLimiter.tryConsume("websocket", clientRateLimitKey(request)),
       handleRpc: request => this.#handleRpc(request),
       resolveSessionId: event => this.#runSessions.get(event.runId) ?? readEventSessionId(event),
+    });
+    this.#cookingVideo = new CookingVideoGatewayService({
+      ...(options.cookingVideoConcurrency !== undefined ? { concurrency: options.cookingVideoConcurrency } : {}),
+      onQueueEvent: event => this.#connections.broadcastRuntimeEvent({
+        type: "cooking_video",
+        runId: `cooking-video:${event.item.queueId}`,
+        jobId: event.item.jobId,
+        queueId: event.item.queueId,
+        phase: event.phase,
+        payload: event,
+      }),
     });
     this.#approvalService?.attachEventPublisher(event => {
       this.#connections.broadcastRuntimeEvent(event);
@@ -874,6 +887,9 @@ export class HttpLoongGateway implements LoongGateway {
       "cooking.video.review.submit",
       "cooking.video.rerender",
       "cooking.video.preview.read",
+      "cooking.video.queue.list",
+      "cooking.video.queue.enqueue",
+      "cooking.video.queue.cancel",
       "fs.directory.browse",
     ];
   }
@@ -955,7 +971,7 @@ export class HttpLoongGateway implements LoongGateway {
       upsertCronJob: params => this.#upsertCronJob(params as GatewayCronJobUpsertParams),
       removeCronJob: params => this.#removeCronJob(params as GatewayCronJobRemoveParams),
       tickCron: () => this.#tickCron(),
-      handleCookingVideoRpc: (type, params) => handleCookingVideoRpc(type, params),
+      handleCookingVideoRpc: (type, params) => this.#cookingVideo.handle(type, params),
       waitForQueuedTurn: queueTurnId => this.#sessionCoordinator.waitForQueuedTurn(queueTurnId),
       runAgent: params => this.#runAgent(params as GatewayAgentParams),
       browseDirectory: params => browseGatewayDirectory(params),

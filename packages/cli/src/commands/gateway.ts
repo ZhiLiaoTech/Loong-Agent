@@ -64,6 +64,7 @@ export interface ParsedGatewayArgs {
   skillRoots: string[];
   pluginRoots: string[];
   modelTimeoutMs: number;
+  cookingVideoConcurrency: number;
 }
 
 export async function runGateway(args: string[]): Promise<void> {
@@ -162,6 +163,7 @@ export async function runGateway(args: string[]): Promise<void> {
     skillRoots: parsed.skillRoots,
     pluginRoots: parsed.pluginRoots,
     suiteDataDir: parsed.suiteDataDir,
+    cookingVideoConcurrency: parsed.cookingVideoConcurrency,
     ...(runtimeBundle.permissionEngine ? { permissionEngine: runtimeBundle.permissionEngine } : {}),
   }) as HttpLoongGateway;
   try {
@@ -173,6 +175,7 @@ export async function runGateway(args: string[]): Promise<void> {
     process.stderr.write(`Loong model config: ${modelConfigPath}\n`);
     process.stderr.write(`Loong agent config: ${agentConfigPath}\n`);
     process.stderr.write(`Loong model timeout: ${Math.round(parsed.modelTimeoutMs / 1000)}s\n`);
+    process.stderr.write(`Loong cooking video concurrency: ${parsed.cookingVideoConcurrency}\n`);
     await cronRunner.tick();
     cronRunner.start();
     await waitForShutdown();
@@ -238,6 +241,10 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
   let suiteDataDir = process.env.LOONG_SUITE_DATA_DIR?.trim() || dataRoot;
   let cronJobsFile = process.env.LOONG_CRON_JOBS?.trim() || path.join(dataRoot, "cron", "jobs.json");
   let memoryBackendId = process.env.LOONG_MEMORY_BACKEND?.trim() || undefined;
+  let cookingVideoConcurrency = Number(process.env.LOONG_COOKING_VIDEO_CONCURRENCY?.trim() || "1");
+  if (!Number.isInteger(cookingVideoConcurrency) || cookingVideoConcurrency < 1 || cookingVideoConcurrency > 8) {
+    throw new Error("LOONG_COOKING_VIDEO_CONCURRENCY must be an integer from 1 to 8.");
+  }
   const defaultSkillRoots = configuredSkillRoots();
   const skillRoots: string[] = [];
   const pluginRoots = configuredPluginRoots();
@@ -433,6 +440,22 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
       index += 1;
       continue;
     }
+    if (arg === "--cooking-video-concurrency") {
+      const value = args[index + 1]?.trim();
+      cookingVideoConcurrency = Number(value);
+      if (!value || !Number.isInteger(cookingVideoConcurrency) || cookingVideoConcurrency < 1 || cookingVideoConcurrency > 8) {
+        throw new Error("Usage: loong gateway --cooking-video-concurrency <1-8>");
+      }
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith("--cooking-video-concurrency=")) {
+      cookingVideoConcurrency = Number(arg.slice("--cooking-video-concurrency=".length).trim());
+      if (!Number.isInteger(cookingVideoConcurrency) || cookingVideoConcurrency < 1 || cookingVideoConcurrency > 8) {
+        throw new Error("Usage: loong gateway --cooking-video-concurrency=<1-8>");
+      }
+      continue;
+    }
     if (arg?.startsWith("--model-timeout-ms=")) {
       const value = arg.slice("--model-timeout-ms=".length).trim();
       if (!value) {
@@ -480,5 +503,6 @@ export async function parseGatewayArgs(args: string[]): Promise<ParsedGatewayArg
     skillRoots: uniquePaths([...skillRoots, ...defaultSkillRoots]),
     pluginRoots: uniquePaths(pluginRoots),
     modelTimeoutMs,
+    cookingVideoConcurrency,
   };
 }

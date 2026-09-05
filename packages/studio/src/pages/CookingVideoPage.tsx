@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLoongClient } from "../context/LoongClientContext.js";
 import { useI18n } from "../i18n/I18nContext.js";
+import { useLoongEvents } from "@dashboard/app/events/EventsContext.js";
 import styles from "./CookingVideoPage.module.css";
 
 type Verdict = "pending" | "approved" | "changes_requested" | "rejected";
@@ -30,6 +31,7 @@ interface Workspace {
   quality?: { status: string };
   previewPath?: string;
 }
+interface QueueItem { queueId: string; jobId: string; status: string; position: number; stage?: string; error?: string }
 
 const TEXT = {
   "zh-CN": {
@@ -39,6 +41,7 @@ const TEXT = {
     camera: "机位", start: "入点 ms", end: "出点 ms", caption: "字幕", remove: "删除", review: "审核", reviewer: "审核人",
     note: "审核意见", approve: "批准", changes: "要求返修", reject: "驳回", rerender: "再次渲染", pending: "待审核", approved: "已批准",
     changes_requested: "待返修", rejected: "已驳回", saving: "处理中", revision: "修订", confidence: "置信度", reference: "参考机位",
+    queue: "渲染队列", cancel: "取消任务", connected: "进度已连接",
   },
   en: {
     title: "Promo video review", lead: "Confirm camera sync, refine the timeline, and approve a new render.", root: "Jobs directory", load: "Load jobs",
@@ -47,6 +50,7 @@ const TEXT = {
     camera: "Camera", start: "In ms", end: "Out ms", caption: "Caption", remove: "Delete", review: "Review", reviewer: "Reviewer",
     note: "Review note", approve: "Approve", changes: "Request changes", reject: "Reject", rerender: "Render again", pending: "Pending", approved: "Approved",
     changes_requested: "Changes requested", rejected: "Rejected", saving: "Working", revision: "Revision", confidence: "Confidence", reference: "Reference camera",
+    queue: "Render queue", cancel: "Cancel job", connected: "Progress connected",
   },
 } as const;
 
@@ -65,6 +69,7 @@ function normalizeTimeline(decision: Decision): Decision {
 export function CookingVideoPage() {
   const { client } = useLoongClient();
   const { locale } = useI18n();
+  const { events, sseStatus } = useLoongEvents();
   const copy = TEXT[locale];
   const [jobsRoot, setJobsRoot] = useState(() => localStorage.getItem("loong.cookingVideo.jobsRoot") ?? "data/jobs");
   const [jobs, setJobs] = useState<JobSummary[]>([]);
@@ -76,12 +81,15 @@ export function CookingVideoPage() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [queueItem, setQueueItem] = useState<QueueItem>();
 
   const loadWorkspace = useCallback(async (jobId: string) => {
     setBusy("workspace"); setError(""); setPreviewUrl(undefined);
     try {
       const result = await client.gateway.rpc<Workspace>("cooking.video.workspace.get", { jobsRoot, jobId });
       setWorkspace(result); setDraft(result.decision); setSelectedJobId(jobId);
+      const queue = await client.gateway.rpc<{ items: QueueItem[] }>("cooking.video.queue.list", { jobsRoot });
+      setQueueItem(queue.items.find(item => item.jobId === jobId && ["queued", "running", "cancelling"].includes(item.status)));
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(""); }
   }, [client, jobsRoot]);
@@ -100,6 +108,15 @@ export function CookingVideoPage() {
   }, [client, jobsRoot, loadWorkspace]);
 
   useEffect(() => { void loadJobs(); }, []);
+
+  useEffect(() => {
+    const envelope = events.find(item => item.event.type === "cooking_video" && item.event.jobId === selectedJobId);
+    if (!envelope || envelope.event.type !== "cooking_video") return;
+    const payload = envelope.event.payload as { item?: QueueItem };
+    if (!payload.item) return;
+    setQueueItem(payload.item);
+    if (["completed", "failed", "cancelled"].includes(payload.item.status)) void loadWorkspace(payload.item.jobId);
+  }, [events, loadWorkspace, selectedJobId]);
 
   const updateSegment = (id: string, patch: Partial<Segment>) => setDraft(current => current ? normalizeTimeline({
     ...current, segments: current.segments.map(segment => segment.id === id ? { ...segment, ...patch } : segment),
@@ -130,8 +147,18 @@ export function CookingVideoPage() {
     if (!workspace) return;
     setBusy("render"); setError("");
     try {
-      await client.gateway.rpc("cooking.video.rerender", { jobsRoot, jobId: workspace.job.jobId, draft: true });
-      await loadWorkspace(workspace.job.jobId);
+      const queued = await client.gateway.rpc<QueueItem>("cooking.video.rerender", { jobsRoot, jobId: workspace.job.jobId, draft: true });
+      setQueueItem(queued);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(""); }
+  };
+
+  const cancelQueued = async () => {
+    if (!queueItem) return;
+    setBusy("cancel"); setError("");
+    try {
+      const cancelled = await client.gateway.rpc<QueueItem>("cooking.video.queue.cancel", { queueId: queueItem.queueId });
+      setQueueItem(cancelled);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(""); }
   };
@@ -166,6 +193,11 @@ export function CookingVideoPage() {
       <button type="button" onClick={() => void loadJobs()} disabled={Boolean(busy)}>{busy === "jobs" ? copy.saving : copy.load}</button>
     </section>
     {error ? <div className={styles.error} role="alert">{error}</div> : null}
+    {queueItem ? <section className={styles.queueBar} aria-live="polite">
+      <div><strong>{copy.queue}</strong><span>{queueItem.status}{queueItem.stage ? ` / ${queueItem.stage}` : ""}{queueItem.position > 0 ? ` / #${queueItem.position}` : ""}</span></div>
+      <span>{sseStatus === "live" ? copy.connected : sseStatus}</span>
+      {["queued", "running", "cancelling"].includes(queueItem.status) ? <button type="button" onClick={() => void cancelQueued()} disabled={Boolean(busy) || queueItem.status === "cancelling"}>{copy.cancel}</button> : null}
+    </section> : null}
 
     <div className={styles.workspace}>
       <aside className={styles.jobRail}>

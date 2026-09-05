@@ -8,6 +8,7 @@ export * from "./digest.js";
 export * from "./event-detection.js";
 export * from "./job-store.js";
 export * from "./job-runner.js";
+export * from "./job-queue.js";
 export * from "./intake.js";
 export * from "./json-files.js";
 export * from "./media.js";

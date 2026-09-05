@@ -14,6 +14,10 @@
 .rootBar button:active, .panelHead button:active, .reviewActions button:active { transform: translateY(1px); }
 button:disabled { cursor: not-allowed; opacity: .5; }
 .error { max-width: 1600px; margin: 0 auto 16px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
+.queueBar { max-width: 1600px; min-height: 46px; margin: 0 auto 16px; display: flex; align-items: center; gap: 16px; padding: 8px 10px 8px 12px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: var(--radius-sm); background: var(--accent-soft); }
+.queueBar div { flex: 1; display: flex; align-items: baseline; gap: 10px; }
+.queueBar span { color: var(--muted); font: 11px var(--font-mono); }
+.queueBar button { min-height: 30px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); padding: 0 10px; cursor: pointer; }
 .workspace { max-width: 1600px; min-height: 680px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
 .jobRail { border-right: 1px solid var(--line); background: var(--bg); padding: 14px 10px; }
 .jobRail h2 { margin: 0 8px 10px; font-size: 13px; }

@@ -133,6 +133,9 @@ export type GatewayRequest =
   | { type: "cooking.video.review.submit"; id: string; params: Record<string, unknown> }
   | { type: "cooking.video.rerender"; id: string; params: Record<string, unknown> }
   | { type: "cooking.video.preview.read"; id: string; params: Record<string, unknown> }
+  | { type: "cooking.video.queue.list"; id: string; params: Record<string, unknown> }
+  | { type: "cooking.video.queue.enqueue"; id: string; params: Record<string, unknown> }
+  | { type: "cooking.video.queue.cancel"; id: string; params: Record<string, unknown> }
   | { type: "fs.directory.browse"; id: string; params?: { path?: string } };
 
 export type GatewayResponse =

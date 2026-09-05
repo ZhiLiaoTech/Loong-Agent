@@ -268,7 +268,15 @@ export type LoongEvent =
         reasoningPreview?: string;
       };
     }
-  | { type: "tool"; runId: string; toolName: string; phase: "start" | "update" | "end"; payload?: unknown };
+  | { type: "tool"; runId: string; toolName: string; phase: "start" | "update" | "end"; payload?: unknown }
+  | {
+      type: "cooking_video";
+      runId: string;
+      jobId: string;
+      queueId: string;
+      phase: "queued" | "started" | "stage" | "completed" | "failed" | "cancelled";
+      payload: unknown;
+    };
 
 export interface LoongAgentRuntime {
   runTurn(input: LoongTurnInput): Promise<LoongTurnResult>;
